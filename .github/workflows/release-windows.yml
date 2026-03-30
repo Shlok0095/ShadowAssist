@@ -3,6 +3,8 @@ name: Release Windows
 on:
   workflow_dispatch:
   push:
+    branches:
+      - stag
     tags:
       - 'v*.*.*'
 
