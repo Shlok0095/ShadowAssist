@@ -7,7 +7,7 @@
     if (el && url) el.href = url
   }
 
-  setHref('nav-download', c.downloadPortableUrl)
+  setHref('nav-download', c.downloadInstallerUrl)
   setHref('nav-docs', c.howItWorksUrl)
   setHref('nav-repo', c.repoUrl)
   setHref('cta-portable', c.downloadPortableUrl)

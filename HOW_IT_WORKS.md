@@ -26,7 +26,7 @@ When you launch the app, it places an icon near the system clock (notification a
 
 On a **new install** (or after a consent- or data-epoch update), you must complete a **legal consent** screen (all checkboxes) before anything else runs. Use **Open Terms / Privacy / License** to view the bundled text files in your default app. Then **onboarding** opens: you choose a provider, paste **your own** API key (nothing is bundled), run **Test** until it succeeds, acknowledge **BYOK** statements, and only then can you start the overlay.
 
-The **NSIS installer** shows **Terms** from `legal/terms.txt`, can install per-user or per-machine, creates **Start menu** shortcuts, adds a **desktop** shortcut, and can **run the app when finished**. Keys live under your Windows user profile (`AppData`); they are never downloaded from GitHub—only you paste them.
+The **NSIS installer** shows **Terms** from `legal/terms.txt`, lets you pick the install folder and **per-user vs all users**, then creates **Start menu** and **desktop** shortcuts. **`runAfterFinish` is off** — the wizard closes when you click Finish; you start ShadowAssist from the shortcut (not auto-launched). The **portable** `ShadowAssist.exe` has **no** wizard and opens the app as soon as you run it. Keys live under your Windows user profile (`AppData`); they are never downloaded from GitHub—only you paste them.
 
 If you still see old keys after an update, the app may have run a one-time **data migration** that clears secrets—otherwise uninstall / delete app data in Settings to reset.
 

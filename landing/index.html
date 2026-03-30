@@ -51,12 +51,14 @@
             <strong>your own</strong> Groq, OpenAI, or NVIDIA keys; we don’t proxy your prompts.
           </p>
           <div class="cta">
-            <a class="btn primary" id="cta-portable" href="#">Download portable</a>
-            <a class="btn secondary" id="cta-installer" href="#">Installer</a>
+            <a class="btn primary" id="cta-installer" href="#">Download installer (recommended)</a>
+            <a class="btn secondary" id="cta-portable" href="#">Portable — no install wizard</a>
           </div>
           <p class="fine">
+            <strong>Installer</strong> runs a Windows setup: accept terms, choose folder, per-user or all users, then Start menu + desktop shortcuts — the app does
+            <em>not</em> auto-open when you click Finish. <strong>Portable</strong> is a single <code>.exe</code> that starts the app immediately (no wizard).
             <a id="cta-releases" href="#">Browse releases</a>
-            · SHA256 sums on each release · First launch: legal checkboxes + key setup + connection test
+            · SHA256 on each release · First app launch: legal + API setup
           </p>
         </div>
         <div class="hero-visual" aria-hidden="true">
@@ -152,8 +154,11 @@
         <div class="steps-row">
           <div class="step-card">
             <span class="step-num">1</span>
-            <h3>Download</h3>
-            <p>Grab the portable or installer build from GitHub Releases for Windows x64.</p>
+            <h3>Install</h3>
+            <p>
+              Use <strong>ShadowAssist-Setup-….exe</strong> for the full wizard (terms, install folder, shortcuts). Use the portable <code>.exe</code> only if you
+              want no installer.
+            </p>
           </div>
           <div class="step-card">
             <span class="step-num">2</span>
@@ -196,6 +201,16 @@
           <dt>Why does SmartScreen warn?</dt>
           <dd>
             New or unsigned Windows builds are often flagged. Prefer signed releases when available; verify <code>SHA256SUMS.txt</code> on the release.
+          </dd>
+          <dt>Why does my download open the app right away — no install screen?</dt>
+          <dd>
+            You probably downloaded the <strong>portable</strong> file (<code>ShadowAssist.exe</code>). That build is meant to run without installing. For a classic
+            setup (terms, folder, shortcuts), download <strong>ShadowAssist-Setup-….exe</strong> instead.
+          </dd>
+          <dt>Can I choose “no desktop icon” in the installer?</dt>
+          <dd>
+            The current NSIS template creates Start menu + desktop shortcuts by default. A per-user “yes/no desktop shortcut” page would need a custom NSIS
+            script (not in this repo yet).
           </dd>
         </dl>
       </section>

@@ -1,6 +1,6 @@
 {
   "name": "shadowassist",
-  "version": "2.0.1",
+  "version": "2.0.2",
   "description": "Undetectable AI for live meetings — discreet on-screen meeting assistant",
   "author": "ShadowAssist",
   "license": "UNLICENSED",
@@ -57,10 +57,10 @@
       "installerIcon": "build/app.ico",
       "uninstallerIcon": "build/app.ico",
       "shortcutName": "ShadowAssist",
-      "createDesktopShortcut": "always",
+      "createDesktopShortcut": true,
       "createStartMenuShortcut": true,
       "menuCategory": "ShadowAssist",
-      "runAfterFinish": true,
+      "runAfterFinish": false,
       "artifactName": "ShadowAssist-Setup-${version}.${ext}"
     }
   },
