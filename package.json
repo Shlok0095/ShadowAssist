@@ -22,6 +22,7 @@
   "build": {
     "appId": "com.local.shadowassist.v2",
     "productName": "ShadowAssist",
+    "publish": null,
     "forceCodeSigning": false,
     "icon": "logo.png",
     "directories": {
