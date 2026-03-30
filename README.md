@@ -43,6 +43,32 @@ End-to-end checklist: [docs/LAUNCH_END_TO_END.md](docs/LAUNCH_END_TO_END.md).
 - **Landing page:** static files in `landing/` — edit `site-config.js`, then deploy the folder to any host.
 - **CI:** push the repo to GitHub and use `.github/workflows/release-windows.yml` (tag `v*.*.*` to attach binaries to a release).
 
+### GitHub: make `stag` the default branch
+
+The remote may still use **`main`** as default. To match this repo’s workflow:
+
+1. **GitHub CLI** (installed as `GitHub CLI` on Windows — restart the terminal, then `gh auth login` once):
+
+   ```powershell
+   gh auth login
+   gh repo edit Shlok0095/ShadowAssist --default-branch stag
+   ```
+
+2. **Or** a **personal access token** with repo admin (classic `repo`, or fine-grained **Administration** write on this repo):
+
+   ```powershell
+   $env:GITHUB_TOKEN = "ghp_your_token_here"
+   .\scripts\set-github-default-branch.ps1
+   ```
+
+   To delete remote **`main`** after the default is `stag`:
+
+   ```powershell
+   .\scripts\set-github-default-branch.ps1 -DeleteRemoteMain
+   ```
+
+3. Refresh this clone: `git fetch origin` then `git remote set-head origin -a` (or keep `git remote set-head origin stag`).
+
 ## Hotkeys (defaults)
 
 - **Ctrl+\\** — Toggle overlay visibility  
