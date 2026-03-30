@@ -24,7 +24,11 @@ When you launch the app, it places an icon near the system clock (notification a
 
 ### First launch: consent and API keys
 
-On a **new install** (or after a consent-version update), you must complete a **legal consent** screen (all checkboxes) before anything else runs. Then **onboarding** opens: you choose a provider, paste **your own** API key (nothing is bundled), run **Test** until it succeeds, acknowledge **BYOK** (bring-your-own-key) statements, and only then can you start the overlay. Keys are stored under your Windows user profile; if you already used ShadowAssist on this PC, you may still see old keys from that local store—that is not the installer shipping secrets.
+On a **new install** (or after a consent- or data-epoch update), you must complete a **legal consent** screen (all checkboxes) before anything else runs. Use **Open Terms / Privacy / License** to view the bundled text files in your default app. Then **onboarding** opens: you choose a provider, paste **your own** API key (nothing is bundled), run **Test** until it succeeds, acknowledge **BYOK** statements, and only then can you start the overlay.
+
+The **NSIS installer** shows **Terms** from `legal/terms.txt`, can install per-user or per-machine, creates **Start menu** shortcuts, adds a **desktop** shortcut, and can **run the app when finished**. Keys live under your Windows user profile (`AppData`); they are never downloaded from GitHub—only you paste them.
+
+If you still see old keys after an update, the app may have run a one-time **data migration** that clears secrets—otherwise uninstall / delete app data in Settings to reset.
 
 ---
 

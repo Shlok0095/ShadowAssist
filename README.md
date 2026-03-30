@@ -51,11 +51,11 @@ End-to-end checklist: [docs/LAUNCH_END_TO_END.md](docs/LAUNCH_END_TO_END.md).
 
 ### Windows release binaries
 
-When `package.json` is at **2.0.0**, create and push a matching tag so CI builds and attaches artifacts:
+When `package.json` version matches your release (e.g. **2.0.1**), create and push a matching tag so CI builds and attaches artifacts:
 
 ```powershell
-git tag v2.0.0
-git push origin v2.0.0
+git tag v2.0.1
+git push origin v2.0.1
 ```
 
 Workflow: **Release Windows** (`.github/workflows/release-windows.yml`). You can also run it from the **Actions** tab without a tag to download artifacts only; tags create the GitHub Release with notes + portable + installer + `SHA256SUMS.txt`.

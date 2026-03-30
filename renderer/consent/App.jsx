@@ -66,6 +66,10 @@ export default function ConsentApp() {
     api?.invoke('consent:decline')
   }
 
+  const openLegal = (which) => {
+    void api?.invoke('legal:open', which)
+  }
+
   return (
     <AppWindowFrame>
     <div className="settings-root relative z-10 flex min-h-0 flex-1 flex-col overflow-hidden">
@@ -91,9 +95,31 @@ export default function ConsentApp() {
           <section className="glass-panel animate-border-pulse p-8">
             <h2 className="font-display text-sm font-bold uppercase tracking-[0.2em] text-gray-300">Legal acknowledgment</h2>
             <p className="mt-2 text-xs leading-relaxed text-gray-500">
-              All boxes must be checked. This mirrors the expectations described in{' '}
-              <span className="text-gray-400">legal/terms.txt</span> and <span className="text-gray-400">legal/privacy.txt</span> in the app folder.
+              All boxes must be checked. Open the full documents in your default viewer before you agree:
             </p>
+            <div className="mt-3 flex flex-wrap gap-2">
+              <button
+                type="button"
+                onClick={() => openLegal('terms')}
+                className="rounded-lg border border-white/15 bg-white/[0.06] px-3 py-1.5 text-xs font-medium text-indigo-200 hover:bg-white/[0.1]"
+              >
+                Open Terms of Use
+              </button>
+              <button
+                type="button"
+                onClick={() => openLegal('privacy')}
+                className="rounded-lg border border-white/15 bg-white/[0.06] px-3 py-1.5 text-xs font-medium text-indigo-200 hover:bg-white/[0.1]"
+              >
+                Open Privacy
+              </button>
+              <button
+                type="button"
+                onClick={() => openLegal('license')}
+                className="rounded-lg border border-white/15 bg-white/[0.06] px-3 py-1.5 text-xs font-medium text-indigo-200 hover:bg-white/[0.1]"
+              >
+                Open License
+              </button>
+            </div>
 
             <div className="mt-8 space-y-3">
               {CHECKS.map(({ key, label }) => (

@@ -93,6 +93,22 @@ export default function Onboarding() {
               The app never includes vendor API keys. You must create keys in your own Groq, OpenAI, or NVIDIA account and paste them here. A successful
               connection test is required before you can continue.
             </p>
+            <div className="mt-3 flex flex-wrap gap-2">
+              <button
+                type="button"
+                onClick={() => ipc?.invoke('legal:open', 'terms')}
+                className="rounded-lg border border-white/10 bg-white/[0.04] px-2.5 py-1 text-[11px] text-gray-400 hover:text-gray-200"
+              >
+                Terms
+              </button>
+              <button
+                type="button"
+                onClick={() => ipc?.invoke('legal:open', 'privacy')}
+                className="rounded-lg border border-white/10 bg-white/[0.04] px-2.5 py-1 text-[11px] text-gray-400 hover:text-gray-200"
+              >
+                Privacy
+              </button>
+            </div>
 
             <>
                 <h2 className="mt-8 text-xs font-semibold uppercase tracking-wider text-gray-400">1. Provider</h2>

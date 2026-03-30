@@ -1,7 +1,7 @@
 // Copyright (c) 2026 ShadowAssist. All rights reserved.
 // Unauthorized copying or distribution is prohibited.
 
-const { app, BrowserWindow, ipcMain, globalShortcut, Tray, nativeImage, screen, dialog, Menu, clipboard, desktopCapturer } = require('electron')
+const { app, BrowserWindow, ipcMain, globalShortcut, Tray, nativeImage, screen, dialog, Menu, clipboard, desktopCapturer, shell } = require('electron')
 const path = require('path')
 const fs = require('fs')
 const fsPromises = require('fs').promises
@@ -39,6 +39,7 @@ if (!gotLock) {
   })
 } else {
 const store = require('../lib/store')
+store.runDataMigration()
 const hotkeys = require('../lib/hotkeys')
 const screenCapture = require('../lib/screenCapture')
 const providers = require('../lib/providers')
@@ -685,7 +686,29 @@ function setupHotkeys() {
   hotkeys.registerAll()
 }
 
+/** Packaged: extraResources/legal; dev: repo legal/. */
+function getLegalDocumentPath(which) {
+  const files = { terms: 'terms.txt', privacy: 'privacy.txt', license: 'license.txt' }
+  const name = files[which]
+  if (!name) return null
+  const bases = app.isPackaged
+    ? [path.join(process.resourcesPath, 'legal')]
+    : [path.join(__dirname, '..', 'legal')]
+  for (const base of bases) {
+    const full = path.join(base, name)
+    if (fs.existsSync(full)) return full
+  }
+  return null
+}
+
 function setupIPC() {
+  ipcMain.handle('legal:open', async (_, which) => {
+    const p = getLegalDocumentPath(which)
+    if (!p) return { ok: false, error: 'File not found' }
+    const err = await shell.openPath(p)
+    return err ? { ok: false, error: err } : { ok: true }
+  })
+
   ipcMain.handle('protection:set', (_, enabled) => {
     const v = !!enabled
     store.set('stealth_mode', v)
