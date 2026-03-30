@@ -21,7 +21,7 @@ const CHECKS = [
   {
     key: 'c3',
     label:
-      'I understand my audio and screen text is processed by a third-party AI provider (Groq) for generating responses. No audio is ever stored.',
+      'I understand screen text and meeting audio may be sent to the third-party AI provider I configure (e.g. Groq, OpenAI, NVIDIA) when I use those features. I use only my own API keys. ShadowAssist does not store meeting audio.',
   },
   {
     key: 'c4',

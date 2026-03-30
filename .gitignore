@@ -10,3 +10,6 @@ Thumbs.db
 *.blockmap
 .npm-cache/
 .cache/
+
+# Tesseract.js fetches language data at runtime; do not commit large local copies
+eng.traineddata

@@ -22,6 +22,10 @@ The tray build uses **`ShadowAssist.exe`**; use **`npm run kill-shadowassist`** 
 
 When you launch the app, it places an icon near the system clock (notification area). Closing the floating panel does **not** quit the program; it keeps running from that icon. Use the icon’s menu to show the panel again or to exit completely. Only one copy of the app is meant to run at a time—if you try to open it twice, you are reminded that it is already running.
 
+### First launch: consent and API keys
+
+On a **new install** (or after a consent-version update), you must complete a **legal consent** screen (all checkboxes) before anything else runs. Then **onboarding** opens: you choose a provider, paste **your own** API key (nothing is bundled), run **Test** until it succeeds, acknowledge **BYOK** (bring-your-own-key) statements, and only then can you start the overlay. Keys are stored under your Windows user profile; if you already used ShadowAssist on this PC, you may still see old keys from that local store—that is not the installer shipping secrets.
+
 ---
 
 ## The floating panel

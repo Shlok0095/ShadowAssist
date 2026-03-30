@@ -60,7 +60,7 @@ function getListRemoteModels() {
   return listRemoteModelsFn
 }
 
-const CONSENT_VERSION = '1.0'
+const CONSENT_VERSION = '2.0'
 const preloadPath = path.join(__dirname, '..', 'preload.js')
 
 const useBuilt = fs.existsSync(path.join(__dirname, '..', 'out', 'overlay', 'index.html'))
@@ -89,6 +89,7 @@ let lastResponse = ''
 let ocrIntervalId = null
 let currentAbortController = null
 let consentWindow = null
+let onboardingWindow = null
 let appCoreStarted = false
 
 function createTrayIcon(active = false) {
@@ -206,7 +207,7 @@ function isStealthModeEnabled() {
 
 function applyContentProtectionAllWindows() {
   const enabled = isStealthModeEnabled()
-  ;[overlayWindow, settingsWindow, consentWindow].forEach((win) => {
+  ;[overlayWindow, settingsWindow, consentWindow, onboardingWindow].forEach((win) => {
     if (win && !win.isDestroyed()) {
       try {
         win.setContentProtection(enabled)
@@ -275,13 +276,27 @@ function hasValidConsent() {
   return !!(r && r.given === true && r.version === CONSENT_VERSION)
 }
 
-function startApplicationCore() {
+function hasCompletedOnboardingFlag() {
+  return store.get('hasCompletedOnboarding') === true
+}
+
+function finalizeBootstrap() {
   if (appCoreStarted) return
   appCoreStarted = true
   initApp().catch((err) => {
     console.error('[ShadowAssist-v2] initApp failed:', err)
     app.quit()
   })
+}
+
+/** After legal consent: run onboarding (BYOK + API test) or start tray/overlay. */
+function continueAfterConsent() {
+  if (appCoreStarted) return
+  if (!hasCompletedOnboardingFlag()) {
+    createOnboardingWindow()
+    return
+  }
+  finalizeBootstrap()
 }
 
 function createConsentWindow() {
@@ -319,6 +334,44 @@ function createConsentWindow() {
     consentWindow = null
     if (!appCoreStarted && !hasValidConsent()) app.quit()
   })
+}
+
+function createOnboardingWindow() {
+  if (onboardingWindow && !onboardingWindow.isDestroyed()) {
+    onboardingWindow.focus()
+    return
+  }
+  const { width: sw, height: sh } = screen.getPrimaryDisplay().workAreaSize
+  const w = Math.min(480, Math.max(400, Math.floor(sw * 0.46)))
+  const h = Math.min(860, Math.max(620, Math.floor(sh * 0.88)))
+  onboardingWindow = new BrowserWindow({
+    width: w,
+    height: h,
+    center: true,
+    minWidth: 380,
+    minHeight: 560,
+    frame: false,
+    transparent: true,
+    backgroundColor: '#00000000',
+    roundedCorners: true,
+    ...(APP_ICON ? { icon: APP_ICON } : {}),
+    webPreferences: {
+      preload: preloadPath,
+      contextIsolation: true,
+      nodeIntegration: false,
+      sandbox: false,
+      backgroundThrottling: false,
+    },
+  })
+  onboardingWindow.setMenuBarVisibility(false)
+  onboardingWindow.loadFile(useBuilt
+    ? path.join(__dirname, '..', 'out', 'onboarding', 'index.html')
+    : path.join(__dirname, '..', 'renderer', 'onboarding', 'index.html'))
+  onboardingWindow.on('closed', () => {
+    onboardingWindow = null
+    if (!appCoreStarted && !hasCompletedOnboardingFlag()) app.quit()
+  })
+  onboardingWindow.once('ready-to-show', () => applyContentProtectionAllWindows())
 }
 
 function requestSessionStart() {
@@ -661,7 +714,7 @@ function setupIPC() {
     const record = { version: CONSENT_VERSION, date: new Date().toISOString(), given: true }
     store.set('consentRecord', record)
     store.set('consent_v1', true)
-    startApplicationCore()
+    continueAfterConsent()
     if (consentWindow && !consentWindow.isDestroyed()) consentWindow.close()
     return { ok: true }
   })
@@ -874,6 +927,11 @@ function setupIPC() {
   })
   ipcMain.on('complete-onboarding', () => {
     store.set('hasCompletedOnboarding', true)
+    if (!appCoreStarted) finalizeBootstrap()
+    if (onboardingWindow && !onboardingWindow.isDestroyed()) {
+      onboardingWindow.close()
+      onboardingWindow = null
+    }
     if (!overlayWindow || overlayWindow.isDestroyed()) createOverlayWindow()
     showOverlay()
   })
@@ -904,7 +962,7 @@ async function initApp() {
 app.whenReady().then(() => {
   setupIPC()
   if (!hasValidConsent()) createConsentWindow()
-  else startApplicationCore()
+  else continueAfterConsent()
 }).catch((err) => {
   console.error('[ShadowAssist-v2] bootstrap failed:', err)
   app.quit()
