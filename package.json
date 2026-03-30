@@ -43,7 +43,7 @@
       "executableName": "ShadowAssist",
       "publisherName": "ShadowAssist",
       "target": "portable",
-      "signAndEditExecutable": false
+      "sign": null
     },
     "portable": {
       "artifactName": "ShadowAssist.exe"
@@ -57,7 +57,8 @@
       "installerIcon": "build/app.ico",
       "uninstallerIcon": "build/app.ico",
       "shortcutName": "ShadowAssist",
-      "createDesktopShortcut": true,
+      "createDesktopShortcut": false,
+      "include": "scripts/nsis/installer.nsh",
       "createStartMenuShortcut": true,
       "menuCategory": "ShadowAssist",
       "runAfterFinish": false,
