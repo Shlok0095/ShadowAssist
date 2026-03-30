@@ -40,7 +40,7 @@ Signing is not automated in this repo because it requires your secret material.
 The workflow `.github/workflows/release-windows.yml`:
 
 - On **workflow_dispatch**: builds and uploads a **workflow artifact** (no release).
-- On **push** of a tag matching `v*.*.*` (e.g. `v2.0.1`): builds, uploads artifacts, and creates/updates a **GitHub Release** with the portable exe, installer, and `SHA256SUMS.txt`.
+- On **push** of a tag matching `v*.*.*` (e.g. `v1.0.0`): builds, uploads artifacts, and creates/updates a **GitHub Release** with the portable exe, installer, and `SHA256SUMS.txt`.
 
 Steps:
 
@@ -48,8 +48,8 @@ Steps:
 2. Tag and push:
 
    ```powershell
-   git tag v2.0.1
-   git push origin v2.0.1
+   git tag v1.0.0
+   git push origin v1.0.0
    ```
 
 3. On GitHub → **Releases**, confirm files attached. Users can use **Latest** or direct download URLs documented on your site.
