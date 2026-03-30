@@ -1,0 +1,99 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>ShadowAssist — AI meeting assistant</title>
+    <meta
+      name="description"
+      content="Discreet on-screen AI for live meetings. Windows desktop app. Bring your own API keys."
+    />
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link
+      href="https://fonts.googleapis.com/css2?family=Outfit:wght@400;600;700&family=Syne:wght@600;700&display=swap"
+      rel="stylesheet"
+    />
+    <link rel="stylesheet" href="styles.css" />
+    <script src="site-config.js"></script>
+  </head>
+  <body>
+    <header class="top">
+      <a class="brand" href="#" id="link-home">ShadowAssist</a>
+      <nav class="nav">
+        <a id="nav-download" href="#">Download</a>
+        <a id="nav-docs" href="#" rel="noopener">How it works</a>
+        <a id="nav-repo" href="#" rel="noopener">GitHub</a>
+      </nav>
+    </header>
+
+    <main>
+      <section class="hero">
+        <p class="eyebrow">Windows · BYOK</p>
+        <h1>Undetectable AI for live meetings</h1>
+        <p class="lede">
+          A discreet on-screen assistant for calls and syncs. You control your keys and providers — nothing
+          is sent through us.
+        </p>
+        <div class="cta">
+          <a class="btn primary" id="cta-portable" href="#">Download portable (.exe)</a>
+          <a class="btn secondary" id="cta-installer" href="#">Download installer</a>
+        </div>
+        <p class="fine">
+          Prefer to pick assets yourself?
+          <a id="cta-releases" href="#">Open latest release</a>
+        </p>
+      </section>
+
+      <section class="panel">
+        <h2>Three steps</h2>
+        <ol class="steps">
+          <li><strong>Install or run</strong> the portable exe or the installer (Windows 10+).</li>
+          <li><strong>Add keys</strong> in onboarding — Groq, OpenAI, or NVIDIA NIM.</li>
+          <li><strong>Use during meetings</strong> — toggle visibility, ask with hotkeys, keep context local to you.</li>
+        </ol>
+      </section>
+
+      <section class="panel">
+        <h2>Requirements</h2>
+        <ul class="list">
+          <li>Windows 10 or later (x64)</li>
+          <li>Your own API credentials for the AI provider you choose</li>
+          <li>Microphone access when you use session / listen features</li>
+        </ul>
+      </section>
+
+      <section class="panel">
+        <h2>FAQ</h2>
+        <dl class="faq">
+          <dt>Is this undetectable?</dt>
+          <dd>
+            The app is designed to be discreet on your screen. We do not guarantee that any third party cannot
+            infer assistant use; use only where allowed by your org and the meeting platform.
+          </dd>
+          <dt>Do you store my conversations?</dt>
+          <dd>
+            Processing goes to the providers you configure. Read the in-app privacy flow and
+            <a id="faq-privacy" href="#">privacy summary</a>.
+          </dd>
+          <dt>Why does Windows warn about the file?</dt>
+          <dd>
+            New or unsigned apps often trigger SmartScreen. Code signing reduces warnings; always verify
+            <code>SHA256SUMS.txt</code> from the release when you care about integrity.
+          </dd>
+        </dl>
+      </section>
+    </main>
+
+    <footer class="foot">
+      <div class="foot-inner">
+        <span>ShadowAssist</span>
+        <span class="sep">·</span>
+        <a id="foot-terms" href="#">Terms</a>
+        <a id="foot-privacy" href="#">Privacy</a>
+      </div>
+    </footer>
+
+    <script src="main.js"></script>
+  </body>
+</html>

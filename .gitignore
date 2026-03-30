@@ -1,0 +1,12 @@
+node_modules/
+dist/
+out/
+build/
+*.log
+.env
+.env.*
+.DS_Store
+Thumbs.db
+*.blockmap
+.npm-cache/
+.cache/

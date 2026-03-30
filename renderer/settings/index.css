@@ -1,0 +1,239 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+:root {
+  --accent-rgb: 34 197 94;
+  --accent-mid-rgb: 16 185 129;
+  --accent-light-rgb: 52 211 153;
+}
+
+@keyframes borderPulseThemed {
+  0%,
+  100% {
+    border-color: rgba(139, 92, 246, 0.25);
+  }
+  50% {
+    border-color: rgb(var(--accent-rgb) / 0.35);
+  }
+}
+.animate-border-pulse {
+  animation: borderPulseThemed 4s ease-in-out infinite;
+}
+
+.shadow-accent-dot {
+  box-shadow: 0 0 12px rgb(var(--accent-rgb) / 0.8);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .animate-shadow-drift,
+  .animate-border-pulse,
+  .animate-pulse-soft,
+  .animate-bar-shine {
+    animation: none !important;
+  }
+}
+
+html {
+  height: 100%;
+  background: transparent;
+}
+
+.settings-body {
+  margin: 0;
+  height: 100%;
+  overflow: hidden;
+  font-family: 'Outfit', system-ui, sans-serif;
+  background: transparent;
+  color: #e2e8f0;
+}
+
+#root {
+  height: 100%;
+  min-height: 100%;
+}
+
+/* Film grain + vignette for “shadow” depth */
+.settings-root::before {
+  content: '';
+  pointer-events: none;
+  position: fixed;
+  inset: 0;
+  z-index: 0;
+  opacity: 0.045;
+  /* Lighter than numOctaves=4 — same look at very low opacity, less GPU filter work. */
+  background-image: url("data:image/svg+xml,%3Csvg viewBox='0 0 256 256' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='2' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)'/%3E%3C/svg%3E");
+}
+
+.settings-root::after {
+  content: '';
+  pointer-events: none;
+  position: fixed;
+  inset: 0;
+  z-index: 0;
+  background: radial-gradient(ellipse 80% 60% at 50% -20%, rgba(139, 92, 246, 0.12), transparent 55%),
+    radial-gradient(ellipse 70% 50% at 100% 100%, rgb(var(--accent-rgb) / 0.06), transparent 50%),
+    radial-gradient(ellipse 50% 40% at 0% 80%, rgba(14, 165, 233, 0.05), transparent 45%);
+}
+
+/**
+ * Outer scroll (main column): minimal width + low-opacity thumb (Chromium honors 3px; Firefox: thin).
+ */
+.settings-scroll-outer {
+  scrollbar-gutter: stable;
+  scrollbar-width: thin;
+  scrollbar-color: rgba(148, 163, 184, 0.22) transparent;
+}
+.settings-scroll-outer::-webkit-scrollbar {
+  width: 3px;
+  height: 3px;
+}
+.settings-scroll-outer::-webkit-scrollbar-button {
+  display: none;
+  width: 0;
+  height: 0;
+}
+.settings-scroll-outer::-webkit-scrollbar-track {
+  background: transparent;
+  margin: 1px 0;
+}
+.settings-scroll-outer::-webkit-scrollbar-thumb {
+  background: rgba(148, 163, 184, 0.22);
+  border-radius: 999px;
+  border: none;
+}
+.settings-scroll-outer::-webkit-scrollbar-thumb:hover {
+  background: rgba(196, 181, 253, 0.32);
+}
+.settings-scroll-outer::-webkit-scrollbar-thumb:active {
+  background: rgba(196, 181, 253, 0.42);
+}
+.settings-scroll-outer::-webkit-scrollbar-corner {
+  background: transparent;
+}
+
+/**
+ * Inner / nested scroll areas — same minimal chrome, faint violet.
+ */
+.settings-scroll {
+  scrollbar-width: thin;
+  scrollbar-color: rgba(167, 139, 250, 0.24) transparent;
+  scrollbar-gutter: auto;
+}
+.settings-scroll::-webkit-scrollbar {
+  width: 3px;
+  height: 3px;
+}
+.settings-scroll::-webkit-scrollbar-track {
+  background: transparent;
+  margin: 1px 0;
+}
+.settings-scroll::-webkit-scrollbar-thumb {
+  background: linear-gradient(
+    180deg,
+    rgba(167, 139, 250, 0.22) 0%,
+    rgba(139, 92, 246, 0.18) 100%
+  );
+  border-radius: 999px;
+  border: none;
+}
+.settings-scroll::-webkit-scrollbar-thumb:hover {
+  background: linear-gradient(
+    180deg,
+    rgba(196, 181, 253, 0.32) 0%,
+    rgba(167, 139, 250, 0.28) 100%
+  );
+}
+.settings-scroll::-webkit-scrollbar-thumb:active {
+  background: linear-gradient(
+    180deg,
+    rgba(196, 181, 253, 0.42) 0%,
+    rgba(167, 139, 250, 0.36) 100%
+  );
+}
+.settings-scroll::-webkit-scrollbar-corner {
+  background: transparent;
+}
+
+.glass-panel {
+  @apply rounded-2xl border border-white/[0.08] bg-gradient-to-br from-white/[0.06] to-white/[0.02] backdrop-blur-xl;
+  box-shadow:
+    0 0 0 1px rgba(255, 255, 255, 0.04) inset,
+    0 24px 48px -24px rgba(0, 0, 0, 0.65);
+}
+
+.input-shadow {
+  @apply rounded-xl border border-white/10 bg-black/40 text-sm text-gray-200 placeholder:text-gray-600;
+  @apply focus:outline-none focus:border-phantom-500/40 focus:ring-1 focus:ring-accent/20 transition-colors;
+}
+
+.btn-ghost {
+  @apply rounded-xl border border-white/10 text-sm font-medium text-gray-200;
+  background: linear-gradient(180deg, rgba(255, 255, 255, 0.09) 0%, rgba(255, 255, 255, 0.02) 100%);
+  box-shadow: 0 1px 0 rgba(255, 255, 255, 0.05) inset, 0 10px 26px -16px rgba(0, 0, 0, 0.55);
+  backdrop-filter: blur(6px);
+  @apply transition-all duration-200;
+}
+.btn-ghost:hover {
+  border-color: rgba(255, 255, 255, 0.18);
+  background: linear-gradient(180deg, rgba(255, 255, 255, 0.12) 0%, rgba(255, 255, 255, 0.04) 100%);
+  box-shadow: 0 0 28px -10px rgb(var(--accent-rgb) / 0.32), 0 1px 0 rgba(255, 255, 255, 0.07) inset;
+}
+
+.btn-glow {
+  @apply rounded-xl bg-gradient-to-r from-accent/90 to-accent-light/85 text-void-950 font-semibold text-sm;
+  box-shadow: 0 0 24px -4px rgb(var(--accent-rgb) / 0.45);
+  transition: box-shadow 0.2s ease;
+}
+.btn-glow:hover {
+  box-shadow: 0 0 32px -4px rgb(var(--accent-rgb) / 0.55);
+}
+
+/* Polished secondary controls (settings — avoids flat “cheap” black pills) */
+.settings-chip {
+  border-radius: 0.75rem;
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  background: linear-gradient(180deg, rgba(255, 255, 255, 0.07) 0%, rgba(255, 255, 255, 0.02) 100%);
+  padding: 0.625rem 1rem;
+  font-size: 0.75rem;
+  font-weight: 600;
+  color: rgb(209, 213, 219);
+  box-shadow: 0 1px 0 rgba(255, 255, 255, 0.04) inset, 0 8px 24px -16px rgba(0, 0, 0, 0.5);
+  backdrop-filter: blur(8px);
+  transition: border-color 0.2s ease, color 0.2s ease, box-shadow 0.2s ease, background 0.2s ease;
+}
+.settings-chip:hover {
+  border-color: rgba(255, 255, 255, 0.16);
+  color: rgb(243, 244, 246);
+  box-shadow: 0 0 28px -12px rgb(var(--accent-rgb) / 0.35), 0 1px 0 rgba(255, 255, 255, 0.06) inset;
+}
+.settings-chip-active {
+  border-color: rgb(var(--accent-rgb) / 0.45);
+  background: linear-gradient(180deg, rgb(var(--accent-rgb) / 0.18) 0%, rgb(var(--accent-rgb) / 0.06) 100%);
+  color: rgb(var(--accent-light-rgb) / 1);
+  box-shadow: 0 0 32px -10px rgb(var(--accent-rgb) / 0.45), 0 1px 0 rgb(var(--accent-rgb) / 0.2) inset;
+}
+.settings-chip-active:hover {
+  border-color: rgb(var(--accent-rgb) / 0.55);
+  color: white;
+}
+
+.settings-chip-sm {
+  padding: 0.5rem 0.75rem;
+  font-size: 0.6875rem;
+  font-weight: 500;
+  text-transform: capitalize;
+}
+
+.settings-row-tile {
+  border-radius: 0.75rem;
+  border: 1px solid rgba(255, 255, 255, 0.09);
+  background: linear-gradient(135deg, rgba(255, 255, 255, 0.05) 0%, rgba(0, 0, 0, 0.25) 100%);
+  padding: 1rem 1.25rem;
+  backdrop-filter: blur(10px);
+  box-shadow: 0 1px 0 rgba(255, 255, 255, 0.04) inset;
+  transition: border-color 0.2s ease, background 0.2s ease;
+}
+.settings-row-tile:hover {
+  border-color: rgba(255, 255, 255, 0.12);
+}
