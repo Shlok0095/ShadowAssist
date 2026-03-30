@@ -1,0 +1,2 @@
+# ShadowAssist
+A meeting companion
