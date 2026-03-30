@@ -1,5 +1,8 @@
 # ShadowAssist v2
 
+[![Latest release](https://img.shields.io/github/v/release/Shlok0095/ShadowAssist?label=release)](https://github.com/Shlok0095/ShadowAssist/releases/latest)
+[![Landing site](https://img.shields.io/badge/site-landing-7c6cf0)](https://shlok0095.github.io/ShadowAssist/)
+
 Undetectable AI for live meetings — discreet on-screen meeting assistant (React, Tailwind, Electron).
 
 ## Quick start (Windows)
@@ -40,8 +43,24 @@ The app often **stays in the system tray** after you close the overlay. Either:
 
 End-to-end checklist: [docs/LAUNCH_END_TO_END.md](docs/LAUNCH_END_TO_END.md).
 
-- **Landing page:** static files in `landing/` — edit `site-config.js`, then deploy the folder to any host.
-- **CI:** push the repo to GitHub and use `.github/workflows/release-windows.yml` (tag `v*.*.*` to attach binaries to a release).
+### Landing on GitHub Pages
+
+1. Repo **Settings** → **Pages** → **Build and deployment** → Source: **GitHub Actions**.
+2. Merge/push to **`stag`** (or run workflow **Deploy landing to GitHub Pages** manually). Workflow: `.github/workflows/deploy-landing.yml`.
+3. Public URL (this repo): **https://shlok0095.github.io/ShadowAssist/** — download buttons work after you publish a **Release** with the `.exe` assets (see below).
+
+### Windows release binaries
+
+When `package.json` is at **2.0.0**, create and push a matching tag so CI builds and attaches artifacts:
+
+```powershell
+git tag v2.0.0
+git push origin v2.0.0
+```
+
+Workflow: **Release Windows** (`.github/workflows/release-windows.yml`). You can also run it from the **Actions** tab without a tag to download artifacts only; tags create the GitHub Release with notes + portable + installer + `SHA256SUMS.txt`.
+
+**Before tagging:** run `npm run dist:release` locally once if you want to sanity-check the build; CI does the official build.
 
 ### GitHub: make `stag` the default branch
 

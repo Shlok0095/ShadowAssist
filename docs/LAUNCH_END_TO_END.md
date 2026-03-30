@@ -64,9 +64,11 @@ Steps:
    Copy-Item legal\*.txt landing\legal\
    ```
 
-3. Deploy the **contents** of `landing/` to any static host (Netlify, Vercel, Cloudflare Pages, GitHub Pages, S3 + CloudFront, etc.). No build step required.
+3. **GitHub Pages (in this repo):** Settings → **Pages** → Source: **GitHub Actions**. Pushes to **`stag`** run `.github/workflows/deploy-landing.yml`. URL shape: `https://<github-username>.github.io/ShadowAssist/` (e.g. **https://shlok0095.github.io/ShadowAssist/**).
 
-4. After each release, if you hard-coded the installer URL with a version in `site-config.js`, update the version string to match `package.json`.
+4. Or deploy the **contents** of `landing/` to any static host (Netlify, Vercel, Cloudflare, S3 + CloudFront, etc.). No build step required.
+
+5. After each release, if you hard-coded the installer URL with a version in `site-config.js`, update the version string to match `package.json`.
 
 **Stable download pattern:** Linking to `https://github.com/<owner>/<repo>/releases/latest` avoids updating the portable filename if you always attach `ShadowAssist.exe` with that exact name.
 
@@ -80,6 +82,7 @@ Steps:
 - [ ] `npm run dist:release` succeeds on a clean machine or CI.
 - [ ] `SHA256SUMS.txt` published alongside binaries; optional: tweet/post the hashes.
 - [ ] Landing `site-config.js` URLs updated; legal links work.
+- [ ] GitHub Pages uses **GitHub Actions**; **Deploy landing** workflow has run at least once.
 - [ ] Release notes mention Windows version, API keys (BYOK), and support channel.
 - [ ] SmartScreen / antivirus: expect false positives on new unsigned builds; signing helps.
 
