@@ -30,6 +30,10 @@
     },
     "extraResources": [
       {
+        "from": "build/app.ico",
+        "to": "app.ico"
+      },
+      {
         "from": "logo.png",
         "to": "logo.png"
       },
