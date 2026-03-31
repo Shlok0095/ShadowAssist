@@ -3,12 +3,10 @@ name: Deploy landing to GitHub Pages
 
 on:
   push:
-    branches: ['stag']
-    paths:
-      - 'landing/**'
-      - 'HOW_IT_WORKS.md'
-      - 'legal/**'
-      - '.github/workflows/deploy-landing.yml'
+    branches:
+      - stag
+    # No path filter: any stag push redeploys Pages so workflow always appears in Actions
+    # when you expect it. (Content still comes from repo; no-op rebuilds are cheap.)
   workflow_dispatch:
 
 permissions:

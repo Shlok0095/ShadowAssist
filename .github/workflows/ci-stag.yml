@@ -1,0 +1,18 @@
+# Lightweight check so every push to `stag` shows up under Actions (no path filters).
+name: CI (stag)
+
+on:
+  push:
+    branches:
+      - stag
+  workflow_dispatch:
+
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Stag push received
+        run: |
+          echo "branch=${{ github.ref_name }} sha=${{ github.sha }}"
+          echo "If you see this run, Actions is firing for stag pushes."
