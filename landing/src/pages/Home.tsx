@@ -1,4 +1,4 @@
-import { useEffect, type CSSProperties } from 'react'
+import { useEffect } from 'react'
 import { Link } from 'react-router-dom'
 import { motion } from 'framer-motion'
 import { FaqAccordion } from '@/components/FaqAccordion'
@@ -6,42 +6,40 @@ import { SITE } from '@/config/site'
 import { fetchLatestPortableUrl, fetchLatestSetupUrl } from '@/lib/releases'
 
 const fadeUp = {
-  initial: { opacity: 0, y: 18 },
+  initial: { opacity: 0, y: 20 },
   whileInView: { opacity: 1, y: 0 },
-  viewport: { once: true, margin: '-50px' },
-  transition: { duration: 0.5, ease: [0.22, 1, 0.36, 1] },
+  viewport: { once: true, margin: '-40px' },
+  transition: { duration: 0.45, ease: [0.22, 1, 0.36, 1] },
 }
 
-const bento = [
+const fourWays = [
   {
-    span: 2 as const,
-    c: '#5eead4',
-    h: 'Answers beside your work',
-    p: 'A translucent panel on your desktop — not another face in the meeting roster.',
+    h: 'Answers while you stay in the flow',
+    p: 'Streamed replies in a floating panel — use hotkeys so you never hunt for buttons mid-call.',
   },
   {
-    span: 1 as const,
-    c: '#a78bfa',
-    h: 'Hotkeys',
-    p: 'Show, hide, ask, and clear without hunting for buttons.',
+    h: 'Optional session & screen context',
+    p: 'Turn on listening or desktop context when you want it; disclosures are clear in the app.',
   },
   {
-    span: 1 as const,
-    c: '#fcd34d',
-    h: 'Session audio',
-    p: 'Optional mic & system capture when you turn it on.',
+    h: 'Bring your own API keys',
+    p: 'Groq, OpenAI-compatible endpoints, or NVIDIA NIM. Nothing is pre-filled in the installer.',
   },
   {
-    span: 2 as const,
-    c: '#67e8f9',
-    h: 'Your vendor, your keys',
-    p: 'Groq, OpenAI-compatible APIs, or NVIDIA NIM. Nothing embedded in the installer.',
+    h: 'Portable or full Windows setup',
+    p: 'Single portable .exe, or an NSIS wizard with terms, folder choice, and optional shortcuts.',
+  },
+]
+
+const demoBlocks = [
+  {
+    prompt: 'Summarize the last agenda block in three bullets.',
+    answer:
+      '• Thursday design deadline\n• Legal review before client sync\n• Finance to confirm headcount by EOW',
   },
   {
-    span: 3 as const,
-    c: '#94a3b8',
-    h: 'Portable or full setup',
-    p: 'One-file portable .exe, or an NSIS wizard with terms, folder choice, and optional desktop shortcut.',
+    prompt: 'What commitment did they repeat at the end?',
+    answer: 'They reiterated a phased pilot in two regions, then expansion after a 30-day checkpoint.',
   },
 ]
 
@@ -70,117 +68,58 @@ export function Home() {
 
   return (
     <>
-      <section className="hero hero--split">
-        <div className="hero-copy">
-          <motion.p className="hero-kicker" {...fadeUp}>
-            <span className="hero-kicker__mark" aria-hidden>
-              ◆
-            </span>
-            Native Windows · Open releases on GitHub · Bring your own API keys
-          </motion.p>
-          <motion.h1 className="hero-title" {...fadeUp} transition={{ ...fadeUp.transition, delay: 0.05 }}>
-            <span className="hero-title__line">Meeting help that stays</span>
-            <span className="hero-title__gradient">on your screen</span>
-            <span className="hero-title__line hero-title__line--sub">— not in the participant list.</span>
+      <section className="hero hero--cluely">
+        <div className="hero-cluely-inner">
+          <motion.h1 className="hero-cluely-title" {...fadeUp}>
+            Live meeting help
+            <span className="hero-cluely-title__accent"> on your desktop</span>
           </motion.h1>
-          <motion.p className="lede lede--hero" {...fadeUp} transition={{ ...fadeUp.transition, delay: 0.1 }}>
-            ShadowAssist is a local overlay for notes, quick answers, and optional session context. You plug in{' '}
-            <strong>your</strong> provider keys; traffic goes straight there — we don’t sit in the middle.
+          <motion.hr className="hero-cluely-rule" {...fadeUp} transition={{ ...fadeUp.transition, delay: 0.04 }} />
+          <motion.p className="hero-cluely-sub" {...fadeUp} transition={{ ...fadeUp.transition, delay: 0.06 }}>
+            ShadowAssist keeps concise answers and notes beside your work — without adding another participant to the
+            call. You supply <strong>your own</strong> AI keys; requests go straight to the vendor you trust.
           </motion.p>
-          <motion.div className="cta" {...fadeUp} transition={{ ...fadeUp.transition, delay: 0.14 }}>
-            <a className="btn primary btn--lg" href={SITE.releasesLatestUrl} id="cta-installer">
-              Get the installer
+          <motion.div className="hero-cluely-cta" {...fadeUp} transition={{ ...fadeUp.transition, delay: 0.1 }}>
+            <a className="btn btn-cluely-primary" href={SITE.releasesLatestUrl} id="cta-installer">
+              Download for Windows
             </a>
-            <a className="btn secondary btn--lg" href={SITE.releasesLatestUrl} id="cta-portable">
-              Portable .exe
+            <a className="btn btn-cluely-secondary" href={SITE.releasesLatestUrl} id="cta-portable">
+              Get portable .exe
             </a>
-            <Link className="btn ghost btn--lg" to="/docs/getting-started">
-              Read the guide
-            </Link>
           </motion.div>
-          <motion.p className="fine fine--hero" {...fadeUp} transition={{ ...fadeUp.transition, delay: 0.18 }}>
+          <motion.p className="hero-cluely-meta" {...fadeUp} transition={{ ...fadeUp.transition, delay: 0.14 }}>
             <a href={SITE.repoUrl} target="_blank" rel="noreferrer">
-              Source &amp; releases
+              GitHub
             </a>
             {' · '}
-            <Link to="/docs/how-it-works">Technical overview</Link>
+            <Link to="/docs/getting-started">Setup guide</Link>
             {' · '}
-            SHA256 files on every release
+            <Link to="/docs/how-it-works">How it works</Link>
           </motion.p>
         </div>
+      </section>
 
-        <motion.div
-          className="hero-visual hero-visual--lift"
-          aria-hidden
-          initial={{ opacity: 0, y: 24 }}
-          animate={{ opacity: 1, y: 0 }}
-          transition={{ duration: 0.65, ease: [0.22, 1, 0.36, 1] }}
-        >
-          <div className="mock-card mock-card--rich glass-panel">
-            <div className="mock-bar">
-              <span className="mock-dot" />
-              <span className="mock-dot" />
-              <span className="mock-dot" />
-              <span className="mock-title">ShadowAssist</span>
+      <section className="cluely-demo" aria-label="Product preview">
+        <div className="cluely-demo__wrap">
+          {demoBlocks.map((d) => (
+            <div key={d.prompt} className="cluely-demo__block">
+              <p className="cluely-demo__prompt">{d.prompt}</p>
+              <blockquote className="cluely-demo__quote">{d.answer}</blockquote>
             </div>
-            <div className="mock-body mock-body--chat">
-              <div className="mock-bubble mock-bubble--user">
-                <span className="mock-bubble__label">You</span>
-                What&apos;s the action item the PM just mentioned?
-              </div>
-              <div className="mock-bubble mock-bubble--ai">
-                <span className="mock-bubble__label">Assistant</span>
-                They asked design for revised mockups by Thursday and to loop in legal before the client sync.
-              </div>
-              <div className="mock-toolbar">
-                <span className="mock-chip">Ctrl+Enter · Ask</span>
-                <span className="mock-chip mock-chip--muted">Streaming reply</span>
-              </div>
-            </div>
-          </div>
-          <p className="mock-caption">Glass overlay · stays on your display · your keys only</p>
-        </motion.div>
-      </section>
-
-      <section className="metrics glass-panel">
-        <div className="metrics__item">
-          <span className="metrics__val">Win 10+</span>
-          <span className="metrics__label">64-bit desktop app</span>
-        </div>
-        <div className="metrics__divider" aria-hidden />
-        <div className="metrics__item">
-          <span className="metrics__val">BYOK</span>
-          <span className="metrics__label">No vendor keys in the download</span>
-        </div>
-        <div className="metrics__divider" aria-hidden />
-        <div className="metrics__item">
-          <span className="metrics__val">Local UI</span>
-          <span className="metrics__label">Electron + React on your PC</span>
+          ))}
+          <p className="cluely-demo__label">Contextual follow-ups</p>
+          <p className="cluely-demo__hint">Dig into the thread or what&apos;s on screen — always with your own API keys.</p>
         </div>
       </section>
 
-      <section className="strip glass-strip">
-        <span>Open-source friendly distribution</span>
-        <span className="strip-dot">·</span>
-        <span>In-app consent &amp; disclosures</span>
-        <span className="strip-dot">·</span>
-        <Link to="/docs">All docs hosted here</Link>
-      </section>
-
-      <motion.section id="features" className="section section--tight-top" {...fadeUp}>
-        <p className="section-eyebrow">Product</p>
-        <h2 className="section-title">Why teams try a screen-side assistant</h2>
-        <p className="section-sub">
-          Same job-to-be-done as a polished meeting tool — different shape: yours runs next to Zoom/Meet/Teams instead of
-          joining as a bot.
+      <motion.section id="features" className="section section-cluely" {...fadeUp}>
+        <h2 className="section-cluely-title">What you get with ShadowAssist</h2>
+        <p className="section-cluely-lead">
+          Fast context on video calls without juggling extra tabs — built for Windows power users.
         </p>
-        <div className="bento-grid">
-          {bento.map((f) => (
-            <article
-              key={f.h}
-              className={`bento-card glass-panel bento-span-${f.span}`}
-            >
-              <div className="bento-card__accent" style={{ '--bc': f.c } as CSSProperties} />
+        <div className="four-grid">
+          {fourWays.map((f) => (
+            <article key={f.h} className="four-card">
               <h3>{f.h}</h3>
               <p>{f.p}</p>
             </article>
@@ -188,142 +127,176 @@ export function Home() {
         </div>
       </motion.section>
 
-      <motion.section id="compare" className="section" {...fadeUp}>
-        <p className="section-eyebrow">Contrast</p>
-        <h2 className="section-title">Not another calendar guest</h2>
-        <p className="section-sub">
-          Many assistants join the call as a visible participant. ShadowAssist is intentionally different — use it
-          only where policy allows.
-        </p>
-        <div className="compare">
-          <div className="compare__col glass-panel">
-            <h3 className="compare__h">Typical cloud notetakers</h3>
-            <ul className="compare__list">
-              <li>Join as &quot;AI&quot; or bot user in the roster</li>
-              <li>Often obvious on screen shares and recordings</li>
-              <li>Hosted flow; you trust their stack end-to-end</li>
-            </ul>
-          </div>
-          <div className="compare__col compare__col--hi glass-panel">
-            <h3 className="compare__h">ShadowAssist</h3>
-            <ul className="compare__list">
-              <li>Lives on your desktop as a floating panel</li>
-              <li>Designed for a low visual footprint; optional stealth mode</li>
-              <li>You choose the AI vendor and paste your own key</li>
-            </ul>
-          </div>
-        </div>
-      </motion.section>
-
-      <section id="byok" className="section section-tint">
-        <div className="two-col">
-          <motion.div {...fadeUp}>
-            <p className="section-eyebrow">Trust</p>
-            <h2 className="section-title">Bring your own API keys</h2>
-            <p className="section-sub left">
-              We <strong>never</strong> ship Groq, OpenAI, or NVIDIA credentials inside the app. First launch: legal
-              consent, then onboarding with a live connection test.
-            </p>
-            <ul className="checklist">
-              <li>Secrets stay under your Windows user profile.</li>
-              <li>Reset from Settings or uninstall when you need a clean slate.</li>
-              <li>
-                <Link to="/legal/terms">Terms</Link> · <Link to="/legal/privacy">Privacy</Link>
-              </li>
-            </ul>
-          </motion.div>
-          <motion.div className="panel-highlight glass-panel" {...fadeUp} transition={{ ...fadeUp.transition, delay: 0.08 }}>
-            <h3>First-run checklist</h3>
-            <ol className="steps-bold">
-              <li>Complete every consent checkbox.</li>
-              <li>Pick a provider and paste your key.</li>
-              <li>Run Test until it passes.</li>
-              <li>Confirm BYOK notices, then open the overlay.</li>
-            </ol>
-          </motion.div>
-        </div>
-      </section>
-
-      <motion.section className="section" {...fadeUp}>
-        <p className="section-eyebrow">Start here</p>
-        <h2 className="section-title">Three steps</h2>
-        <div className="steps-row">
+      <motion.section className="section section-cluely section-cluely--soft" {...fadeUp}>
+        <h2 className="section-cluely-title">Up and running in three steps</h2>
+        <p className="section-cluely-lead">The shortest path from download to your first live answer.</p>
+        <div className="cluely-steps">
           {[
-            { n: '1', h: 'Grab a build', p: 'Installer for a full wizard, or portable for instant run.' },
-            { n: '2', h: 'Connect', p: 'Consent, key, and test — all inside the app.' },
-            { n: '3', h: 'Use it live', p: 'Hotkeys during calls; tune models and privacy in Settings.' },
+            {
+              n: '1',
+              t: 'Install ShadowAssist',
+              d: 'Run the setup wizard or the portable .exe — your choice.',
+            },
+            {
+              n: '2',
+              t: 'Connect your provider',
+              d: 'Consent, paste your API key, and pass the built-in connection test.',
+            },
+            {
+              n: '3',
+              t: 'Use it on the call',
+              d: 'Hotkeys toggle the overlay; adjust models and privacy in Settings.',
+            },
           ].map((s) => (
-            <div key={s.n} className="step-card glass-panel">
-              <span className="step-num">{s.n}</span>
-              <h3>{s.h}</h3>
-              <p>{s.p}</p>
+            <div key={s.n} className="cluely-step">
+              <span className="cluely-step__num">{s.n}</span>
+              <h3 className="cluely-step__title">{s.t}</h3>
+              <p className="cluely-step__desc">{s.d}</p>
             </div>
           ))}
         </div>
       </motion.section>
 
-      <motion.section className="section section--narrow-metrics" {...fadeUp}>
-        <h2 className="section-title">Requirements</h2>
-        <ul className="list-inline">
-          <li>Windows 10 or newer (64-bit)</li>
+      <motion.section id="compare" className="section section-cluely" {...fadeUp}>
+        <h2 className="section-cluely-title">On your screen — not on the guest list</h2>
+        <p className="section-cluely-lead">
+          A lot of assistants join as another attendee. ShadowAssist lives on your desktop; use it only where policy allows.
+        </p>
+        <div className="compare-visual">
+          <div className="compare-visual__lane compare-visual__lane--muted">
+            <span className="compare-visual__tag">Typical AI notetakers</span>
+            <p className="compare-visual__text">Joins the roster as an app or &quot;AI&quot; guest</p>
+          </div>
+          <div className="compare-visual__lane compare-visual__lane--hi">
+            <span className="compare-visual__tag compare-visual__tag--hi">ShadowAssist</span>
+            <p className="compare-visual__text">Floating panel on your desktop — visible to you</p>
+          </div>
+        </div>
+        <div className="compare compare--cluely">
+          <div className="compare__col compare__col--plain">
+            <h3 className="compare__h">Cloud notetaker flow</h3>
+            <ul className="compare__list">
+              <li>Often appears in the participant list</li>
+              <li>Easy to spot on recordings and screen shares</li>
+              <li>You route audio/transcript through their stack</li>
+            </ul>
+          </div>
+          <div className="compare__col compare__col--emph">
+            <h3 className="compare__h">ShadowAssist</h3>
+            <ul className="compare__list">
+              <li>Native Windows overlay + system tray</li>
+              <li>Designed for a smaller on-screen footprint</li>
+              <li>BYOK — traffic goes to the API you configure</li>
+            </ul>
+          </div>
+        </div>
+      </motion.section>
+
+      <section className="cluely-stats">
+        <div className="cluely-stats__grid">
+          <div className="cluely-stat">
+            <span className="cluely-stat__n">3+</span>
+            <span className="cluely-stat__k">Provider styles</span>
+            <p className="cluely-stat__p">Groq, OpenAI-compatible APIs, NVIDIA NIM — wire up what your org approves.</p>
+          </div>
+          <div className="cluely-stat">
+            <span className="cluely-stat__n">0</span>
+            <span className="cluely-stat__k">Bundled API keys</span>
+            <p className="cluely-stat__p">The download never ships vendor secrets; you paste your own after install.</p>
+          </div>
+          <div className="cluely-stat">
+            <span className="cluely-stat__n">100%</span>
+            <span className="cluely-stat__k">Your chosen vendor</span>
+            <p className="cluely-stat__p">Completions are requested from the endpoint you pick — we don&apos;t proxy prompts.</p>
+          </div>
+        </div>
+      </section>
+
+      <section id="byok" className="section section-cluely--soft byok-strip">
+        <div className="two-col two-col--cluely">
+          <motion.div {...fadeUp}>
+            <h2 className="byok-strip__title">Bring your own keys</h2>
+            <p className="byok-strip__lead">
+              Legal consent on first launch, then onboarding with a live test. Keys live in your Windows profile.
+            </p>
+            <ul className="checklist checklist--cluely">
+              <li>Delete data or uninstall when you need a reset.</li>
+              <li>
+                <Link to="/legal/terms">Terms</Link> · <Link to="/legal/privacy">Privacy</Link>
+              </li>
+            </ul>
+          </motion.div>
+          <motion.div className="panel-cluely" {...fadeUp} transition={{ ...fadeUp.transition, delay: 0.06 }}>
+            <h3>First-run checklist</h3>
+            <ol className="steps-bold">
+              <li>Complete every consent checkbox.</li>
+              <li>Choose provider and paste your key.</li>
+              <li>Run Test until it succeeds.</li>
+              <li>Open the overlay and join your call.</li>
+            </ol>
+          </motion.div>
+        </div>
+      </section>
+
+      <motion.section className="section section-cluely" {...fadeUp}>
+        <h2 className="section-cluely-title">Requirements</h2>
+        <ul className="list-inline list-inline--cluely">
+          <li>Windows 10+ (64-bit)</li>
           <li>Account + API key with a supported provider</li>
-          <li>Microphone access if you enable listening</li>
+          <li>Microphone permission if you use session listening</li>
         </ul>
       </motion.section>
 
-      <section id="faq" className="section section-narrow">
+      <section id="faq" className="section section-narrow section-cluely-faq">
         <motion.div {...fadeUp}>
-          <p className="section-eyebrow">FAQ</p>
-          <h2 className="section-title">Common questions</h2>
+          <h2 className="section-cluely-title">Frequently asked questions</h2>
         </motion.div>
         <FaqAccordion
           items={[
             {
               q: 'Are API keys inside the download?',
-              a: 'No. You supply credentials after install; nothing is pre-filled.',
+              a: 'No. You add credentials after install.',
             },
             {
-              q: 'Will other people “not see” my assistant?',
-              a: 'We aim for a discreet overlay, but we can’t promise others won’t infer use. Follow your org and platform rules.',
+              q: 'Will others fail to notice I’m using it?',
+              a: 'We aim for a discreet overlay but can’t guarantee invisibility. Follow your org and platform rules.',
             },
             {
-              q: 'Where do prompts run?',
+              q: 'Where are prompts processed?',
               a: (
                 <>
-                  To whichever provider you configure. See <Link to="/legal/privacy">privacy</Link> for how that fits
-                  together.
+                  At the AI provider you configure. See <Link to="/legal/privacy">privacy</Link>.
                 </>
               ),
             },
             {
-              q: 'Why does Windows SmartScreen complain?',
-              a: 'New or unsigned executables are often flagged. Compare against SHA256SUMS.txt on the release when you can.',
+              q: 'Why does SmartScreen warn?',
+              a: 'New unsigned Windows builds are often flagged. Use SHA256SUMS.txt on the release when you can.',
             },
             {
               q: 'Installer vs portable?',
-              a: 'Portable is one file. The installer adds shortcuts, uninstall entry, and runs through your license text.',
+              a: 'Portable is one file. The installer adds shortcuts and an uninstall entry.',
             },
             {
-              q: 'Desktop shortcut optional?',
-              a: 'Yes — the NSIS finish page has a checkbox; leave it off if you prefer a clean desktop.',
+              q: 'Skip the desktop shortcut?',
+              a: 'Yes — the installer finish page includes an optional checkbox.',
             },
           ]}
         />
       </section>
 
-      <section className="cta-band" aria-labelledby="cta-band-heading">
-        <div className="cta-band__mesh" aria-hidden />
+      <section className="cta-band cta-band--cluely" aria-labelledby="cta-band-heading">
         <div className="cta-band__inner">
           <h2 id="cta-band-heading" className="cta-band__title">
-            Built for people who live in meetings
+            Answers beside your next call — with your keys.
           </h2>
-          <p className="cta-band__sub">Download the latest Windows build, verify the hash, and you’re running in minutes.</p>
+          <p className="cta-band__sub">Download the latest Windows build and follow the setup guide.</p>
           <div className="cta-band__actions">
-            <a className="btn primary btn--xl" href={SITE.releasesLatestUrl} id="cta-band-installer">
+            <a className="btn btn-cluely-inverse" href={SITE.releasesLatestUrl} id="cta-band-installer">
               Download for Windows
             </a>
-            <Link className="btn ghost btn--xl cta-band__ghost" to="/docs/getting-started">
-              Setup walkthrough
+            <Link className="btn btn-cluely-ghost" to="/docs/getting-started">
+              Read the guide
             </Link>
           </div>
         </div>
