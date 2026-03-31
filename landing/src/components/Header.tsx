@@ -38,6 +38,9 @@ export function Header() {
             <a className="nav-link" href={hashHref('features')}>
               Product
             </a>
+            <a className="nav-link" href={hashHref('compare')}>
+              Compare
+            </a>
             <a className="nav-link" href={hashHref('byok')}>
               BYOK
             </a>
