@@ -1,6 +1,9 @@
 import { Navigate, Route, Routes } from 'react-router-dom'
 import { Shell } from '@/components/Shell'
+import { DocsLayout } from '@/components/DocsLayout'
 import { DocsHome } from '@/pages/DocsHome'
+import { DocsGettingStarted } from '@/pages/DocsGettingStarted'
+import { DocsShipping } from '@/pages/DocsShipping'
 import { Home } from '@/pages/Home'
 import { HowItWorks } from '@/pages/HowItWorks'
 import { LegalPage } from '@/pages/LegalPage'
@@ -12,8 +15,12 @@ export default function App() {
     <Routes>
       <Route element={<Shell />}>
         <Route index element={<Home />} />
-        <Route path="docs" element={<DocsHome />} />
-        <Route path="docs/how-it-works" element={<HowItWorks />} />
+        <Route path="docs" element={<DocsLayout />}>
+          <Route index element={<DocsHome />} />
+          <Route path="getting-started" element={<DocsGettingStarted />} />
+          <Route path="how-it-works" element={<HowItWorks />} />
+          <Route path="shipping" element={<DocsShipping />} />
+        </Route>
         <Route
           path="legal/terms"
           element={<LegalPage title="Terms of service" crumb="Terms" body={terms} />}

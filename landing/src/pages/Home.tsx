@@ -62,9 +62,9 @@ export function Home() {
           </motion.div>
           <p className="fine">
             <strong>Installer</strong> — Windows setup, terms, folder, shortcuts. <strong>Portable</strong> — single{' '}
-            <code>.exe</code>, no wizard. <a href={SITE.releasesLatestUrl}>Releases</a> · SHA256 on each release · First
-            launch: consent + API setup. Full walkthrough in{' '}
-            <Link to="/docs/how-it-works">How it works</Link>.
+            <code>.exe</code>, no wizard. Binaries on <a href={SITE.releasesLatestUrl}>GitHub Releases</a> · SHA256 on each
+            release · First launch: consent + API setup. Start with{' '}
+            <Link to="/docs/getting-started">Getting started</Link> or <Link to="/docs/how-it-works">How it works</Link>.
           </p>
         </div>
         <motion.div className="hero-visual" aria-hidden initial={{ opacity: 0, scale: 0.96 }} animate={{ opacity: 1, scale: 1 }} transition={{ duration: 0.5 }}>
@@ -96,14 +96,32 @@ export function Home() {
       <motion.section id="features" className="section" {...fadeUp}>
         <h2 className="section-title">Built for how you actually meet</h2>
         <p className="section-sub">Keyboard-first, low-friction, transparent about what leaves your machine.</p>
-        <div className="feature-grid">
+        <div className="feature-grid feature-grid--tight">
           {[
-            { c: '#7c6cf0', t: '⌘', h: 'Hotkey-driven', p: 'Toggle visibility, ask the model, clear thread, move the overlay without leaving your flow.' },
-            { c: '#22c55e', t: '◉', h: 'Session & screen', p: 'Optional mic and desktop context when you enable them — with clear in-app disclosures.' },
-            { c: '#38bdf8', t: '◇', h: 'Multiple providers', p: 'Groq, OpenAI-compatible, NVIDIA NIM — pick what your org allows.' },
-            { c: '#f472b6', t: '✦', h: 'Stealth option', p: 'Content protection to reduce capture in thumbnails and some recorders when you need discretion.' },
-            { c: '#fbbf24', t: '⚡', h: 'Fast local UI', p: 'Electron + React on your PC. Inference goes straight to the vendor you configured.' },
-            { c: '#94a3b8', t: '⬡', h: 'Portable or installer', p: 'Single portable .exe or NSIS setup — same app, your choice.' },
+            {
+              c: '#7c6cf0',
+              t: '⌘',
+              h: 'Hotkey-first',
+              p: 'Toggle the overlay, ask, clear thread, and reposition without leaving your meeting flow.',
+            },
+            {
+              c: '#22c55e',
+              t: '◉',
+              h: 'Session + screen',
+              p: 'Optional mic, system audio, and on-screen context — only when you enable them.',
+            },
+            {
+              c: '#38bdf8',
+              t: '◇',
+              h: 'Your keys only',
+              p: 'Groq, OpenAI-compatible, or NVIDIA NIM. No vendor credentials ship in the download.',
+            },
+            {
+              c: '#f472b6',
+              t: '✦',
+              h: 'Discreet & flexible',
+              p: 'Translucent UI, optional stealth, portable .exe or full installer — your choice.',
+            },
           ].map((f) => (
             <article key={f.h} className="feature-card glass-panel">
               <div className="feature-icon" style={{ '--c': f.c } as CSSProperties}>

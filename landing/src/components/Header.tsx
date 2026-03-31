@@ -1,5 +1,5 @@
 import { useEffect } from 'react'
-import { NavLink } from 'react-router-dom'
+import { NavLink, useLocation } from 'react-router-dom'
 import { SITE } from '@/config/site'
 import { fetchLatestSetupUrl } from '@/lib/releases'
 
@@ -12,6 +12,9 @@ function hashHref(id: string) {
 }
 
 export function Header() {
+  const { pathname } = useLocation()
+  const isHome = pathname === '/' || pathname === ''
+
   useEffect(() => {
     const el = document.getElementById('nav-download-smart')
     if (!el) return
@@ -30,18 +33,22 @@ export function Header() {
         {SITE.name}
       </NavLink>
       <nav className="nav">
-        <a className="nav-link" href={hashHref('features')}>
-          Product
-        </a>
-        <a className="nav-link" href={hashHref('byok')}>
-          BYOK
-        </a>
+        {isHome ? (
+          <>
+            <a className="nav-link" href={hashHref('features')}>
+              Product
+            </a>
+            <a className="nav-link" href={hashHref('byok')}>
+              BYOK
+            </a>
+            <a className="nav-link" href={hashHref('faq')}>
+              FAQ
+            </a>
+          </>
+        ) : null}
         <NavLink to="/docs" className={navCls}>
           Docs
         </NavLink>
-        <a className="nav-link" href={hashHref('faq')}>
-          FAQ
-        </a>
         <a className="nav-link nav-cta" href={SITE.releasesLatestUrl} id="nav-download-smart">
           Download
         </a>
