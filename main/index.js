@@ -221,10 +221,15 @@ function applyContentProtectionAllWindows() {
  * Desktop thumbnails pick up the overlay like any other window. Stealth already uses
  * setContentProtection to hide from capture; in normal mode we briefly enable it on the overlay
  * only while grabbing the screen so OCR/vision match “no overlay in shot” without full Stealth.
+ *
+ * Toggling protection while the overlay is visible causes noticeable compositor flicker on Windows
+ * (and some GPUs) every OCR tick. Skip the flash when the user can see the panel; OCR may include
+ * overlay pixels — routing prompts already tell the model to ignore the assistant’s own UI.
  */
 async function withOverlayExcludedFromScreenCapture(fn) {
   if (!overlayWindow || overlayWindow.isDestroyed()) return fn()
   if (isStealthModeEnabled()) return fn()
+  if (overlayVisible) return fn()
   try {
     overlayWindow.setContentProtection(true)
     await new Promise((r) => setTimeout(r, 80))
