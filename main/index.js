@@ -962,7 +962,11 @@ function setupIPC() {
 
 async function initApp() {
   const { session } = require('electron')
-  session.defaultSession.setPermissionRequestHandler((_, permission, cb) => cb(['media', 'display-capture', 'screen'].includes(permission)))
+  /** Packaged `file://` overlay: Chromium checks permissions before requesting; without this, mic/desktop capture can fail silently (dev often still works). */
+  session.defaultSession.setPermissionCheckHandler((_wc, permission) => permission === 'media')
+  session.defaultSession.setPermissionRequestHandler((_, permission, cb) =>
+    cb(['media', 'display-capture', 'screen', 'speaker-selection'].includes(permission)),
+  )
   session.defaultSession.setDisplayMediaRequestHandler((request, callback) => {
     desktopCapturer.getSources({ types: ['screen'] }).then(s => callback({ video: s[0], audio: 'loopback' })).catch(() => callback({}))
   })

@@ -1,6 +1,34 @@
 ; Custom NSIS: desktop shortcut only if the user checks the box on the finish page.
 ; Requires nsis.createDesktopShortcut = false so the install section does not create it early.
 ; customUnInstall removes the shortcut because DO_NOT_CREATE_DESKTOP_SHORTCUT disables the stock uninstall cleanup.
+;
+; Stock electron-builder always sets shortcut icons to the .exe (Electron logo). We repoint to app.ico
+; after files are on disk (customInstall + finish page).
+
+; UNIQ suffix avoids duplicate labels when this macro is expanded more than once.
+!macro resolveSaIconPath UNIQ
+  StrCpy $R9 ""
+  IfFileExists "$INSTDIR\app.ico" sa_res_root_${UNIQ}
+  IfFileExists "$INSTDIR\resources\app.ico" sa_res_res_${UNIQ}
+  Goto sa_res_done_${UNIQ}
+sa_res_root_${UNIQ}:
+  StrCpy $R9 "$INSTDIR\app.ico"
+  Goto sa_res_done_${UNIQ}
+sa_res_res_${UNIQ}:
+  StrCpy $R9 "$INSTDIR\resources\app.ico"
+sa_res_done_${UNIQ}:
+!macroend
+
+!macro customInstall
+  Push $R9
+  !insertmacro resolveSaIconPath ci
+  StrCmp $R9 "" sa_ci_pop
+  IfFileExists "$newStartMenuLink" 0 sa_ci_pop
+  CreateShortCut "$newStartMenuLink" "$appExe" "" "$R9" 0 "" "" ""
+  WinShell::SetLnkAUMI "$newStartMenuLink" "${APP_ID}"
+sa_ci_pop:
+  Pop $R9
+!macroend
 
 !macro customFinishPage
   ; Finish-page checkbox: optional desktop shortcut with SA icon (not created unless user ticks this).
@@ -10,16 +38,19 @@
   !define MUI_FINISHPAGE_SHOWREADME_FUNCTION ShadowAssist_FinishPage_CreateDesktopShortcut
 
   Function ShadowAssist_FinishPage_CreateDesktopShortcut
-    IfFileExists "$INSTDIR\${APP_EXECUTABLE_FILENAME}" +1 done
-    ; Prefer packaged app.ico so the shortcut shows SA branding even if the exe still has the default Electron icon.
-    IfFileExists "$INSTDIR\resources\app.ico" use_ico
-    CreateShortCut "$DESKTOP\${SHORTCUT_NAME}.lnk" "$INSTDIR\${APP_EXECUTABLE_FILENAME}" "" "$INSTDIR\${APP_EXECUTABLE_FILENAME}" 0 "" "" "${APP_DESCRIPTION}"
-    Goto sa_shortcut_done
-  use_ico:
-    CreateShortCut "$DESKTOP\${SHORTCUT_NAME}.lnk" "$INSTDIR\${APP_EXECUTABLE_FILENAME}" "" "$INSTDIR\resources\app.ico" 0 "" "" "${APP_DESCRIPTION}"
-  sa_shortcut_done:
+    Push $R9
+    IfFileExists "$INSTDIR\${APP_EXECUTABLE_FILENAME}" sa_fp_have_exe sa_fp_cleanup
+  sa_fp_have_exe:
+    !insertmacro resolveSaIconPath fp
+    StrCmp $R9 "" sa_fp_use_exe
+    CreateShortCut "$DESKTOP\${SHORTCUT_NAME}.lnk" "$INSTDIR\${APP_EXECUTABLE_FILENAME}" "" "$R9" 0 "" "" ""
+    Goto sa_fp_aumi
+  sa_fp_use_exe:
+    CreateShortCut "$DESKTOP\${SHORTCUT_NAME}.lnk" "$INSTDIR\${APP_EXECUTABLE_FILENAME}" "" "$INSTDIR\${APP_EXECUTABLE_FILENAME}" 0 "" "" ""
+  sa_fp_aumi:
     WinShell::SetLnkAUMI "$DESKTOP\${SHORTCUT_NAME}.lnk" "${APP_ID}"
-  done:
+  sa_fp_cleanup:
+    Pop $R9
   FunctionEnd
 
   !insertmacro MUI_PAGE_FINISH

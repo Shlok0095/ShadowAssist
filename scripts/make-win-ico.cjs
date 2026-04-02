@@ -21,6 +21,7 @@ pngToIco(logoPath)
   .then((buf) => {
     fs.writeFileSync(outIco, buf)
     console.log('[make-win-ico] Wrote', outIco)
+    process.exit(0)
   })
   .catch((err) => {
     console.error('[make-win-ico]', err)
