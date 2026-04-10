@@ -1,12 +1,10 @@
-# Serves landing/ at https://<user>.github.io/<repo>/ after you enable Pages (Source: GitHub Actions).
+# Serves landing at GitHub Pages (Source: GitHub Actions).
 name: Deploy landing to GitHub Pages
 
 on:
   push:
     branches:
       - stag
-    # No path filter: any stag push redeploys Pages so workflow always appears in Actions
-    # when you expect it. (Content still comes from repo; no-op rebuilds are cheap.)
   workflow_dispatch:
 
 permissions:
@@ -31,11 +29,11 @@ jobs:
         with:
           node-version: '20'
           cache: npm
-          cache-dependency-path: landing/package-lock.json
+          cache-dependency-path: shadowassist-electron/ShadowAssist/landing/package-lock.json
 
       - name: Build landing (Vite)
         run: npm ci && npm run build
-        working-directory: landing
+        working-directory: shadowassist-electron/ShadowAssist/landing
         env:
           VITE_BASE_PATH: '/${{ github.event.repository.name }}/'
           VITE_REPO_OWNER: ${{ github.repository_owner }}
@@ -46,7 +44,7 @@ jobs:
 
       - uses: actions/upload-pages-artifact@v3
         with:
-          path: landing/dist
+          path: shadowassist-electron/ShadowAssist/landing/dist
 
       - id: deployment
         uses: actions/deploy-pages@v4

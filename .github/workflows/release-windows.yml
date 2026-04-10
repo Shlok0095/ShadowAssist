@@ -23,6 +23,10 @@ concurrency:
 jobs:
   build-release:
     runs-on: windows-latest
+    defaults:
+      run:
+        working-directory: shadowassist-electron/ShadowAssist
+
     steps:
       - uses: actions/checkout@v4
 
@@ -30,6 +34,7 @@ jobs:
         with:
           node-version: '20'
           cache: npm
+          cache-dependency-path: shadowassist-electron/ShadowAssist/package-lock.json
 
       - run: npm ci
 
@@ -59,9 +64,9 @@ jobs:
           name: shadowassist-windows-${{ github.run_id }}
           if-no-files-found: warn
           path: |
-            dist/ShadowAssist.exe
-            dist/ShadowAssist-Setup*.exe
-            dist/SHA256SUMS.txt
+            shadowassist-electron/ShadowAssist/dist/ShadowAssist.exe
+            shadowassist-electron/ShadowAssist/dist/ShadowAssist-Setup*.exe
+            shadowassist-electron/ShadowAssist/dist/SHA256SUMS.txt
 
       - name: Rolling GitHub Release (every stag push)
         if: github.ref == 'refs/heads/stag'
@@ -85,9 +90,9 @@ jobs:
           replacesArtifacts: true
           artifactErrorsFailBuild: true
           artifacts: |
-            dist/ShadowAssist-Setup.exe
-            dist/ShadowAssist.exe
-            dist/SHA256SUMS.txt
+            shadowassist-electron/ShadowAssist/dist/ShadowAssist-Setup.exe
+            shadowassist-electron/ShadowAssist/dist/ShadowAssist.exe
+            shadowassist-electron/ShadowAssist/dist/SHA256SUMS.txt
 
       - name: Versioned GitHub Release (git tag v*.*.*)
         if: startsWith(github.ref, 'refs/tags/v')
@@ -95,8 +100,8 @@ jobs:
         with:
           generate_release_notes: true
           files: |
-            dist/ShadowAssist.exe
-            dist/ShadowAssist-Setup-*.exe
-            dist/SHA256SUMS.txt
+            shadowassist-electron/ShadowAssist/dist/ShadowAssist.exe
+            shadowassist-electron/ShadowAssist/dist/ShadowAssist-Setup-*.exe
+            shadowassist-electron/ShadowAssist/dist/SHA256SUMS.txt
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

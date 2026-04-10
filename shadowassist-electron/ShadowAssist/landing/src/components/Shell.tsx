@@ -1,10 +1,19 @@
 import { useEffect } from 'react'
-import { Outlet } from 'react-router-dom'
+import { Outlet, useLocation } from 'react-router-dom'
 import Lenis from 'lenis'
 import { Footer } from '@/components/Footer'
 import { Header } from '@/components/Header'
+import { cn } from '@/components/ui/cn'
 
 export function Shell() {
+  const { pathname } = useLocation()
+  const isHome = pathname === '/' || pathname === ''
+
+  useEffect(() => {
+    document.body.classList.toggle('marketing-dark', isHome)
+    return () => document.body.classList.remove('marketing-dark')
+  }, [isHome])
+
   useEffect(() => {
     const lenis = new Lenis({ duration: 1.05, smoothWheel: true })
     let raf = 0
@@ -25,7 +34,7 @@ export function Shell() {
       <div className="glow glow-a" aria-hidden />
       <div className="glow glow-b" aria-hidden />
       <Header />
-      <main className="main-shell">
+      <main className={cn('main-shell', isHome && 'saas-root')}>
         <Outlet />
       </main>
       <Footer />

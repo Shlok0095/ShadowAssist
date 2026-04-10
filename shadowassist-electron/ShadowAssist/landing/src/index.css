@@ -1930,3 +1930,52 @@ code {
   margin: 0 0 1rem;
   line-height: 1.55;
 }
+
+/* ─── Marketing home (dark) — toggled from Shell via `body.marketing-dark` ─── */
+body.marketing-dark {
+  --bg: #030712;
+  --surface: rgba(15, 23, 42, 0.82);
+  --surface2: rgba(24, 24, 27, 0.55);
+  --border: rgba(255, 255, 255, 0.09);
+  --glass: rgba(15, 23, 42, 0.78);
+  --text: #fafafa;
+  --muted: #a1a1aa;
+  --accent: #60a5fa;
+  --accent2: #a78bfa;
+  --mint: #2dd4bf;
+  background-color: var(--bg);
+  background-image:
+    radial-gradient(ellipse 85% 55% at 50% -18%, rgba(59, 130, 246, 0.14), transparent 58%),
+    radial-gradient(ellipse 45% 40% at 100% 0%, rgba(139, 92, 246, 0.1), transparent 48%);
+  color: var(--text);
+}
+
+body.marketing-dark a {
+  color: var(--accent);
+}
+
+body.marketing-dark .bg-grid {
+  background-image:
+    linear-gradient(rgba(255, 255, 255, 0.04) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(255, 255, 255, 0.04) 1px, transparent 1px);
+  opacity: 0.45;
+}
+
+body.marketing-dark .glow-a {
+  background: #3b82f6;
+  opacity: 0.12;
+}
+
+body.marketing-dark .glow-b {
+  background: #8b5cf6;
+  opacity: 0.1;
+}
+
+body.marketing-dark .faq-acc__item.glass-panel {
+  background: rgba(255, 255, 255, 0.04);
+  border-color: rgba(255, 255, 255, 0.1);
+}
+
+body.marketing-dark .faq-acc__btn:hover {
+  background: rgba(255, 255, 255, 0.06);
+}
