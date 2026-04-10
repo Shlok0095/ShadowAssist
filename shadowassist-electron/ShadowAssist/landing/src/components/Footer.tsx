@@ -14,7 +14,7 @@ export function Footer() {
   return (
     <footer
       className={cn(
-        'mt-auto border-t px-5 py-12 sm:px-8',
+        'mt-auto border-t px-4 py-10 sm:px-6 md:px-8 md:py-12',
         isHome ? 'border-white/[0.08] bg-night-950/30' : 'border-zinc-200/80'
       )}
     >
@@ -29,12 +29,6 @@ export function Footer() {
         <Link to="/legal/privacy" className={linkCls}>
           Privacy
         </Link>
-        <span className={cn('hidden sm:inline', isHome ? 'text-zinc-600' : 'text-zinc-300')} aria-hidden>
-          ·
-        </span>
-        <a href={SITE.repoUrl} target="_blank" rel="noreferrer" className={linkCls}>
-          Source
-        </a>
         <p
           className={cn(
             'text-xs leading-relaxed sm:ml-auto sm:max-w-md sm:text-right',

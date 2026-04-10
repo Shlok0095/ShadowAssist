@@ -9,10 +9,12 @@ export type SectionProps = HTMLAttributes<HTMLElement> & {
   flush?: boolean
 }
 
+const xPad = 'px-4 sm:px-6 md:px-8'
+
 export function Section({ id, className, compact, flush, children, ...props }: SectionProps) {
-  const yPad = flush ? '' : compact ? 'py-16 sm:py-20' : 'py-24 sm:py-32'
+  const yPad = flush ? '' : compact ? 'py-12 md:py-16' : 'py-16 md:py-24'
   return (
-    <section id={id} className={cn('relative mx-auto max-w-6xl px-5 sm:px-8', yPad, className)} {...props}>
+    <section id={id} className={cn('relative mx-auto max-w-6xl', xPad, yPad, className)} {...props}>
       {children}
     </section>
   )

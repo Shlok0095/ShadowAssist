@@ -42,7 +42,7 @@ export function Shell() {
         </>
       ) : null}
       <Header />
-      <main className={cn('main-shell', isHome && 'saas-root')}>
+      <main className={cn('main-shell min-w-0', isHome && 'saas-root overflow-x-hidden')}>
         <Outlet />
       </main>
       <Footer />
