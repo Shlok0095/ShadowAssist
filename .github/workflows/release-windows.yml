@@ -1,21 +1,23 @@
-# Builds NSIS + portable on every push to `stag` and uploads to GitHub Releases.
-# Stable URLs (update your website to one of these):
+# Pushes to `stag` → rolling prerelease "latest-stag" (real GitHub Release with .exe files).
+# Push tag v*.*.* → normal release with checksums.
+# Website can link to:
 #   https://github.com/<owner>/<repo>/releases/download/latest-stag/ShadowAssist-Setup.exe
-#   https://github.com/<owner>/<repo>/releases/download/latest-stag/ShadowAssist.exe
 
-name: Release Windows (stag)
+name: Release Windows
 
 on:
+  workflow_dispatch:
   push:
     branches:
       - stag
-  workflow_dispatch:
+    tags:
+      - 'v*.*.*'
 
 permissions:
   contents: write
 
 concurrency:
-  group: release-windows-stag
+  group: release-windows-${{ github.ref }}
   cancel-in-progress: true
 
 jobs:
@@ -26,18 +28,21 @@ jobs:
 
       - uses: actions/setup-node@v4
         with:
-          node-version: 20
+          node-version: '20'
           cache: npm
 
-      - name: Install dependencies
-        run: npm ci
+      - run: npm ci
 
       - name: Build installers (NSIS + portable)
         run: npm run dist:release
         env:
-          CSC_IDENTITY_AUTO_DISCOVERY: "false"
+          CSC_IDENTITY_AUTO_DISCOVERY: 'false'
 
-      - name: Stable installer name for static download links
+      - name: SHA256 checksums
+        run: npm run dist:checksums
+
+      - name: Stable installer name for rolling stag release
+        if: github.ref == 'refs/heads/stag'
         shell: pwsh
         run: |
           $pkg = Get-Content package.json -Raw | ConvertFrom-Json
@@ -45,27 +50,36 @@ jobs:
           $setup = "dist/ShadowAssist-Setup-$ver.exe"
           if (-not (Test-Path $setup)) {
             Get-ChildItem dist
-            throw "Expected $setup — bump package.json version or check electron-builder output."
+            throw "Missing $setup"
           }
           Copy-Item $setup "dist/ShadowAssist-Setup.exe" -Force
-          Write-Host "OK: dist/ShadowAssist-Setup.exe (from $setup)"
 
-      - uses: ncipollo/release-action@v1
+      - uses: actions/upload-artifact@v4
+        with:
+          name: shadowassist-windows-${{ github.run_id }}
+          if-no-files-found: warn
+          path: |
+            dist/ShadowAssist.exe
+            dist/ShadowAssist-Setup*.exe
+            dist/SHA256SUMS.txt
+
+      - name: Rolling GitHub Release (every stag push)
+        if: github.ref == 'refs/heads/stag'
+        uses: ncipollo/release-action@v1
         with:
           token: ${{ secrets.GITHUB_TOKEN }}
           tag: latest-stag
           commit: ${{ github.sha }}
           name: ShadowAssist — latest stag
           body: |
-            Automated build from branch **stag** @ `${{ github.sha }}`.
+            Automated build from **stag** @ [`${{ github.sha }}`](${{ github.server_url }}/${{ github.repository }}/commit/${{ github.sha }}).
 
-            | Asset | Purpose |
-            |-------|---------|
-            | **ShadowAssist-Setup.exe** | NSIS installer (stable filename for your site) |
-            | **ShadowAssist.exe** | Portable app |
+            | Asset | Use |
+            |------|-----|
+            | **ShadowAssist-Setup.exe** | NSIS installer (stable URL for your website) |
+            | **ShadowAssist.exe** | Portable |
 
-            **Direct installer URL:**  
-            `${{ github.server_url }}/${{ github.repository }}/releases/download/latest-stag/ShadowAssist-Setup.exe`
+            **Installer:** `${{ github.server_url }}/${{ github.repository }}/releases/download/latest-stag/ShadowAssist-Setup.exe`
           prerelease: true
           allowUpdates: true
           replacesArtifacts: true
@@ -73,3 +87,15 @@ jobs:
           artifacts: |
             dist/ShadowAssist-Setup.exe
             dist/ShadowAssist.exe
+
+      - name: Versioned GitHub Release (git tag v*.*.*)
+        if: startsWith(github.ref, 'refs/tags/v')
+        uses: softprops/action-gh-release@v2
+        with:
+          generate_release_notes: true
+          files: |
+            dist/ShadowAssist.exe
+            dist/ShadowAssist-Setup-*.exe
+            dist/SHA256SUMS.txt
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
