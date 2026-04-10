@@ -1,17 +1,39 @@
 import { Link } from 'react-router-dom'
 import { motion } from 'framer-motion'
+import { HeroLiveMock } from '@/components/home/HeroLiveMock'
 import { FaqAccordion } from '@/components/FaqAccordion'
 import { Badge, Button, buttonClass, Card, GradientText, Section } from '@/components/ui'
 import { SITE } from '@/config/site'
+import { usePointerGlow } from '@/hooks/usePointerGlow'
 import { useRollingReleaseMeta } from '@/hooks/useRollingReleaseMeta'
 
 const downloadLinkRel = 'noopener noreferrer' as const
 
-const fade = {
-  initial: { opacity: 0, y: 18 },
-  whileInView: { opacity: 1, y: 0 },
-  viewport: { once: true, margin: '-48px' },
-  transition: { duration: 0.5, ease: [0.22, 1, 0.36, 1] },
+const easeOut = [0.22, 1, 0.36, 1] as const
+
+function reveal(dir: -1 | 1) {
+  return {
+    initial: { opacity: 0, x: dir * 32, y: 16 },
+    whileInView: { opacity: 1, x: 0, y: 0 },
+    viewport: { once: true, margin: '-10%' },
+    transition: { duration: 0.4, ease: easeOut },
+  } as const
+}
+
+const heroContainer = {
+  hidden: {},
+  visible: {
+    transition: { staggerChildren: 0.1, delayChildren: 0.04 },
+  },
+}
+
+const heroChild = {
+  hidden: { opacity: 0, y: 22 },
+  visible: {
+    opacity: 1,
+    y: 0,
+    transition: { duration: 0.55, ease: easeOut },
+  },
 }
 
 function IconOverlay() {
@@ -44,7 +66,7 @@ function IconKey() {
 
 function IconMic() {
   return (
-    <svg className="h-7 w-7 text-teal-400" viewBox="0 0 24 24" fill="none" aria-hidden>
+    <svg className="h-7 w-7 text-cyan-400" viewBox="0 0 24 24" fill="none" aria-hidden>
       <path
         d="M12 14a3 3 0 003-3V6a3 3 0 10-6 0v5a3 3 0 003 3z"
         stroke="currentColor"
@@ -57,7 +79,7 @@ function IconMic() {
 
 function IconBolt() {
   return (
-    <svg className="h-7 w-7 text-amber-400" viewBox="0 0 24 24" fill="none" aria-hidden>
+    <svg className="h-7 w-7 text-cyan-300" viewBox="0 0 24 24" fill="none" aria-hidden>
       <path
         d="M13 2L4 14h7l-1 8 10-14h-7l0-6z"
         stroke="currentColor"
@@ -70,7 +92,7 @@ function IconBolt() {
 
 function IconShield() {
   return (
-    <svg className="h-7 w-7 text-emerald-400" viewBox="0 0 24 24" fill="none" aria-hidden>
+    <svg className="h-7 w-7 text-violet-300" viewBox="0 0 24 24" fill="none" aria-hidden>
       <path
         d="M12 3l7 3v6c0 4-3 7.5-7 9-4-1.5-7-5-7-9V6l7-3z"
         stroke="currentColor"
@@ -84,7 +106,7 @@ function IconShield() {
 
 function IconWindows() {
   return (
-    <svg className="h-7 w-7 text-sky-400" viewBox="0 0 24 24" fill="currentColor" aria-hidden>
+    <svg className="h-7 w-7 text-blue-300" viewBox="0 0 24 24" fill="currentColor" aria-hidden>
       <path d="M3 5.45l7.5-1.05v7.2H3V5.45zm7.5 6.35v7.25L3 18v-6.2h7.5zm1.05-7.5L21 3v9.05h-9.45V4.3zm9.45 10.35H12.55V21L12.55 21 21 19.55v-4.9z" />
     </svg>
   )
@@ -93,33 +115,33 @@ function IconWindows() {
 const features = [
   {
     icon: <IconOverlay />,
-    title: 'Floating overlay',
-    desc: 'Streamed answers in a low-profile panel — hotkeys keep you in flow on calls.',
+    title: 'Real-time intelligence layer',
+    desc: 'A floating panel that streams answers as the conversation moves — hotkeys, zero tab-hopping.',
   },
   {
     icon: <IconKey />,
-    title: 'Bring your own keys',
-    desc: 'Groq, OpenAI-compatible APIs, or NVIDIA NIM. No vendor keys ship in the download.',
+    title: 'Your keys, your vendor',
+    desc: 'Groq, OpenAI-compatible APIs, or NVIDIA NIM. Nothing sensitive ships inside the installer.',
   },
   {
     icon: <IconMic />,
-    title: 'Optional context',
-    desc: 'Session listening and screen context when you want them, with clear in-app disclosures.',
+    title: 'Context when you want it',
+    desc: 'Optional listening and screen context with clear disclosures — you stay in control.',
   },
   {
     icon: <IconBolt />,
-    title: 'Fast iteration',
+    title: 'Responds as things happen',
     desc: 'Swap models and routing in Settings without leaving the overlay.',
   },
   {
     icon: <IconShield />,
     title: 'On your machine',
-    desc: 'Native Windows tray + overlay — not another name on the meeting roster.',
+    desc: 'Native Windows tray + overlay — not another guest on the roster.',
   },
   {
     icon: <IconWindows />,
     title: 'Installer or portable',
-    desc: 'NSIS wizard with shortcuts, or a single portable .exe — your call.',
+    desc: 'Full Windows Installer (.exe) or a single portable .exe — pick what fits your workflow.',
   },
 ]
 
@@ -138,7 +160,7 @@ function OverlayMock({ className }: { className?: string }) {
         <div className="rounded-xl border border-white/10 bg-white/[0.04] px-4 py-3 text-sm text-zinc-400">
           Summarize the last agenda block in three bullets…
         </div>
-        <div className="space-y-2 rounded-xl border border-violet-500/25 bg-white/[0.06] p-4 text-sm leading-relaxed text-zinc-200">
+        <div className="space-y-2 rounded-xl border border-violet-500/30 bg-white/[0.05] p-4 text-sm leading-relaxed text-zinc-200">
           <p className="font-medium text-white">Suggested reply</p>
           <ul className="list-disc space-y-1 pl-4 text-zinc-300">
             <li>Design deadline locked for Thursday</li>
@@ -147,8 +169,8 @@ function OverlayMock({ className }: { className?: string }) {
           </ul>
         </div>
         <div className="flex gap-2">
-          <span className="rounded-lg border border-white/10 bg-white/[0.04] px-3 py-1.5 text-xs text-zinc-500">
-            Ctrl+Shift+Space
+          <span className="rounded-lg border border-cyan-500/20 bg-cyan-500/5 px-3 py-1.5 text-xs text-cyan-200/80">
+            Understands your screen instantly
           </span>
           <span className="rounded-lg border border-white/10 bg-white/[0.04] px-3 py-1.5 text-xs text-zinc-500">
             BYOK · your endpoint
@@ -161,106 +183,203 @@ function OverlayMock({ className }: { className?: string }) {
 
 export function Home() {
   const downloadMeta = useRollingReleaseMeta()
+  const { ref: heroRef, onMouseMove, onMouseLeave } = usePointerGlow()
 
   return (
     <>
       {/* Hero */}
-      <Section flush className="pb-16 pt-10 sm:pb-24 sm:pt-16">
-        <div className="grid items-center gap-16 lg:grid-cols-[minmax(0,1fr)_minmax(0,0.95fr)] lg:gap-20">
-          <motion.div {...fade}>
-            <Badge className="mb-8">Windows · Desktop AI overlay</Badge>
-            <h1 className="max-w-xl text-4xl font-bold leading-[1.08] tracking-tight text-white sm:text-5xl lg:text-6xl">
-              Live meeting help{' '}
-              <GradientText as="span" className="block sm:inline">
-                on your desktop
-              </GradientText>
-            </h1>
-            <p className="mt-8 max-w-lg text-lg leading-relaxed text-zinc-400 sm:text-xl">
-              Concise answers beside your work — without joining the call as a bot. You bring your own API keys; traffic
-              goes to the provider you trust.
-            </p>
-            <div className="mt-12 flex flex-col gap-4 sm:flex-row sm:items-center">
-              <Button href={SITE.downloadSetupExeUrl} target="_blank" rel={downloadLinkRel}>
-                Download for Windows
-              </Button>
-              <Button variant="secondary" href={SITE.downloadPortableExeUrl} target="_blank" rel={downloadLinkRel}>
-                Portable version
-              </Button>
-            </div>
-            <p className="mt-8 flex flex-wrap items-center gap-x-3 gap-y-2 text-sm text-zinc-500">
-              <Link to="/docs/getting-started" className="text-zinc-400 underline-offset-4 hover:text-white hover:underline">
-                Setup guide
-              </Link>
-              <span className="hidden text-zinc-600 sm:inline">·</span>
-              <Link to="/docs/how-it-works" className="text-zinc-400 underline-offset-4 hover:text-white hover:underline">
-                How it works
-              </Link>
-              <span className="hidden text-zinc-600 sm:inline">·</span>
-              <a
-                href={SITE.repoUrl}
-                target="_blank"
-                rel="noreferrer"
-                className="text-zinc-400 underline-offset-4 hover:text-white hover:underline"
-              >
-                GitHub
-              </a>
-            </p>
-          </motion.div>
+      <Section flush className="relative overflow-hidden pb-16 pt-10 sm:pb-24 sm:pt-16">
+        <div className="pointer-events-none absolute inset-0 z-0">
+          <div className="absolute inset-0 bg-[radial-gradient(circle_at_20%_30%,rgba(59,130,246,0.15),transparent_40%)]" />
+          <div className="absolute inset-0 bg-[radial-gradient(circle_at_80%_70%,rgba(139,92,246,0.12),transparent_40%)] motion-safe:animate-hero-radial-breathe" />
+          <div className="absolute inset-0 bg-[radial-gradient(circle_at_50%_100%,rgba(6,182,212,0.08),transparent_45%)]" />
+          <div
+            className="absolute inset-0 bg-[radial-gradient(circle_at_55%_15%,rgba(6,182,212,0.11),transparent_36%)] motion-safe:animate-hero-hue-veil"
+            aria-hidden
+          />
+          <div
+            className="absolute left-1/2 top-1/3 h-[min(100vw,640px)] w-[min(100vw,640px)] -translate-x-1/2 rounded-full bg-gradient-to-br from-blue-600/15 via-violet-600/12 to-cyan-500/10 blur-3xl motion-safe:animate-aurora-drift"
+            aria-hidden
+          />
+        </div>
 
-          <motion.div
-            className="relative lg:justify-self-end"
-            initial={{ opacity: 0, y: 24 }}
-            animate={{ opacity: 1, y: 0 }}
-            transition={{ duration: 0.6, ease: [0.22, 1, 0.36, 1], delay: 0.08 }}
-          >
-            <div
-              className="pointer-events-none absolute -inset-8 rounded-[2rem] bg-gradient-accent-soft opacity-90 blur-3xl"
-              aria-hidden
-            />
-            <div className="pointer-events-none absolute -right-6 -top-6 h-40 w-40 rounded-full bg-violet-500/25 blur-3xl" aria-hidden />
-            <div className="relative rotate-[1.5deg] transition-transform duration-200 hover:scale-[1.02] hover:rotate-0">
-              <OverlayMock className="ring-1 ring-white/10" />
-            </div>
-          </motion.div>
+        <div
+          ref={heroRef}
+          className="hero-spotlight relative z-[1]"
+          onMouseMove={onMouseMove}
+          onMouseLeave={onMouseLeave}
+        >
+          <div className="hero-cursor-glow" aria-hidden />
+          <div className="hero-scan-sweep" aria-hidden />
+          <div className="relative z-[2] grid items-center gap-16 lg:grid-cols-[minmax(0,1fr)_minmax(0,0.95fr)] lg:gap-20">
+            <motion.div
+              variants={heroContainer}
+              initial="hidden"
+              animate="visible"
+              className="motion-safe:animate-hero-float-copy will-change-transform"
+            >
+              <motion.div variants={heroChild}>
+                <Badge className="mb-8">Windows · Real-time AI layer</Badge>
+              </motion.div>
+              <motion.h1
+                variants={heroChild}
+                className="max-w-xl text-4xl font-bold leading-[1.08] tracking-tight text-white sm:text-5xl lg:text-6xl"
+              >
+                Live intelligence{' '}
+                <GradientText as="span" className="block sm:inline">
+                  on your desktop
+                </GradientText>
+              </motion.h1>
+              <motion.p
+                variants={heroChild}
+                className="mt-8 max-w-lg text-lg leading-relaxed text-zinc-400 sm:text-xl"
+              >
+                A real-time intelligence layer beside your work — not a bot in the call. Bring your own API keys; requests
+                go straight to the provider you trust.
+              </motion.p>
+              <motion.div variants={heroChild} className="mt-12">
+                <div className="flex flex-col gap-4 sm:flex-row sm:items-center">
+                  <Button
+                    href={SITE.downloadSetupExeUrl}
+                    target="_blank"
+                    rel={downloadLinkRel}
+                    subtlePulse
+                    downloadFeedback
+                  >
+                    Windows Installer (.exe)
+                  </Button>
+                  <Button
+                    variant="secondary"
+                    href={SITE.downloadPortableExeUrl}
+                    target="_blank"
+                    rel={downloadLinkRel}
+                    downloadFeedback
+                  >
+                    Portable (.exe)
+                  </Button>
+                </div>
+                <p className="mt-4 max-w-md text-center text-[0.8125rem] leading-relaxed text-zinc-500 sm:text-left">
+                  No signup required · Instant install
+                </p>
+              </motion.div>
+              <motion.p
+                variants={heroChild}
+                className="mt-8 flex flex-wrap items-center gap-x-3 gap-y-2 text-sm text-zinc-500"
+              >
+                <Link to="/docs/getting-started" className="text-zinc-400 underline-offset-4 hover:text-white hover:underline">
+                  Setup guide
+                </Link>
+                <span className="hidden text-zinc-600 sm:inline">·</span>
+                <Link to="/docs/how-it-works" className="text-zinc-400 underline-offset-4 hover:text-white hover:underline">
+                  How it works
+                </Link>
+                <span className="hidden text-zinc-600 sm:inline">·</span>
+                <a
+                  href={SITE.repoUrl}
+                  target="_blank"
+                  rel="noreferrer"
+                  className="text-zinc-400 underline-offset-4 hover:text-white hover:underline"
+                >
+                  GitHub
+                </a>
+              </motion.p>
+            </motion.div>
+
+            <motion.div
+              className="relative z-[2] motion-safe:animate-hero-float-mock will-change-transform lg:justify-self-end"
+              initial={{ opacity: 0, x: 36, y: 20 }}
+              animate={{ opacity: 1, x: 0, y: 0 }}
+              transition={{ duration: 0.65, ease: easeOut, delay: 0.2 }}
+            >
+              <div
+                className="pointer-events-none absolute -inset-8 rounded-[2rem] bg-gradient-accent-soft opacity-90 blur-3xl motion-safe:animate-glow-flicker"
+                aria-hidden
+              />
+              <div
+                className="pointer-events-none absolute -right-6 -top-6 h-40 w-40 rounded-full bg-violet-500/20 blur-3xl"
+                aria-hidden
+              />
+              <div className="relative transition-transform duration-200 hover:scale-[1.02]">
+                <HeroLiveMock className="ring-1 ring-cyan-500/15" />
+              </div>
+            </motion.div>
+          </div>
         </div>
       </Section>
 
+      {/* Trust layer — factual; prompts go to user-configured APIs */}
+      <Section compact className="relative z-[1] border-b border-white/[0.06] bg-[rgba(3,7,18,0.5)] py-5">
+        <motion.div
+          className="flex flex-wrap items-center justify-center gap-x-12 gap-y-4 px-2 text-sm text-zinc-400"
+          {...reveal(1)}
+        >
+          <span className="inline-flex max-w-md items-center gap-2.5 text-left">
+            <svg className="h-4 w-4 shrink-0 text-cyan-400/90" viewBox="0 0 24 24" fill="none" aria-hidden>
+              <path
+                d="M4 6a2 2 0 012-2h5l1 2h6a2 2 0 012 2v9a2 2 0 01-2 2H6a2 2 0 01-2-2V6z"
+                stroke="currentColor"
+                strokeWidth="1.5"
+              />
+              <path d="M8 14h8M8 10h5" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" />
+            </svg>
+            <span>
+              <span className="font-medium text-zinc-300">Runs locally on your device</span>
+              <span className="text-zinc-500"> — overlay & tray app on Windows.</span>
+            </span>
+          </span>
+          <span className="inline-flex max-w-md items-start gap-2.5 text-left">
+            <svg className="mt-0.5 h-4 w-4 shrink-0 text-violet-400/90" viewBox="0 0 24 24" fill="none" aria-hidden>
+              <path
+                d="M13 2L4 14h6l-1 8 10-14h-6l0-6z"
+                stroke="currentColor"
+                strokeWidth="1.5"
+                strokeLinejoin="round"
+              />
+            </svg>
+            <span>
+              <span className="font-medium text-zinc-300">We don’t proxy your prompts</span>
+              <span className="text-zinc-500"> — traffic goes straight to the AI provider you configure.</span>
+            </span>
+          </span>
+        </motion.div>
+      </Section>
+
       {/* Trust */}
-      <Section compact className="border-y border-white/[0.06] bg-white/[0.02]">
+      <Section compact className="relative z-[1] border-y border-white/[0.06] bg-white/[0.02]">
         <motion.div
           className="flex flex-col items-center justify-center gap-6 text-center sm:flex-row sm:gap-12"
-          {...fade}
+          {...reveal(-1)}
         >
           <p className="max-w-md text-base font-medium text-zinc-300 sm:text-lg">
-            Built for real-time AI workflows on Windows — discreet, fast, and under your control.
+            Built for live calls on Windows — discreet, fast, and always under your control.
           </p>
           <div className="flex flex-wrap justify-center gap-3">
-            <span className="rounded-full border border-white/10 bg-night-950/60 px-4 py-2 text-xs font-semibold uppercase tracking-wider text-zinc-500">
+            <span className="rounded-full border border-cyan-500/15 bg-night-950/60 px-4 py-2 text-xs font-semibold uppercase tracking-wider text-zinc-500">
               BYOK
             </span>
-            <span className="rounded-full border border-white/10 bg-night-950/60 px-4 py-2 text-xs font-semibold uppercase tracking-wider text-zinc-500">
+            <span className="rounded-full border border-violet-500/15 bg-night-950/60 px-4 py-2 text-xs font-semibold uppercase tracking-wider text-zinc-500">
               Open builds
             </span>
             <span className="rounded-full border border-white/10 bg-night-950/60 px-4 py-2 text-xs font-semibold uppercase tracking-wider text-zinc-500">
-              No meeting roster entry
+              No roster guest
             </span>
           </div>
         </motion.div>
       </Section>
 
       {/* Features */}
-      <Section id="features">
-        <motion.div className="mx-auto max-w-2xl text-center" {...fade}>
+      <Section id="features" className="relative z-[1]">
+        <motion.div className="mx-auto max-w-2xl text-center" {...reveal(1)}>
           <h2 className="text-3xl font-bold tracking-tight text-white sm:text-4xl md:text-5xl">
-            Everything you need for live calls
+            Engineered for live signal
           </h2>
           <p className="mt-6 text-lg text-zinc-400">
-            A focused toolkit: overlay, providers you choose, and installs that match how you work.
+            Overlay, providers you choose, and installs that match how you work — without the generic SaaS fluff.
           </p>
         </motion.div>
         <div className="mt-20 grid gap-6 sm:grid-cols-2 lg:grid-cols-3">
           {features.map((f, i) => (
-            <motion.div key={f.title} {...fade} transition={{ ...fade.transition, delay: i * 0.04 }}>
+            <motion.div key={f.title} {...reveal(i % 2 === 0 ? -1 : 1)}>
               <Card interactive className="flex h-full flex-col gap-4 p-8">
                 <div className="flex h-12 w-12 items-center justify-center rounded-xl border border-white/10 bg-white/[0.04]">
                   {f.icon}
@@ -274,17 +393,17 @@ export function Home() {
       </Section>
 
       {/* Product preview */}
-      <Section id="preview" className="pb-28 sm:pb-36">
-        <motion.div className="mx-auto max-w-2xl text-center" {...fade}>
-          <Badge className="mb-6">Product preview</Badge>
-          <h2 className="text-3xl font-bold tracking-tight text-white sm:text-4xl md:text-5xl">Looks native. Stays quiet.</h2>
+      <Section id="preview" className="relative z-[1] pb-28 sm:pb-36">
+        <motion.div className="mx-auto max-w-2xl text-center" {...reveal(-1)}>
+          <Badge className="mb-6">System preview</Badge>
+          <h2 className="text-3xl font-bold tracking-tight text-white sm:text-4xl md:text-5xl">Native glass. Quiet footprint.</h2>
           <p className="mt-6 text-lg text-zinc-400">
-            A glass overlay that sits on your desktop — tuned for readability and speed, not spectacle.
+            Understands your screen instantly when you enable it — tuned for clarity, not chrome overload.
           </p>
         </motion.div>
-        <motion.div className="relative mx-auto mt-16 max-w-4xl" {...fade}>
+        <motion.div className="relative z-[1] mx-auto mt-16 max-w-4xl" {...reveal(1)}>
           <div
-            className="pointer-events-none absolute inset-0 -z-10 scale-105 rounded-[2.5rem] bg-gradient-to-br from-blue-500/25 via-violet-500/20 to-teal-500/20 opacity-80 blur-3xl"
+            className="pointer-events-none absolute inset-0 -z-10 scale-105 rounded-[2.5rem] bg-gradient-to-br from-blue-500/25 via-violet-500/20 to-cyan-500/20 opacity-80 blur-3xl"
             aria-hidden
           />
           <div className="relative rounded-[1.75rem] border border-white/10 bg-night-950/40 p-4 shadow-glow backdrop-blur-sm sm:p-8">
@@ -293,50 +412,68 @@ export function Home() {
         </motion.div>
       </Section>
 
-      {/* Download */}
-      <Section id="download" className="pb-28 sm:pb-36">
-        <motion.div className="mx-auto max-w-3xl text-center" {...fade}>
+      {/* Download — plain <a href> only; API is display-only */}
+      <Section id="download" className="relative z-[1] pb-28 sm:pb-36">
+        <motion.div className="mx-auto max-w-3xl text-center" {...reveal(-1)}>
           <h2 className="text-3xl font-bold tracking-tight text-white sm:text-4xl md:text-5xl">Download ShadowAssist</h2>
-          <p className="mt-6 text-lg text-zinc-400">Latest rolling build for Windows. Verify checksums when you can.</p>
+          <p className="mt-6 text-lg text-zinc-400">
+            Always up to date on Windows. Direct downloads — no scripts, no redirects.
+          </p>
         </motion.div>
 
-        <motion.div className="mx-auto mt-14 max-w-3xl" {...fade}>
-          <Card className="border-white/10 bg-gradient-to-b from-white/[0.07] to-white/[0.02] p-8 sm:p-12">
+        <motion.div className="relative z-[1] mx-auto mt-14 max-w-3xl" {...reveal(1)}>
+          <Card interactive className="border-white/10 bg-gradient-to-b from-white/[0.07] to-white/[0.02] p-8 sm:p-12">
             <p className="text-center text-sm text-zinc-400" aria-live="polite">
-              {downloadMeta.kind === 'loading' && <span>Latest build: …</span>}
+              {downloadMeta.kind === 'loading' && <span>Checking latest version…</span>}
               {downloadMeta.kind === 'ok' && (
                 <>
-                  Latest build: <span className="font-semibold text-zinc-200">{downloadMeta.tag}</span>
+                  Latest Version: <span className="font-semibold text-zinc-200">{downloadMeta.tag}</span>
+                  <span className="text-zinc-500"> · Always up to date</span>
                   {downloadMeta.updatedLabel ? (
                     <>
                       {' '}
-                      · Updated {downloadMeta.updatedLabel}
+                      <span className="text-zinc-500">· Updated {downloadMeta.updatedLabel}</span>
                     </>
                   ) : null}
                 </>
               )}
-              {downloadMeta.kind === 'error' && <span className="text-amber-200/90">Unable to fetch version metadata</span>}
+              {downloadMeta.kind === 'error' && (
+                <span className="text-amber-200/90">Version info unavailable — downloads below still work.</span>
+              )}
             </p>
 
-            <div className="mt-10 flex flex-col gap-4 sm:flex-row sm:justify-center">
-              <Button href={SITE.downloadSetupExeUrl} target="_blank" rel={downloadLinkRel} className="min-w-[14rem]">
-                Windows installer
-              </Button>
-              <Button
-                variant="secondary"
-                href={SITE.downloadPortableExeUrl}
-                target="_blank"
-                rel={downloadLinkRel}
-                className="min-w-[14rem]"
-              >
-                Portable .exe
-              </Button>
+            <div className="mt-10 flex flex-col items-center gap-4 sm:flex-row sm:justify-center">
+              <div className="flex w-full max-w-xl flex-col gap-4 sm:flex-row sm:justify-center">
+                <Button
+                  href={SITE.downloadSetupExeUrl}
+                  target="_blank"
+                  rel={downloadLinkRel}
+                  className="min-w-[14rem]"
+                  subtlePulse
+                  downloadFeedback
+                >
+                  Windows Installer (.exe)
+                </Button>
+                <Button
+                  variant="secondary"
+                  href={SITE.downloadPortableExeUrl}
+                  target="_blank"
+                  rel={downloadLinkRel}
+                  className="min-w-[14rem]"
+                  downloadFeedback
+                >
+                  Portable (.exe)
+                </Button>
+              </div>
+              <p className="w-full text-center text-[0.8125rem] text-zinc-500 sm:max-w-xl">
+                No signup required · Instant install
+              </p>
             </div>
 
             <dl className="mt-12 grid gap-6 border-t border-white/10 pt-10 text-left text-sm sm:grid-cols-3">
               <div>
-                <dt className="text-xs font-semibold uppercase tracking-wider text-zinc-500">Approx. size</dt>
-                <dd className="mt-2 text-zinc-300">~80–150 MB (Electron; varies by release)</dd>
+                <dt className="text-xs font-semibold uppercase tracking-wider text-zinc-500">Approx. download size</dt>
+                <dd className="mt-2 text-zinc-300">~80–150 MB (varies by release)</dd>
               </div>
               <div>
                 <dt className="text-xs font-semibold uppercase tracking-wider text-zinc-500">OS support</dt>
@@ -345,8 +482,8 @@ export function Home() {
               <div>
                 <dt className="text-xs font-semibold uppercase tracking-wider text-zinc-500">SmartScreen</dt>
                 <dd className="mt-2 text-zinc-300">
-                  New or unsigned builds may show a warning. Use <span className="text-zinc-200">SHA256SUMS.txt</span> on
-                  the release to verify.
+                  Windows may show a SmartScreen warning. This is normal for new apps. Verify with{' '}
+                  <span className="text-zinc-200">SHA256 checksums</span> when you need extra assurance.
                 </dd>
               </div>
             </dl>
@@ -377,12 +514,12 @@ export function Home() {
       </Section>
 
       {/* FAQ */}
-      <Section id="faq" className="pb-32">
-        <motion.div className="mx-auto max-w-2xl text-center" {...fade}>
+      <Section id="faq" className="relative z-[1] pb-32">
+        <motion.div className="mx-auto max-w-2xl text-center" {...reveal(-1)}>
           <h2 className="text-3xl font-bold tracking-tight text-white sm:text-4xl">Questions</h2>
-          <p className="mt-4 text-zinc-400">Straight answers about keys, privacy, and installs.</p>
+          <p className="mt-4 text-zinc-400">Keys, privacy, installs — direct answers.</p>
         </motion.div>
-        <motion.div className="mx-auto mt-12 max-w-3xl" {...fade}>
+        <motion.div className="relative z-[1] mx-auto mt-12 max-w-3xl" {...reveal(1)}>
           <FaqAccordion
             items={[
               {
@@ -403,11 +540,11 @@ export function Home() {
               },
               {
                 q: 'Why does SmartScreen warn?',
-                a: 'New unsigned Windows builds are often flagged. Use SHA256SUMS.txt on the release when you can.',
+                a: 'Windows may show a SmartScreen warning. This is normal for new apps. Use SHA256 checksums on the release when you want to verify the file.',
               },
               {
                 q: 'Installer vs portable?',
-                a: 'Portable is one file. The installer adds shortcuts and an uninstall entry.',
+                a: 'Portable is one .exe file. The Windows Installer adds shortcuts and an uninstall entry.',
               },
               {
                 q: 'Skip the desktop shortcut?',

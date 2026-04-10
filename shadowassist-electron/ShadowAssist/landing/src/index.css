@@ -1979,3 +1979,157 @@ body.marketing-dark .faq-acc__item.glass-panel {
 body.marketing-dark .faq-acc__btn:hover {
   background: rgba(255, 255, 255, 0.06);
 }
+
+/* Floating energy + grain (home only — Shell toggles) */
+body.marketing-dark .marketing-grain {
+  position: fixed;
+  inset: 0;
+  z-index: 0;
+  pointer-events: none;
+  opacity: 0.032;
+  background-image: radial-gradient(circle at 1px 1px, rgba(255, 255, 255, 0.12) 1px, transparent 0);
+  background-size: 40px 40px;
+}
+
+body.marketing-dark .marketing-blob {
+  position: fixed;
+  border-radius: 50%;
+  filter: blur(80px);
+  pointer-events: none;
+  z-index: 0;
+  opacity: 0.22;
+  will-change: transform;
+  animation: marketing-blob-drift 52s ease-in-out infinite;
+}
+
+body.marketing-dark .marketing-blob--cyan {
+  width: 380px;
+  height: 380px;
+  background: #06b6d4;
+  bottom: 8%;
+  right: -6%;
+  animation-delay: -9s;
+  animation-duration: 58s;
+}
+
+body.marketing-dark .marketing-blob--blue {
+  width: 440px;
+  height: 440px;
+  background: #3b82f6;
+  top: 4%;
+  left: -8%;
+  animation-duration: 54s;
+}
+
+body.marketing-dark .marketing-blob--violet {
+  width: 360px;
+  height: 360px;
+  background: #8b5cf6;
+  top: 42%;
+  left: 35%;
+  opacity: 0.16;
+  animation-delay: -16s;
+  animation-duration: 62s;
+}
+
+@keyframes marketing-blob-drift {
+  0%,
+  100% {
+    transform: translate(0, 0) scale(1);
+  }
+  33% {
+    transform: translate(7px, -9px) scale(1.02);
+  }
+  66% {
+    transform: translate(-6px, 7px) scale(0.99);
+  }
+}
+
+@keyframes sa-cursor-blink {
+  0%,
+  49% {
+    opacity: 1;
+  }
+  50%,
+  100% {
+    opacity: 0;
+  }
+}
+
+/* Pointer-reactive highlight inside hero (CSS vars from usePointerGlow) */
+.hero-spotlight {
+  --gx: 50%;
+  --gy: 38%;
+}
+
+.hero-cursor-glow {
+  pointer-events: none;
+  position: absolute;
+  inset: 0;
+  z-index: 1;
+  opacity: 0.55;
+  background: radial-gradient(420px circle at var(--gx) var(--gy), rgba(59, 130, 246, 0.2), transparent 48%);
+  mix-blend-mode: screen;
+  mask-image: radial-gradient(ellipse 72% 58% at var(--gx) var(--gy), black 0%, black 32%, transparent 78%);
+  -webkit-mask-image: radial-gradient(ellipse 72% 58% at var(--gx) var(--gy), black 0%, black 32%, transparent 78%);
+}
+
+/* Soft scan sweep — transform + opacity only */
+.hero-scan-sweep {
+  pointer-events: none;
+  position: absolute;
+  inset: 0;
+  z-index: 3;
+  overflow: hidden;
+}
+
+.hero-scan-sweep::after {
+  content: '';
+  position: absolute;
+  top: -30%;
+  bottom: -30%;
+  left: -40%;
+  width: 55%;
+  background: linear-gradient(
+    105deg,
+    transparent 0%,
+    transparent 38%,
+    rgba(255, 255, 255, 0.07) 50%,
+    transparent 62%,
+    transparent 100%
+  );
+  transform: translateX(-120%) skewX(-14deg);
+  animation: hero-scan-line 11s ease-in-out infinite;
+  opacity: 0;
+}
+
+@keyframes hero-scan-line {
+  0%,
+  8% {
+    opacity: 0;
+    transform: translateX(-120%) skewX(-14deg);
+  }
+  14% {
+    opacity: 1;
+  }
+  42% {
+    opacity: 1;
+    transform: translateX(220%) skewX(-14deg);
+  }
+  48%,
+  100% {
+    opacity: 0;
+    transform: translateX(220%) skewX(-14deg);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  body.marketing-dark .marketing-blob {
+    animation: none;
+  }
+
+  .hero-scan-sweep::after {
+    animation: none;
+    opacity: 0;
+  }
+}

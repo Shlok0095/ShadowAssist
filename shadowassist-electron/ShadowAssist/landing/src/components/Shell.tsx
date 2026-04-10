@@ -33,6 +33,14 @@ export function Shell() {
       <div className="bg-grid" aria-hidden />
       <div className="glow glow-a" aria-hidden />
       <div className="glow glow-b" aria-hidden />
+      {isHome ? (
+        <>
+          <div className="marketing-grain" aria-hidden />
+          <div className="marketing-blob marketing-blob--blue" aria-hidden />
+          <div className="marketing-blob marketing-blob--violet" aria-hidden />
+          <div className="marketing-blob marketing-blob--cyan" aria-hidden />
+        </>
+      ) : null}
       <Header />
       <main className={cn('main-shell', isHome && 'saas-root')}>
         <Outlet />
