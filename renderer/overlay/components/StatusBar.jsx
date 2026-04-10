@@ -31,7 +31,7 @@ function WaveBars({ active }) {
   )
 }
 
-function StatusBar({ status, sessionOn, expanded, onToggleSession, onOpenSettings, onExpand, onHide }) {
+function StatusBar({ status, sessionOn, expanded, onToggleSession, onOpenSettings, onExpand, onHide, onQuit }) {
   const [micActive, setMicActive] = useState(false)
   const [lastHeard, setLastHeard] = useState('')
   const [micError, setMicError] = useState('')
@@ -188,12 +188,21 @@ function StatusBar({ status, sessionOn, expanded, onToggleSession, onOpenSetting
           <button
             type="button"
             onClick={(e) => { e.stopPropagation(); onHide() }}
-            title="Hide"
-            className="cursor-default flex h-7 w-7 items-center justify-center rounded-lg text-zinc-700 transition-all duration-150 hover:bg-rose-500/10 hover:text-rose-400 active:scale-95"
+            title="Hide to tray — app keeps running"
+            className="cursor-default flex h-7 w-7 items-center justify-center rounded-lg text-zinc-700 transition-all duration-150 hover:bg-white/[0.06] hover:text-zinc-300 active:scale-95"
           >
             <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round">
               <path d="M18 6L6 18M6 6l12 12" />
             </svg>
+          </button>
+
+          <button
+            type="button"
+            onClick={(e) => { e.stopPropagation(); onQuit?.() }}
+            title="Quit ShadowAssist — fully exit"
+            className="cursor-default flex h-7 min-w-[2.25rem] items-center justify-center rounded-lg px-1.5 text-[10px] font-medium text-zinc-500 transition-all duration-150 hover:bg-rose-500/15 hover:text-rose-300 active:scale-95"
+          >
+            Quit
           </button>
         </div>
       </div>

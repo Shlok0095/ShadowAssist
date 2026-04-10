@@ -18,7 +18,7 @@ if (process.platform === 'win32') {
 
 const gotLock = app.requestSingleInstanceLock()
 if (!gotLock) {
-  // Second launch: first instance still holds the lock (often still in tray after “closing” the overlay)
+  // Second launch: first instance still holds the lock (tray / background)
   app.whenReady().then(() => {
     try {
       dialog.showMessageBoxSync({
@@ -26,13 +26,11 @@ if (!gotLock) {
         title: 'ShadowAssist',
         message: 'ShadowAssist is already running.',
         detail:
-          'Closing the overlay does not quit the app — it stays in the system tray.\n\n' +
-          '• Click ^ near the clock → find the ShadowAssist icon → right-click → Show\n' +
-          '• Or press Ctrl+\\ to toggle the overlay\n' +
-          '• Tray menu → Quit to fully exit\n\n' +
-          'If you are sure it should not be running: close it from the tray, or run:\n' +
-          '  npm run kill-electron\n' +
-          'then npm start again. (kill-electron stops all electron.exe processes.)',
+          'Hiding the overlay does not quit the app — it stays in the system tray.\n\n' +
+          '• Tray (near the clock): right-click the ShadowAssist icon → Open or Quit\n' +
+          '• In the overlay: use Quit (fully exit) next to Hide\n' +
+          '• Or press Ctrl+\\ to show the overlay\n\n' +
+          'To fully exit: tray → Quit, or Quit in the overlay title bar.',
       })
     } catch (_) {}
     app.quit()
@@ -279,6 +277,36 @@ function syncOverlayMouseCapture() {
   else overlayWindow.setIgnoreMouseEvents(true)
 }
 
+let appQuitting = false
+/** Full exit: hotkeys, timers, capture workers, all windows, tray — then `app.quit()`. */
+function quitApplication() {
+  if (appQuitting) return
+  appQuitting = true
+  try {
+    hotkeys.unregisterAll()
+  } catch (_) {}
+  try {
+    sessionMemory.shutdown()
+  } catch (_) {}
+  try {
+    screenCapture.terminateTesseract()
+  } catch (_) {}
+  for (const w of [overlayWindow, settingsWindow, consentWindow, onboardingWindow]) {
+    try {
+      if (w && !w.isDestroyed()) w.destroy()
+    } catch (_) {}
+  }
+  overlayWindow = null
+  settingsWindow = null
+  consentWindow = null
+  onboardingWindow = null
+  try {
+    if (tray) tray.destroy()
+  } catch (_) {}
+  tray = null
+  app.quit()
+}
+
 function hasValidConsent() {
   const r = store.get('consentRecord')
   return !!(r && r.given === true && r.version === CONSENT_VERSION)
@@ -433,16 +461,16 @@ function createSettingsWindow() {
 
 function setupTray() {
   tray = new Tray(createTrayIcon(false))
-  tray.setToolTip('ShadowAssist — undetectable AI for meetings (tray: Show / Quit)')
+  tray.setToolTip('ShadowAssist — tray: Open / Hide, Quit to fully exit')
   const updateTrayMenu = () => {
     tray.setContextMenu(Menu.buildFromTemplate([
-      { label: overlayVisible ? 'Hide' : 'Show', click: toggleOverlay },
+      { label: overlayVisible ? 'Hide' : 'Open', click: toggleOverlay },
       { type: 'separator' },
       { label: sessionActive ? 'Stop Session' : 'Start Session', click: () => (sessionActive ? stopSession() : requestSessionStart()) },
       { type: 'separator' },
       { label: 'Settings', click: createSettingsWindow },
       { type: 'separator' },
-      { label: 'Quit', click: () => app.quit() },
+      { label: 'Quit', click: quitApplication },
     ]))
   }
   updateTrayMenu()
@@ -855,7 +883,7 @@ function setupIPC() {
     return { ok: true }
   })
   ipcMain.handle('consent:decline', () => {
-    app.quit()
+    quitApplication()
     return true
   })
   ipcMain.handle('session-start-confirmed', () => {
@@ -1011,6 +1039,7 @@ function setupIPC() {
   })
   ipcMain.on('overlay-resize-end', () => { if (overlayWindow) store.set('overlayBounds', overlayWindow.getBounds()) })
   ipcMain.on('overlay-hide', hideOverlay)
+  ipcMain.on('app-quit', quitApplication)
   ipcMain.on('open-settings', createSettingsWindow)
   ipcMain.on('ui-toggle-session', () => (sessionActive ? stopSession() : requestSessionStart()))
   ipcMain.on('overlay-opacity-change', (_, o) => {
@@ -1114,8 +1143,18 @@ app.whenReady().then(() => {
   app.quit()
 })
 
-app.on('window-all-closed', () => { hotkeys.unregisterAll(); screenCapture.terminateTesseract() })
-app.on('will-quit', () => hotkeys.unregisterAll())
+app.on('window-all-closed', () => {
+  hotkeys.unregisterAll()
+  try {
+    screenCapture.terminateTesseract()
+  } catch (_) {}
+})
+app.on('will-quit', () => {
+  hotkeys.unregisterAll()
+  try {
+    screenCapture.terminateTesseract()
+  } catch (_) {}
+})
 app.on('second-instance', () => {
   if (!overlayWindow || overlayWindow.isDestroyed()) {
     createOverlayWindow()

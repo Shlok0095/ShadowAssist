@@ -5,6 +5,11 @@
 ; Stock electron-builder always sets shortcut icons to the .exe (Electron logo). We repoint to app.ico
 ; after files are on disk (customInstall + finish page).
 
+; Close a running instance before install/upgrade so the EXE is not locked.
+!macro customInit
+  ExecWait 'taskkill /F /IM "${APP_EXECUTABLE_FILENAME}" /T' $0
+!macroend
+
 ; UNIQ suffix avoids duplicate labels when this macro is expanded more than once.
 !macro resolveSaIconPath UNIQ
   StrCpy $R9 ""
@@ -57,6 +62,8 @@ sa_ci_pop:
 !macroend
 
 !macro customUnInstall
+  ; Kill process so Program Files can be removed cleanly
+  ExecWait 'taskkill /F /IM "${APP_EXECUTABLE_FILENAME}" /T' $0
   IfFileExists "$DESKTOP\${SHORTCUT_NAME}.lnk" +1 desktop_shortcut_done
   WinShell::UninstShortcut "$DESKTOP\${SHORTCUT_NAME}.lnk"
   Delete "$DESKTOP\${SHORTCUT_NAME}.lnk"

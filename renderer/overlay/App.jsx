@@ -6,7 +6,6 @@ import { flushSync } from 'react-dom'
 import StatusBar from './components/StatusBar'
 import ResponsePanel from './components/ResponsePanel'
 import InputBar from './components/InputBar'
-import LiveTranscriptPanel from './components/LiveTranscriptPanel'
 import { applyUiAccentTheme, normalizeUiAccentId } from '../shared/uiAccentThemes'
 import { createIpcShim } from '../shared/ipcShim'
 import { filterWhisperVerboseJson } from '../shared/whisperTranscriptGate'
@@ -1388,6 +1387,10 @@ export default function App() {
     setTimeout(() => { setHiding(false); ipc?.send('overlay-hide') }, 220)
   }, [])
 
+  const quitApp = useCallback(() => {
+    ipc?.send('app-quit')
+  }, [])
+
   const onToggleSession = useCallback(() => {
     ipc?.send('ui-toggle-session')
   }, [])
@@ -1429,6 +1432,7 @@ export default function App() {
           onOpenSettings={onOpenSettings}
           onExpand={onExpandPanel}
           onHide={hideOverlay}
+          onQuit={quitApp}
         />
 
         {/* Compact stealth toggle */}
