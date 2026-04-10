@@ -1,7 +1,7 @@
 // Copyright (c) 2026 ShadowAssist. All rights reserved.
 // Unauthorized copying or distribution is prohibited.
 
-const { desktopCapturer, nativeImage } = require('electron')
+const { desktopCapturer, nativeImage, screen } = require('electron')
 const path = require('path')
 const { Worker } = require('worker_threads')
 
@@ -12,11 +12,11 @@ let ocrReqId = 0
 const ocrPending = new Map()
 
 /**
- * Full-frame capture: grab at higher resolution so Tesseract has enough pixels.
- * Narrowing to 1280px wide keeps OCR fast while preserving all text on screen.
+ * Full-frame capture: target thumbnail size for desktopCapturer (capped to physical display size below).
+ * Downstream OCR still resizes via OCR_MAX_W.
  */
-const CAPTURE_THUMB_W = 1280
-const CAPTURE_THUMB_H = 720
+const CAPTURE_THUMB_W = 1920
+const CAPTURE_THUMB_H = 1080
 const OCR_MAX_W = 1280
 
 const CAPTURE_COOLDOWN_MS = 1200
@@ -38,6 +38,17 @@ let captureFailCount = 0
 
 function sleep(ms) {
   return new Promise((r) => setTimeout(r, ms))
+}
+
+/** Never request a thumbnail larger than the primary display in physical pixels. */
+function getOcrThumbnailSize() {
+  const d = screen.getPrimaryDisplay()
+  const sw = Math.max(1, Math.round(d.size.width * d.scaleFactor))
+  const sh = Math.max(1, Math.round(d.size.height * d.scaleFactor))
+  return {
+    width: Math.min(CAPTURE_THUMB_W, sw),
+    height: Math.min(CAPTURE_THUMB_H, sh),
+  }
 }
 
 function getFastHash(buffer) {
@@ -239,7 +250,7 @@ async function safeCaptureDataUrl() {
     try {
       const sources = await desktopCapturer.getSources({
         types: ['screen'],
-        thumbnailSize: { width: CAPTURE_THUMB_W, height: CAPTURE_THUMB_H },
+        thumbnailSize: getOcrThumbnailSize(),
       })
       if (!sources?.length) {
         cachedScreenSourceId = null

@@ -217,25 +217,25 @@ function applyContentProtectionAllWindows() {
 }
 
 /**
- * Desktop thumbnails pick up the overlay like any other window. Stealth already uses
- * setContentProtection to hide from capture; in normal mode we briefly enable it on the overlay
- * only while grabbing the screen so OCR/vision match “no overlay in shot” without full Stealth.
- *
- * Toggling protection while the overlay is visible causes noticeable compositor flicker on Windows
- * (and some GPUs) every OCR tick. Skip the flash when the user can see the panel; OCR may include
- * overlay pixels — routing prompts already tell the model to ignore the assistant’s own UI.
+ * Desktop thumbnails include the overlay unless it is visually hidden. Stealth uses
+ * setContentProtection (WDA_EXCLUDEFROMCAPTURE) so no extra step. In normal mode we set opacity
+ * to 0 in the main process immediately before desktopCapturer so the compositor omits the overlay.
  */
 async function withOverlayExcludedFromScreenCapture(fn) {
   if (!overlayWindow || overlayWindow.isDestroyed()) return fn()
   if (isStealthModeEnabled()) return fn()
-  // Always hide overlay during capture — previously skipping when overlayVisible caused the
-  // app's own AI answers and prompt text to appear in OCR context and get fed back to the LLM.
+
+  const previousOpacity = overlayWindow.getOpacity()
   try {
-    overlayWindow.setContentProtection(true)
-    await new Promise((r) => setTimeout(r, 60))
+    overlayWindow.setOpacity(0)
+    console.log('📸 OCR capture: overlay hidden')
+    await new Promise((resolve) => setTimeout(resolve, 50))
     return await fn()
   } finally {
-    applyContentProtectionAllWindows()
+    if (!overlayWindow.isDestroyed()) {
+      overlayWindow.setOpacity(previousOpacity)
+    }
+    console.log('📸 OCR capture: overlay restored')
   }
 }
 
@@ -508,10 +508,10 @@ function stopSession() {
   sendToOverlay('session-status', false)
 }
 
-/** Session lines included when overlay did not pass a buffer (shorter = less stale replay). */
-const SESSION_TRANSCRIPT_MAX_AGE_MS = 12000
-/** "Just spoke" — if within this, keep audio even when OCR was just refreshed. */
-const VERY_RECENT_SPEECH_MS = 5000
+/** Session lines included when overlay did not pass a buffer (tight = no stale replay). */
+const SESSION_TRANSCRIPT_MAX_AGE_MS = 3500
+/** "Just spoke" — narrow window so screen-only asks do not resurrect old lines. */
+const VERY_RECENT_SPEECH_MS = 2200
 
 /**
  * TRANSCRIBING mode — fired by speech auto-trigger.
@@ -654,7 +654,9 @@ async function handleAskAI(userQuestion, audioTranscript, _askMeta = {}) {
   const cleanScreen = screenRaw || ''
 
   let audioCombined = overlayAudio
-  if (!String(audioCombined).trim()) {
+  // Screen / OCR-only turns intentionally send empty audio — never backfill from session memory
+  // or the same sentence replays on every OCR tick (non-conversational loop).
+  if (!String(audioCombined).trim() && !isScreenMode) {
     if (userQ) {
       audioCombined = sessionMemory.getTranscriptIfRecent(SESSION_TRANSCRIPT_MAX_AGE_MS) || audioCombined
     } else {
@@ -767,6 +769,8 @@ async function handleAskAI(userQuestion, audioTranscript, _askMeta = {}) {
     }
     if (!abortController.signal.aborted) {
       lastResponse = fullText
+      // One completed answer = consume mic context; next turn is OCR + new speech only.
+      sessionMemory.clearTranscript()
     }
   } catch (err) {
     if (timeToFirstTokenStarted && !sawFirstToken) {

@@ -49,10 +49,15 @@ function getTranscriptIfRecent(maxAgeMs) {
   return transcriptSegments.join(' ').trim()
 }
 
-function wipe() {
+/** Drop mic/STT lines only (OCR snapshots stay for screen-only turns). */
+function clearTranscript() {
   transcriptSegments = []
-  ocrSnapshots = []
   lastTranscriptAt = 0
+}
+
+function wipe() {
+  clearTranscript()
+  ocrSnapshots = []
   lastActivity = Date.now()
 }
 
@@ -85,6 +90,7 @@ module.exports = {
   addOcrSnapshot,
   getTranscriptText,
   getTranscriptIfRecent,
+  clearTranscript,
   wipe,
   touch,
   startInactivityWatcher,

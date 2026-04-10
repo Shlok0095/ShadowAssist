@@ -13,7 +13,8 @@ import { filterWhisperVerboseJson } from '../shared/whisperTranscriptGate'
 const ipc = createIpcShim()
 const COLLAPSED_H = 38
 const MIN_ASK_GAP_MS = 2000
-const AUDIO_CHUNK_MS = 1200
+/** Longer chunks give Whisper more phonetic context (fewer mid-phrase cuts); ~2s is a good live balance. */
+const AUDIO_CHUNK_MS = 2400
 /** Ms of silence after last STT chunk before speech Assist may fire. */
 const SPEECH_STABILITY_MS = 1800
 /** Clear rolling speech buffer after this long without a new chunk. */
@@ -291,18 +292,18 @@ const HALLUCINATIONS = [
   /^\(?typing\)?$/i, /^watching in \d+p\b/i,
 ]
 
-/** Skip only obviously empty blobs (container overhead varies by codec). */
-const MIN_RECORDING_BYTES = 1200
+/** Skip only obviously empty blobs (scales with chunk length + codec overhead). */
+const MIN_RECORDING_BYTES = 2200
 
 /**
  * Per-path RMS (byte time-domain analyser). Mean + peak: blocks single-click / steady-hum false
  * STT. Mic and system are measured separately; a chunk is transcribed only if that path was active.
  */
 /** Slightly relaxed so quiet mics / system loopback still produce STT (was dropping real speech). */
-const CHUNK_ENERGY_MEAN_MIN = 1.08
-const CHUNK_ENERGY_PEAK_MIN = 3.35
+const CHUNK_ENERGY_MEAN_MIN = 1.02
+const CHUNK_ENERGY_PEAK_MIN = 2.85
 /** Below chunk gate; RMS at/above = “speech-like” activity for pre-trigger silence detection. */
-const SPEECH_ACTIVITY_RMS = 1.15
+const SPEECH_ACTIVITY_RMS = 1.06
 const SPEECH_SILENCE_MS = 600
 
 function pathEnergyActive(stats) {
@@ -311,15 +312,26 @@ function pathEnergyActive(stats) {
   return mean >= CHUNK_ENERGY_MEAN_MIN && stats.max >= CHUNK_ENERGY_PEAK_MIN
 }
 
-function highpassMicChain(ctx, mediaStream, dest) {
+/**
+ * Path into MediaRecorder: HPF (rumble) → light compression so quiet speech isn’t lost in STT
+ * while loud system/meeting audio doesn’t clip as hard. Energy analyser should tap the same tail.
+ */
+function buildVoiceCaptureChain(ctx, mediaStream, dest) {
   const src = ctx.createMediaStreamSource(mediaStream)
   const hp = ctx.createBiquadFilter()
   hp.type = 'highpass'
   hp.frequency.value = 80
   hp.Q.value = 0.707
+  const comp = ctx.createDynamicsCompressor()
+  comp.threshold.value = -22
+  comp.knee.value = 28
+  comp.ratio.value = 3.2
+  comp.attack.value = 0.003
+  comp.release.value = 0.22
   src.connect(hp)
-  hp.connect(dest)
-  return hp
+  hp.connect(comp)
+  comp.connect(dest)
+  return comp
 }
 
 export default function App() {
@@ -833,8 +845,14 @@ export default function App() {
       } catch {}
       if (!mic && !sys) { emit('mic-error', { message: 'No audio' }); return }
 
-      const ctx = new AudioContext()
+      let ctx
+      try {
+        ctx = new AudioContext({ sampleRate: 48000 })
+      } catch {
+        ctx = new AudioContext()
+      }
       audioCtx.current = ctx
+      void ctx.resume().catch(() => {})
       streamRef._mic = mic
       streamRef._sys = sys
       streamRef.current = null
@@ -844,19 +862,19 @@ export default function App() {
 
       if (mic) {
         const micDest = ctx.createMediaStreamDestination()
-        const hpOut = highpassMicChain(ctx, mic, micDest)
+        const tail = buildVoiceCaptureChain(ctx, mic, micDest)
         const a = ctx.createAnalyser()
         a.fftSize = 512
-        hpOut.connect(a)
+        tail.connect(a)
         samplePack.mic = { analyser: a, data: new Uint8Array(a.frequencyBinCount) }
         specs.push({ key: 'mic', stream: micDest.stream })
       }
       if (sys) {
         const sysDest = ctx.createMediaStreamDestination()
-        const hpOut = highpassMicChain(ctx, sys, sysDest)
+        const tail = buildVoiceCaptureChain(ctx, sys, sysDest)
         const a = ctx.createAnalyser()
         a.fftSize = 512
-        hpOut.connect(a)
+        tail.connect(a)
         samplePack.sys = { analyser: a, data: new Uint8Array(a.frequencyBinCount) }
         specs.push({ key: 'sys', stream: sysDest.stream })
       }
@@ -929,7 +947,10 @@ export default function App() {
     ce.active = true
 
     const mime = getMimeType()
-    const recOpts = mime ? { mimeType: mime } : {}
+    /** Higher Opus bitrate → clearer consonants for Whisper vs browser default (~32–64k). */
+    const recOpts = mime
+      ? { mimeType: mime, audioBitsPerSecond: 96000 }
+      : { audioBitsPerSecond: 96000 }
     const recorders = []
     let pendingStops = 0
 
@@ -1301,16 +1322,13 @@ export default function App() {
               await askP
             }
             /**
-             * ALWAYS clear the buffer after a successful trigger (auto or manual).
-             * Cluely "current moment" model: each answer consumes the speech window.
-             * Without this, old questions ("Am I audible?") stay in the buffer
-             * and re-fire whenever any new word arrives and the lastSentSpeechRef
-             * guard passes because the buffer string has changed.
-             *
-             * New speech that arrives during the LLM response will start a fresh
-             * window — exactly what the user wants.
+             * Each finished answer ends the turn: rolling STT buffer + full mic transcript
+             * (main process also clears session transcript segments on success).
              */
             clearRollingSpeechRef.current?.()
+            setMicTranscript('')
+            micTranscriptRef.current = ''
+            latestTranscriptRef.current = ''
           } catch (err) {
             console.warn('[ask-ai-with-transcript]', err)
           } finally {
