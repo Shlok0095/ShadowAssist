@@ -80,10 +80,10 @@ export function Home() {
             call. You supply <strong>your own</strong> AI keys; requests go straight to the vendor you trust.
           </motion.p>
           <motion.div className="hero-cluely-cta" {...fadeUp} transition={{ ...fadeUp.transition, delay: 0.1 }}>
-            <a className="btn btn-cluely-primary" href={SITE.releasesLatestUrl} id="cta-installer">
+            <a className="btn btn-cluely-primary" href={SITE.downloadSetupExeUrl} id="cta-installer">
               Download for Windows
             </a>
-            <a className="btn btn-cluely-secondary" href={SITE.releasesLatestUrl} id="cta-portable">
+            <a className="btn btn-cluely-secondary" href={SITE.downloadPortableExeUrl} id="cta-portable">
               Get portable .exe
             </a>
           </motion.div>
@@ -292,7 +292,7 @@ export function Home() {
           </h2>
           <p className="cta-band__sub">Download the latest Windows build and follow the setup guide.</p>
           <div className="cta-band__actions">
-            <a className="btn btn-cluely-inverse" href={SITE.releasesLatestUrl} id="cta-band-installer">
+            <a className="btn btn-cluely-inverse" href={SITE.downloadSetupExeUrl} id="cta-band-installer">
               Download for Windows
             </a>
             <Link className="btn btn-cluely-ghost" to="/docs/getting-started">

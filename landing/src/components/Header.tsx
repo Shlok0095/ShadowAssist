@@ -22,7 +22,7 @@ export function Header() {
       e.preventDefault()
       window.location.href = await fetchLatestSetupUrl()
     }
-    el.setAttribute('href', SITE.releasesLatestUrl)
+    el.setAttribute('href', SITE.downloadSetupExeUrl)
     el.addEventListener('click', onClick)
     return () => el.removeEventListener('click', onClick)
   }, [])
@@ -52,7 +52,7 @@ export function Header() {
         <NavLink to="/docs" className={navCls}>
           Docs
         </NavLink>
-        <a className="nav-link nav-cta" href={SITE.releasesLatestUrl} id="nav-download-smart">
+        <a className="nav-link nav-cta" href={SITE.downloadSetupExeUrl} id="nav-download-smart">
           Download
         </a>
         <a className="nav-link" href={SITE.repoUrl} target="_blank" rel="noreferrer">
