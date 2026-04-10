@@ -17,11 +17,50 @@ const MISTRAL_STT_MODELS = ['voxtral-mini-latest', 'voxtral-mini-transcribe-real
 const FIREWORKS_STT_MODELS = ['whisper-v3-turbo', 'whisper-v3']
 
 const PROMPT_PRESETS = [
+  {
+    id: 'observe',
+    label: 'Observe (default)',
+    prompt: `You are an assistant observing screen and audio.
+Respond to ANY visible or spoken content.
+Do not judge usefulness.
+If unclear, summarize or interpret best effort.`,
+  },
   { id: 'meeting', label: 'Meeting', prompt: 'I am in a meeting. Help me understand, contribute, and summarize.' },
   { id: 'sync', label: 'Stand-up / sync', prompt: 'I am in a team stand-up or sync. Keep suggestions brief and action-oriented.' },
 ]
 
 const save = (k, v) => ipc?.invoke('set-store', k, v)
+
+/** Mirrors `lib/hotkeys.js` DEFAULT_HOTKEYS — used for reset + display. */
+const DEFAULT_HOTKEYS_MAP = {
+  toggleOverlay: 'CommandOrControl+\\',
+  askAI: 'CommandOrControl+Return',
+  clearChat: 'CommandOrControl+R',
+  toggleSession: 'CommandOrControl+Shift+\\',
+  moveUp: 'CommandOrControl+Up',
+  moveDown: 'CommandOrControl+Down',
+  moveLeft: 'CommandOrControl+Left',
+  moveRight: 'CommandOrControl+Right',
+  scrollUp: 'CommandOrControl+Shift+Up',
+  scrollDown: 'CommandOrControl+Shift+Down',
+  settings: 'CommandOrControl+Shift+S',
+  copyResponse: 'CommandOrControl+Shift+C',
+}
+
+const HOTKEY_DEFS = [
+  { action: 'toggleOverlay', label: 'Show / hide overlay' },
+  { action: 'askAI', label: 'Ask AI (same as overlay send)' },
+  { action: 'clearChat', label: 'Clear chat / session buffer' },
+  { action: 'toggleSession', label: 'Start / stop listening session' },
+  { action: 'settings', label: 'Open this settings window' },
+  { action: 'copyResponse', label: 'Copy last assistant reply' },
+  { action: 'moveUp', label: 'Nudge overlay up' },
+  { action: 'moveDown', label: 'Nudge overlay down' },
+  { action: 'moveLeft', label: 'Nudge overlay left' },
+  { action: 'moveRight', label: 'Nudge overlay right' },
+  { action: 'scrollUp', label: 'Scroll answers up' },
+  { action: 'scrollDown', label: 'Scroll answers down' },
+]
 
 function useFirstRunQuery() {
   return useMemo(() => {
@@ -37,21 +76,9 @@ function useFirstRunQuery() {
 
 const AmbientOrbs = memo(function AmbientOrbs() {
   return (
-    <div className="pointer-events-none fixed inset-0 z-[1] overflow-hidden">
-      <div
-        className="absolute -left-[20%] top-[10%] h-[420px] w-[420px] transform-gpu rounded-full bg-phantom-600/20 blur-[120px] animate-shadow-drift"
-        aria-hidden
-      />
-      <div
-        className="absolute -right-[15%] bottom-[5%] h-[380px] w-[380px] transform-gpu rounded-full bg-accent/10 blur-[100px] animate-shadow-drift"
-        style={{ animationDelay: '-6s' }}
-        aria-hidden
-      />
-      <div
-        className="absolute left-[40%] top-[60%] h-[200px] w-[200px] transform-gpu rounded-full bg-sky-500/10 blur-[80px] animate-shadow-drift"
-        style={{ animationDelay: '-12s' }}
-        aria-hidden
-      />
+    <div className="pointer-events-none fixed inset-0 z-[1] overflow-hidden" aria-hidden>
+      <div className="absolute -left-[25%] top-[15%] h-[280px] w-[280px] rounded-full bg-accent/6 blur-[100px]" />
+      <div className="absolute -right-[20%] bottom-[10%] h-[240px] w-[240px] rounded-full bg-white/[0.04] blur-[90px]" />
     </div>
   )
 })
@@ -120,8 +147,7 @@ export default function Settings() {
   const [hasCompletedOnboarding, setHasCompletedOnboarding] = useState(true)
   const [ocrEnabled, setOcrEnabled] = useState(true)
   const [audioEnabled, setAudioEnabled] = useState(true)
-  const [ocrInterval, setOcrInterval] = useState(8000)
-  const [audioChunkSize, setAudioChunkSize] = useState(5000)
+  const [assistAutoTrigger, setAssistAutoTrigger] = useState(false)
   const [audioFallbackKey, setAudioFallbackKey] = useState('')
   const [audioFallbackProvider, setAudioFallbackProvider] = useState('openai')
 
@@ -142,13 +168,14 @@ export default function Settings() {
   const [overlayW, setOverlayW] = useState(400)
   const [overlayH, setOverlayH] = useState(540)
   const [uiAccentThemeId, setUiAccentThemeId] = useState('neon')
+  const [hotkeysMap, setHotkeysMap] = useState(() => ({ ...DEFAULT_HOTKEYS_MAP }))
 
   const currentMeta = useMemo(() => providerMeta.find((p) => p.id === provider), [providerMeta, provider])
 
   useEffect(() => {
     if (!ipc) return
-    Promise.all([ipc.invoke('get-all-settings'), ipc.invoke('get-provider-metadata')])
-      .then(([s, meta]) => {
+    Promise.all([ipc.invoke('get-all-settings'), ipc.invoke('get-provider-metadata'), ipc.invoke('get-hotkeys')])
+      .then(([s, meta, hk]) => {
         setSnap(s)
         setProviderMeta(meta || [])
         setProvider(s.provider || 'groq')
@@ -156,8 +183,7 @@ export default function Settings() {
         setHasCompletedOnboarding(!!s.hasCompletedOnboarding)
         setOcrEnabled(s.ocrEnabled !== false)
         setAudioEnabled(s.audioEnabled !== false)
-        setOcrInterval(s.ocrInterval || 8000)
-        setAudioChunkSize(s.audioChunkSize || 5000)
+        setAssistAutoTrigger(s.assistAutoTrigger === true)
         setAudioFallbackProvider(s.audioFallbackProvider || 'openai')
         setResumeContext(s.resumeContext || '')
         setResumeSourceName(s.resumeSourceName || '')
@@ -187,6 +213,9 @@ export default function Settings() {
           cerebrasKey: !!s.cerebrasKey,
           customOpenaiKey: !!s.customOpenaiKey,
         })
+        if (hk && typeof hk === 'object') {
+          setHotkeysMap((prev) => ({ ...prev, ...hk }))
+        }
       })
       .catch(console.error)
   }, [])
@@ -368,6 +397,35 @@ export default function Settings() {
     }
   }
 
+  const commitHotkey = async (action, raw) => {
+    if (!ipc) return
+    const fallback = DEFAULT_HOTKEYS_MAP[action]
+    if (!fallback) return
+    let v = String(raw ?? '').trim()
+    if (!v) v = fallback
+    try {
+      await ipc.invoke('update-hotkey', action, v)
+      setHotkeysMap((m) => ({ ...m, [action]: v }))
+    } catch (e) {
+      console.warn('update-hotkey', e)
+    }
+  }
+
+  const resetOneHotkey = async (action) => {
+    const d = DEFAULT_HOTKEYS_MAP[action]
+    if (!ipc || !d) return
+    await ipc.invoke('update-hotkey', action, d)
+    setHotkeysMap((m) => ({ ...m, [action]: d }))
+  }
+
+  const resetAllHotkeys = async () => {
+    if (!ipc) return
+    for (const action of Object.keys(DEFAULT_HOTKEYS_MAP)) {
+      await ipc.invoke('update-hotkey', action, DEFAULT_HOTKEYS_MAP[action])
+    }
+    setHotkeysMap({ ...DEFAULT_HOTKEYS_MAP })
+  }
+
   const OVERLAY_POSITION_PRESETS = ['Top-Right', 'Top-Left', 'Bottom-Right', 'Bottom-Left', 'Center-Right']
 
   const nativeSttIds = sttPolicy?.nativeSttProviderIds || ['groq', 'openai', 'together', 'mistral', 'fireworks']
@@ -390,50 +448,39 @@ export default function Settings() {
       <div className="settings-root relative z-10 flex min-h-0 flex-1 flex-col overflow-hidden">
       <AmbientOrbs />
 
-      <header className="relative z-20 shrink-0 border-b border-white/[0.06] bg-black/20 px-6 py-5 backdrop-blur-md lg:px-10">
-        <div className="flex flex-wrap items-end justify-between gap-4">
+      <header className="relative z-20 shrink-0 border-b border-white/[0.06] bg-black/30 px-5 py-4 backdrop-blur-xl lg:px-8">
+        <div className="flex flex-wrap items-start justify-between gap-3">
           <div>
-            <p className="font-mono text-[10px] font-medium uppercase tracking-[0.35em] text-phantom-400/90">ShadowAssist</p>
-            <h1 className="font-display mt-1 text-2xl font-bold tracking-tight text-white md:text-3xl">
-              Command{' '}
-              <span className="bg-gradient-to-r from-accent via-accent-light to-phantom-400 bg-clip-text text-transparent">surface</span>
-            </h1>
-            <p className="mt-1 text-xs font-medium text-indigo-300/80">Undetectable AI for live meetings</p>
-            <p className="mt-1 max-w-xl text-sm text-mist-500">
-              {showSetupBanner ? 'Calibrate your whisper — wide layout, zero chrome noise.' : 'Real-time AI assistance — paste keys & model IDs from each vendor’s docs.'}
+            <p className="text-[10px] font-medium uppercase tracking-[0.2em] text-zinc-500">Settings</p>
+            <h1 className="font-display mt-0.5 text-xl font-semibold tracking-tight text-white md:text-2xl">ShadowAssist</h1>
+            <p className="mt-1 max-w-xl text-[13px] leading-snug text-zinc-500">
+              {showSetupBanner ? 'Finish first-time setup: vendor, key, and model.' : 'Providers, overlay appearance, shortcuts, and privacy.'}
             </p>
-          </div>
-          <div className="hidden items-center gap-3 sm:flex">
-            <div className="shadow-accent-dot h-2 w-2 animate-pulse rounded-full bg-accent" title="Core" />
-            <span className="font-mono text-[10px] uppercase tracking-widest text-gray-500">Lattice online</span>
           </div>
         </div>
       </header>
 
       {showSetupBanner && (
-        <div className="relative z-20 shrink-0 border-b border-accent/20 bg-gradient-to-r from-accent/10 via-transparent to-phantom-600/10 px-6 py-3 lg:px-10">
-          <p className="text-sm font-medium text-accent">First sync</p>
-          <p className="text-xs text-gray-400">Pick a vendor, paste key + model id — meeting context lives under Shadow profile.</p>
+        <div className="relative z-20 shrink-0 border-b border-white/[0.06] bg-accent/5 px-5 py-2.5 lg:px-8">
+          <p className="text-[12px] font-medium text-accent-light">First run — complete Neural link, then you can close this window.</p>
         </div>
       )}
 
       <div className="relative z-20 flex min-h-0 min-w-0 flex-1 overflow-hidden">
-        <nav className="flex w-[200px] shrink-0 flex-col border-r border-white/[0.06] bg-black/25 py-6 backdrop-blur-sm">
+        <nav className="flex w-[188px] shrink-0 flex-col border-r border-white/[0.06] bg-black/20 py-4">
           {tabs.map((t) => (
             <button
               key={t.id}
               type="button"
               onClick={() => setActiveTab(t.id)}
-              className={`group mx-3 mb-1 rounded-xl px-4 py-3 text-left transition-all duration-300 ${
+              className={`group mx-2 mb-0.5 rounded-lg px-3 py-2.5 text-left transition-colors duration-150 ${
                 activeTab === t.id
-                  ? 'border border-accent/35 bg-gradient-to-br from-accent/18 via-accent/8 to-phantom-600/10 shadow-[inset_0_1px_0_rgb(var(--accent-rgb)/0.12),0_0_28px_-14px_rgb(var(--accent-rgb)/0.25)]'
-                  : 'border border-transparent bg-gradient-to-b from-white/[0.05] to-transparent hover:border-white/[0.09] hover:from-white/[0.07] hover:shadow-[0_8px_28px_-18px_rgba(0,0,0,0.5)]'
+                  ? 'border border-white/[0.08] bg-white/[0.06] text-white'
+                  : 'border border-transparent text-zinc-500 hover:bg-white/[0.04] hover:text-zinc-300'
               }`}
             >
-              <span className={`font-display text-sm font-semibold ${activeTab === t.id ? 'text-white' : 'text-gray-400 group-hover:text-gray-200'}`}>
-                {t.label}
-              </span>
-              <span className="mt-0.5 block text-[10px] uppercase tracking-wider text-gray-600">{t.sub}</span>
+              <span className="block text-[13px] font-medium">{t.label}</span>
+              <span className="mt-0.5 block text-[10px] text-zinc-600 group-hover:text-zinc-500">{t.sub}</span>
             </button>
           ))}
         </nav>
@@ -802,21 +849,19 @@ export default function Settings() {
 
           {activeTab === 'display' && (
             <div className="mx-auto max-w-3xl animate-fade-in space-y-5">
-              <section className="glass-panel p-8">
-                <h2 className="font-display text-lg font-bold text-white">Overlay display</h2>
-                <p className="mt-1 text-sm text-gray-500">
-                  Tune the floating panel: transparency, answer text size, default window size, and snap position on your primary display. Changes apply immediately when the overlay is visible.
+              <section className="glass-panel p-6">
+                <h2 className="text-base font-semibold text-white">Overlay</h2>
+                <p className="mt-1 text-[13px] text-zinc-500">
+                  Appearance, size, position, and global shortcuts. Changes apply while the overlay is open.
                 </p>
 
-                <div className="mt-8 space-y-8">
+                <div className="mt-6 space-y-7">
                   <div>
-                    <label className="mb-2 block text-[10px] font-semibold uppercase tracking-[0.2em] text-mist-400">
-                      Accent color
+                    <label className="mb-1.5 block text-[10px] font-semibold uppercase tracking-wider text-zinc-500">
+                      Accent
                     </label>
-                    <p className="mb-3 text-xs text-gray-600">
-                      Saturated neon ramps for the overlay — mic, code blocks, scroll chrome. Default stays the original green.
-                    </p>
-                    <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-6">
+                    <p className="mb-2 text-[11px] text-zinc-600">Overlay highlights (mic, code chrome, accents).</p>
+                    <div className="flex flex-wrap gap-2">
                       {UI_ACCENT_THEMES.map((t) => {
                         const [r, g, b] = t.main
                         const [lr, lg, lb] = t.light
@@ -827,22 +872,21 @@ export default function Settings() {
                             type="button"
                             title={t.label}
                             onClick={() => applyUiAccent(t.id)}
-                            className={`group relative flex flex-col items-center gap-2.5 overflow-hidden rounded-2xl border px-2 pb-3 pt-3 text-center transition-all duration-300 ${
+                            className={`group flex flex-col items-center gap-1 rounded-lg border px-1.5 py-1.5 text-center transition-colors duration-150 ${
                               active
-                                ? 'border-accent/50 bg-gradient-to-b from-accent/20 via-accent/8 to-transparent shadow-[0_0_40px_-12px_rgb(var(--accent-rgb)/0.55)] ring-1 ring-accent/35'
-                                : 'border-white/[0.08] bg-gradient-to-b from-white/[0.07] to-white/[0.02] hover:border-white/15 hover:shadow-[0_12px_40px_-20px_rgb(0,0,0,0.6)]'
+                                ? 'border-accent/40 bg-accent/10'
+                                : 'border-white/[0.08] bg-white/[0.03] hover:border-white/15 hover:bg-white/[0.05]'
                             }`}
                           >
                             <span
-                              className="relative h-11 w-11 rounded-full ring-2 ring-white/15 transition-transform duration-300 group-hover:scale-105"
+                              className="h-6 w-6 shrink-0 rounded-full ring-1 ring-white/10"
                               style={{
-                                background: `radial-gradient(circle at 32% 28%, rgba(255,255,255,0.55), transparent 42%), linear-gradient(155deg, rgb(${lr},${lg},${lb}) 0%, rgb(${r},${g},${b}) 55%, rgb(${t.mid[0]},${t.mid[1]},${t.mid[2]}) 100%)`,
-                                boxShadow: `0 0 22px rgba(${r},${g},${b},0.55), inset 0 2px 5px rgba(255,255,255,0.35)`,
+                                background: `linear-gradient(145deg, rgb(${lr},${lg},${lb}), rgb(${r},${g},${b}))`,
                               }}
                             />
                             <span
-                              className={`font-display text-[10px] font-semibold uppercase tracking-wide ${
-                                active ? 'text-white' : 'text-gray-400 group-hover:text-gray-200'
+                              className={`max-w-[4.5rem] truncate text-[9px] font-medium leading-tight ${
+                                active ? 'text-accent-light' : 'text-zinc-500 group-hover:text-zinc-400'
                               }`}
                             >
                               {t.label}
@@ -933,7 +977,50 @@ export default function Settings() {
                         </button>
                       ))}
                     </div>
-                    <p className="mt-2 text-[10px] text-gray-600">Uses current width/height. Nudge with hotkeys: Ctrl+Arrow keys.</p>
+                    <p className="mt-2 text-[10px] text-zinc-600">Uses current width/height. Nudge with arrow shortcuts below.</p>
+                  </div>
+
+                  <div className="border-t border-white/[0.06] pt-6">
+                    <div className="mb-3 flex flex-wrap items-end justify-between gap-2">
+                      <div>
+                        <label className="block text-[10px] font-semibold uppercase tracking-wider text-zinc-500">
+                          Keyboard shortcuts
+                        </label>
+                        <p className="mt-1 text-[11px] text-zinc-600">
+                          Electron format: <code className="text-zinc-500">CommandOrControl</code> works on Mac (⌘) and Windows (Ctrl). Use{' '}
+                          <code className="text-zinc-500">+</code> between keys. Invalid combos may not register — check the dev console if a shortcut stops working.
+                        </p>
+                      </div>
+                      <button type="button" onClick={() => void resetAllHotkeys()} className="btn-ghost shrink-0 px-3 py-1.5 text-[11px]">
+                        Restore all defaults
+                      </button>
+                    </div>
+                    <div className="space-y-1.5">
+                      {HOTKEY_DEFS.map(({ action, label }) => (
+                        <div
+                          key={action}
+                          className="flex flex-wrap items-center gap-2 rounded-lg border border-white/[0.06] bg-black/20 px-2.5 py-2"
+                        >
+                          <span className="min-w-0 flex-1 text-[12px] text-zinc-400">{label}</span>
+                          <input
+                            type="text"
+                            spellCheck={false}
+                            autoComplete="off"
+                            value={hotkeysMap[action] ?? DEFAULT_HOTKEYS_MAP[action] ?? ''}
+                            onChange={(e) => setHotkeysMap((m) => ({ ...m, [action]: e.target.value }))}
+                            onBlur={(e) => void commitHotkey(action, e.target.value)}
+                            className="input-shadow w-[min(100%,220px)] min-w-[160px] px-2 py-1.5 font-mono text-[11px]"
+                          />
+                          <button
+                            type="button"
+                            onClick={() => void resetOneHotkey(action)}
+                            className="rounded-md border border-white/[0.08] px-2 py-1 text-[10px] text-zinc-500 transition-colors hover:border-white/15 hover:text-zinc-300"
+                          >
+                            Reset
+                          </button>
+                        </div>
+                      ))}
+                    </div>
                   </div>
                 </div>
               </section>
@@ -949,7 +1036,10 @@ export default function Settings() {
                   <label className="settings-row-tile flex cursor-pointer items-center justify-between gap-4">
                     <div>
                       <span className="font-medium text-gray-200">Screen reading (OCR)</span>
-                      <p className="text-xs text-gray-600">Periodic screen text for context</p>
+                      <p className="text-xs text-gray-600">
+                        When Listen is on, screen text is captured when you trigger the assistant (hotkey or typed ask),
+                        or when Assist mode runs an intent check — not continuously in the background.
+                      </p>
                     </div>
                     <input
                       type="checkbox"
@@ -964,7 +1054,7 @@ export default function Settings() {
                   <label className="settings-row-tile flex cursor-pointer items-center justify-between gap-4">
                     <div>
                       <span className="font-medium text-gray-200">Microphone / audio</span>
-                      <p className="text-xs text-gray-600">Chunks for transcription</p>
+                      <p className="text-xs text-gray-600">Listen uses fixed-length chunks for transcription (event-driven).</p>
                     </div>
                     <input
                       type="checkbox"
@@ -976,51 +1066,26 @@ export default function Settings() {
                       className="h-5 w-5 rounded border-white/20 accent-accent"
                     />
                   </label>
-                  <div className="grid gap-4 sm:grid-cols-2">
+                  <label className="settings-row-tile flex cursor-pointer items-center justify-between gap-4">
                     <div>
-                      <label className="mb-1 block text-[10px] font-semibold uppercase tracking-widest text-mist-400">OCR interval (ms)</label>
-                      <input
-                        type="number"
-                        min={5000}
-                        step={1000}
-                        value={ocrInterval}
-                        onChange={(e) => setOcrInterval(Number(e.target.value))}
-                        onBlur={() => save('ocrInterval', ocrInterval)}
-                        className="input-shadow w-full px-3 py-2.5"
-                      />
+                      <span className="font-medium text-gray-200">Assist mode (auto AI)</span>
+                      <p className="text-xs text-gray-600">
+                        Off (default): Listen — speech is context only; use hotkey or type to ask. On: Assist — AI may run
+                        when intent is clear (question or strong speech + screen).
+                      </p>
                     </div>
-                    <div>
-                      <label className="mb-1 block text-[10px] font-semibold uppercase tracking-widest text-mist-400">Audio chunk (ms)</label>
-                      <input
-                        type="number"
-                        min={2000}
-                        step={500}
-                        value={audioChunkSize}
-                        onChange={(e) => setAudioChunkSize(Number(e.target.value))}
-                        onBlur={() => save('audioChunkSize', audioChunkSize)}
-                        className="input-shadow w-full px-3 py-2.5"
-                      />
-                    </div>
-                  </div>
-                  <div className="flex flex-wrap items-center gap-3">
-                    <button
-                      type="button"
-                      onClick={async () => {
-                        const r = await ipc?.invoke('reset-session-timing-defaults')
-                        if (!r) return
-                        setOcrInterval(r.ocrInterval)
-                        setAudioChunkSize(r.audioChunkSize)
-                        patchSnap('ocrInterval', r.ocrInterval)
-                        patchSnap('audioChunkSize', r.audioChunkSize)
+                    <input
+                      type="checkbox"
+                      checked={assistAutoTrigger}
+                      onChange={(e) => {
+                        setAssistAutoTrigger(e.target.checked)
+                        save('assistAutoTrigger', e.target.checked)
                       }}
-                      className="settings-chip !border-dashed !border-white/20 !px-5 !py-2.5 !text-[11px] !font-semibold !tracking-wide hover:!border-accent/45"
-                    >
-                      Reset OCR &amp; audio timing to defaults
-                    </button>
-                    <span className="text-[10px] text-gray-600">OCR 8000 ms · Audio chunk 5000 ms</span>
-                  </div>
-                  <p className="font-mono text-[10px] text-gray-600">
-                    Ctrl+\ toggle · Ctrl+Enter ask · Ctrl+Shift+\ session · Ctrl+Shift+S settings
+                      className="h-5 w-5 rounded border-white/20 accent-accent"
+                    />
+                  </label>
+                  <p className="text-[11px] text-zinc-600">
+                    Shortcut keys are editable under <span className="text-zinc-500">Overlay → Keyboard shortcuts</span>.
                   </p>
                 </div>
               </section>

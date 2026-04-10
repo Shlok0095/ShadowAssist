@@ -5,7 +5,7 @@ import React, { StrictMode } from 'react'
 import ReactDOM from 'react-dom/client'
 import '../shared/app-fonts.css'
 import App from './App'
-import '../overlay/index.css'
+import '../settings/index.css'
 
 const root = ReactDOM.createRoot(document.getElementById('root'))
 const app = <App />

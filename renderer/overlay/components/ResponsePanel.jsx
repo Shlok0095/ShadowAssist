@@ -80,15 +80,23 @@ function normalizeLang(l) {
   return LANG_MAP[k] || k || 'plaintext'
 }
 
-/** Parse markdown; unclosed ``` at EOF still yields a code block (for streaming). */
+/**
+ * Parse markdown into structured nodes.
+ * Supported: fenced code blocks, h1/h2/h3, ul with indented sub-bullets,
+ * ol with indented sub-items, horizontal rules (---), blockquotes (>), paragraphs.
+ * Unclosed ``` at EOF still yields a code block (for streaming).
+ */
 function parseMarkdown(text) {
   const lines = text.split('\n')
   const out = []
   let i = 0
+
   while (i < lines.length) {
     const line = lines[i]
-    if (/^```(\w*)$/.test(line)) {
-      const lang = RegExp.$1
+
+    // Fenced code block
+    if (/^```(\w*)/.test(line)) {
+      const lang = line.slice(3).trim()
       const block = []
       i++
       while (i < lines.length && !lines[i].startsWith('```')) {
@@ -99,39 +107,74 @@ function parseMarkdown(text) {
       out.push({ type: 'code', lang, content: block.join('\n') })
       continue
     }
-    if (/^###\s+(.+)$/.test(line)) {
-      out.push({ type: 'h3', content: RegExp.$1 })
+
+    // Horizontal rule
+    if (/^---+\s*$/.test(line)) {
+      out.push({ type: 'hr' })
       i++
       continue
     }
-    if (/^##\s+(.+)$/.test(line)) {
-      out.push({ type: 'h2', content: RegExp.$1 })
-      i++
+
+    // Headings
+    if (/^###\s+(.+)$/.test(line)) { out.push({ type: 'h3', content: RegExp.$1 }); i++; continue }
+    if (/^##\s+(.+)$/.test(line))  { out.push({ type: 'h2', content: RegExp.$1 }); i++; continue }
+    if (/^#\s+(.+)$/.test(line))   { out.push({ type: 'h1', content: RegExp.$1 }); i++; continue }
+
+    // Blockquote
+    if (/^>\s?(.*)$/.test(line)) {
+      const items = []
+      while (i < lines.length && /^>\s?(.*)$/.test(lines[i])) {
+        items.push(lines[i].replace(/^>\s?/, ''))
+        i++
+      }
+      out.push({ type: 'blockquote', items })
       continue
     }
-    if (/^#\s+(.+)$/.test(line)) {
-      out.push({ type: 'h1', content: RegExp.$1 })
-      i++
-      continue
-    }
+
+    // Unordered list (top-level "-" or "*"), supporting indented sub-bullets ("  -")
     if (/^[-*]\s+(.+)$/.test(line)) {
       const items = []
-      while (i < lines.length && /^[-*]\s+(.+)$/.test(lines[i])) {
-        items.push(RegExp.$1)
-        i++
+      while (i < lines.length) {
+        const l = lines[i]
+        if (/^[-*]\s+(.+)$/.test(l)) {
+          const text = RegExp.$1
+          const subs = []
+          i++
+          while (i < lines.length && /^[ \t]{2,}[-*]\s+(.+)$/.test(lines[i])) {
+            subs.push(lines[i].replace(/^[ \t]+[-*]\s+/, ''))
+            i++
+          }
+          items.push({ text, subs })
+        } else {
+          break
+        }
       }
       out.push({ type: 'ul', items })
       continue
     }
+
+    // Ordered list
     if (/^\d+\.\s+(.+)$/.test(line)) {
       const items = []
-      while (i < lines.length && /^\d+\.\s+(.+)$/.test(lines[i])) {
-        items.push(RegExp.$1)
-        i++
+      while (i < lines.length) {
+        const l = lines[i]
+        if (/^\d+\.\s+(.+)$/.test(l)) {
+          const text = RegExp.$1
+          const subs = []
+          i++
+          while (i < lines.length && /^[ \t]{2,}[-*]\s+(.+)$/.test(lines[i])) {
+            subs.push(lines[i].replace(/^[ \t]+[-*]\s+/, ''))
+            i++
+          }
+          items.push({ text, subs })
+        } else {
+          break
+        }
       }
       out.push({ type: 'ol', items })
       continue
     }
+
     if (line.trim()) {
       out.push({ type: 'p', content: line })
     }
@@ -149,8 +192,9 @@ function escapeHtml(s) {
 }
 
 function renderInline(text) {
-  return text
+  return escapeHtml(text)
     .replace(/\*\*(.+?)\*\*/g, '<strong class="font-semibold text-gray-100">$1</strong>')
+    .replace(/\*([^*]+)\*/g, '<em class="italic text-gray-300">$1</em>')
     .replace(/`([^`]+)`/g, '<code class="rounded bg-white/10 px-1 py-0.5 text-[0.85em] text-accent-light/90 font-mono">$1</code>')
 }
 
@@ -225,10 +269,10 @@ const MessageBubble = memo(function MessageBubble({ role, text }) {
       <div
         className={
           isUser
-            ? 'max-w-[88%] rounded-2xl border border-accent/30 bg-accent/12 px-3.5 py-2.5 text-left text-sm text-gray-100 shadow-sm'
+            ? 'max-w-[86%] rounded-xl border border-accent/20 bg-accent/8 px-3 py-2 text-left text-[12.5px] text-gray-100'
             : isError
-              ? 'w-full rounded-2xl border border-rose-500/35 bg-rose-500/10 px-3.5 py-2.5 text-left text-sm text-rose-200'
-              : 'w-full rounded-2xl border border-white/[0.08] bg-white/[0.04] px-3.5 py-3 text-left text-sm text-gray-200 shadow-[inset_0_1px_0_rgba(255,255,255,0.04)]'
+              ? 'w-full rounded-xl border border-rose-500/25 bg-rose-500/8 px-3 py-2.5 text-left text-[12.5px] text-rose-200'
+              : 'w-full text-left text-[12.5px] text-gray-200'
         }
       >
         {role === 'ai' ? (
@@ -238,6 +282,7 @@ const MessageBubble = memo(function MessageBubble({ role, text }) {
             <div className="space-y-1.5 text-left text-gray-200 [&_p]:leading-[1.65] [&_li]:leading-relaxed">
               {nodes.map((n, i) => {
                 if (n.type === 'code') return <CodeBlock key={i} lang={n.lang} content={n.content} />
+                if (n.type === 'hr') return <hr key={i} className="my-3 border-white/10" />
                 if (n.type === 'h1')
                   return (
                     <h1
@@ -258,27 +303,65 @@ const MessageBubble = memo(function MessageBubble({ role, text }) {
                   return (
                     <h3
                       key={i}
-                      className="mb-0.5 mt-2 text-sm font-semibold text-gray-200 first:mt-0"
+                      className="mb-0.5 mt-2 text-[13px] font-semibold text-accent-mid first:mt-0"
                       dangerouslySetInnerHTML={{ __html: renderInline(n.content) }}
                     />
                   )
+                if (n.type === 'blockquote')
+                  return (
+                    <blockquote key={i} className="my-1.5 border-l-2 border-accent/40 pl-3 text-[13px] text-gray-400 italic">
+                      {n.items.map((x, j) => (
+                        <p key={j} dangerouslySetInnerHTML={{ __html: renderInline(x) }} />
+                      ))}
+                    </blockquote>
+                  )
                 if (n.type === 'ul')
                   return (
-                    <ul key={i} className="my-1.5 list-disc space-y-1 pl-5 marker:text-accent/70">
-                      {n.items.map((x, j) => (
-                        <li key={j} dangerouslySetInnerHTML={{ __html: renderInline(x) }} />
+                    <ul key={i} className="my-1.5 space-y-1 pl-4">
+                      {n.items.map((item, j) => (
+                        <li key={j} className="flex flex-col gap-0.5">
+                          <span className="flex gap-1.5">
+                            <span className="mt-[0.4em] h-1.5 w-1.5 shrink-0 rounded-full bg-accent/60" />
+                            <span dangerouslySetInnerHTML={{ __html: renderInline(item.text) }} />
+                          </span>
+                          {item.subs?.length > 0 && (
+                            <ul className="mt-0.5 space-y-0.5 pl-5">
+                              {item.subs.map((s, k) => (
+                                <li key={k} className="flex gap-1.5 text-[12px] text-gray-400">
+                                  <span className="mt-[0.45em] h-1 w-1 shrink-0 rounded-full bg-white/20" />
+                                  <span dangerouslySetInnerHTML={{ __html: renderInline(s) }} />
+                                </li>
+                              ))}
+                            </ul>
+                          )}
+                        </li>
                       ))}
                     </ul>
                   )
                 if (n.type === 'ol')
                   return (
-                    <ol key={i} className="my-1.5 list-decimal space-y-1 pl-5 marker:text-accent/70">
-                      {n.items.map((x, j) => (
-                        <li key={j} dangerouslySetInnerHTML={{ __html: renderInline(x) }} />
+                    <ol key={i} className="my-1.5 space-y-1 pl-4">
+                      {n.items.map((item, j) => (
+                        <li key={j} className="flex flex-col gap-0.5">
+                          <span className="flex gap-1.5">
+                            <span className="min-w-[1.1rem] shrink-0 text-right text-[11px] font-semibold text-accent/70">{j + 1}.</span>
+                            <span dangerouslySetInnerHTML={{ __html: renderInline(item.text) }} />
+                          </span>
+                          {item.subs?.length > 0 && (
+                            <ul className="mt-0.5 space-y-0.5 pl-7">
+                              {item.subs.map((s, k) => (
+                                <li key={k} className="flex gap-1.5 text-[12px] text-gray-400">
+                                  <span className="mt-[0.45em] h-1 w-1 shrink-0 rounded-full bg-white/20" />
+                                  <span dangerouslySetInnerHTML={{ __html: renderInline(s) }} />
+                                </li>
+                              ))}
+                            </ul>
+                          )}
+                        </li>
                       ))}
                     </ol>
                   )
-                return <p key={i} className="text-[13px]" dangerouslySetInnerHTML={{ __html: renderInline(n.content) }} />
+                return <p key={i} className="text-[13px] leading-[1.65]" dangerouslySetInnerHTML={{ __html: renderInline(n.content) }} />
               })}
             </div>
           )
@@ -290,57 +373,25 @@ const MessageBubble = memo(function MessageBubble({ role, text }) {
   )
 })
 
-/** Live stream: highlight.js only after commit (MessageBubble); here plain code for smooth scroll */
-function StreamingBlock({ text, isThinking }) {
-  const nodes = useMemo(() => parseMarkdown(text), [text])
-  const hasCode = nodes.some((n) => n.type === 'code')
-  if (!text && isThinking) return null
-  if (!text) return null
-
-  if (hasCode || nodes.length > 0) {
-    return (
-      <div className="w-full rounded-2xl border border-white/[0.08] bg-white/[0.04] px-3.5 py-3 text-left text-sm text-gray-200">
-        <div className="space-y-1.5 text-left">
-          {nodes.map((n, i) => {
-            if (n.type === 'code') return <CodeBlock key={i} lang={n.lang} content={n.content} suppressHighlight />
-            if (n.type === 'h1')
-              return (
-                <h1 key={i} className="text-base font-bold text-gray-50" dangerouslySetInnerHTML={{ __html: renderInline(n.content) }} />
-              )
-            if (n.type === 'h2')
-              return (
-                <h2 key={i} className="text-sm font-bold text-gray-100" dangerouslySetInnerHTML={{ __html: renderInline(n.content) }} />
-              )
-            if (n.type === 'h3')
-              return (
-                <h3 key={i} className="text-sm font-semibold text-gray-200" dangerouslySetInnerHTML={{ __html: renderInline(n.content) }} />
-              )
-            if (n.type === 'ul')
-              return (
-                <ul key={i} className="list-disc space-y-1 pl-5">
-                  {n.items.map((x, j) => (
-                    <li key={j} dangerouslySetInnerHTML={{ __html: renderInline(x) }} />
-                  ))}
-                </ul>
-              )
-            if (n.type === 'ol')
-              return (
-                <ol key={i} className="list-decimal space-y-1 pl-5">
-                  {n.items.map((x, j) => (
-                    <li key={j} dangerouslySetInnerHTML={{ __html: renderInline(x) }} />
-                  ))}
-                </ol>
-              )
-            return <p key={i} className="whitespace-pre-wrap leading-relaxed" dangerouslySetInnerHTML={{ __html: renderInline(n.content) }} />
-          })}
-        </div>
-      </div>
-    )
-  }
-
+/**
+ * Stream shell in React; live text is updated via refs (direct DOM) from App — O(1) per batch, no React re-render per token.
+ * The streamTextRef div uses whitespace-pre-wrap so inline markdown (bold, code, bullets) renders
+ * as the App injects tokens directly via innerHTML.
+ */
+function StreamDomMount({ streamTextRef, streamPulseRef, isThinking }) {
+  if (!isThinking) return null
   return (
-    <div className="w-full rounded-2xl border border-white/[0.08] bg-white/[0.04] px-3.5 py-3 text-left font-mono text-[13px] leading-relaxed text-gray-200 whitespace-pre-wrap">
-      {text}
+    <div className="w-full min-h-[2.75rem] rounded-2xl border border-white/[0.08] bg-white/[0.04] px-3.5 py-3 text-left [contain:layout]">
+      <div ref={streamPulseRef} className="flex items-center gap-1.5 pb-1.5 text-accent/80">
+        <span className="h-1.5 w-1.5 animate-pulse rounded-full bg-accent/80" />
+        <span className="h-1.5 w-1.5 animate-pulse rounded-full bg-accent/60 delay-75" />
+        <span className="h-1.5 w-1.5 animate-pulse rounded-full bg-accent/40 delay-150" />
+      </div>
+      <div
+        ref={streamTextRef}
+        className="stream-text min-h-[1em] text-left text-[13px] leading-relaxed text-gray-200"
+        style={{ whiteSpace: 'pre-wrap' }}
+      />
     </div>
   )
 }
@@ -364,8 +415,8 @@ function labelForAskSource(s) {
   return ASK_SOURCE_LABEL[s] || 'Assistant'
 }
 
-const ResponsePanel = React.forwardRef(function ResponsePanel(
-  { messages, streaming, isThinking, fontSize, activeAskSource = null },
+const ResponsePanelInner = React.forwardRef(function ResponsePanel(
+  { messages, isThinking, streamTextRef, streamPulseRef, fontSize, activeAskSource = null },
   ref,
 ) {
   const scrollRef = useRef(null)
@@ -382,7 +433,7 @@ const ResponsePanel = React.forwardRef(function ResponsePanel(
       askSource: t.replies.find((r) => r.askSource)?.askSource || t.user?.askSource || null,
     }))
   }, [messages])
-  const hasActiveReply = !!(streaming || (isThinking && !streaming))
+  const hasActiveReply = !!isThinking
 
   useEffect(() => {
     if (scrollKickRef.current != null) cancelAnimationFrame(scrollKickRef.current)
@@ -401,7 +452,7 @@ const ResponsePanel = React.forwardRef(function ResponsePanel(
         return
       }
 
-      if (messages.length === 0 && !streaming) {
+      if (messages.length === 0 && !isThinking) {
         lastScrollHeightRef.current = sh
         el.scrollTop = 0
         return
@@ -431,7 +482,7 @@ const ResponsePanel = React.forwardRef(function ResponsePanel(
         scrollKickRef.current = null
       }
     }
-  }, [streaming, messages])
+  }, [isThinking, messages])
 
   return (
     <div
@@ -449,7 +500,7 @@ const ResponsePanel = React.forwardRef(function ResponsePanel(
       }}
     >
       <div className="flex w-full flex-1 flex-col px-3 pb-2 pt-3">
-        {messages.length === 0 && !streaming && !isThinking && (
+        {messages.length === 0 && !isThinking && (
           <div className="flex flex-1 flex-col items-center justify-center py-8 text-center text-gray-500">
             <div className="mb-3 flex h-12 w-12 items-center justify-center rounded-full border-2 border-white/10">
               <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5">
@@ -470,83 +521,64 @@ const ResponsePanel = React.forwardRef(function ResponsePanel(
             const ribbonSource =
               last && hasActiveReply ? (activeAskSource ?? turn.askSource) : turn.askSource
             return (
-              <div key={turn.id} className={idx > 0 ? 'mt-16 border-t border-dashed border-white/[0.14] pt-14' : ''}>
-                <section
-                  className={`rounded-2xl border px-4 py-3 ${
-                    highlightLatest
-                      ? 'border-accent/30 bg-zinc-950/55 shadow-[inset_0_1px_0_rgba(255,255,255,0.05),0_0_0_1px_rgb(var(--accent-rgb)/0.12)]'
-                      : 'border-white/[0.07] bg-black/22'
-                  }`}
-                >
-                  <div
-                    className={`mb-4 flex items-center justify-between gap-2 rounded-lg border px-3 py-2 ${
-                      highlightLatest
-                        ? 'border-accent/25 bg-accent/8'
-                        : 'border-white/[0.07] bg-black/30'
-                    }`}
-                  >
-                    <div className="min-w-0 flex-1">
-                      <p className="text-[10px] font-bold uppercase tracking-widest text-accent-mid/95">
-                        {labelForAskSource(ribbonSource)}
-                      </p>
-                      <p className="mt-0.5 text-[9px] font-medium text-zinc-500">
-                        {highlightLatest ? 'Latest finished reply' : `Exchange ${idx + 1}`}
+              <div key={turn.id} className={idx > 0 ? 'mt-8 pt-8 border-t border-white/[0.06]' : ''}>
+                {/* Exchange label */}
+                <div className="mb-3 flex items-center gap-2">
+                  <span className={`text-[10px] font-medium ${highlightLatest ? 'text-accent/80' : 'text-zinc-600'}`}>
+                    {highlightLatest ? 'Latest reply' : `Exchange ${idx + 1}`}
+                  </span>
+                  {ribbonSource && (
+                    <>
+                      <span className="h-px flex-1 bg-white/[0.05]" />
+                      <span className="text-[10px] text-zinc-700">{labelForAskSource(ribbonSource)}</span>
+                    </>
+                  )}
+                </div>
+
+                <div className="space-y-4">
+                  {turn.user && (
+                    <div>
+                      <p className="mb-1 text-[10px] text-zinc-600">You</p>
+                      <MessageBubble role="user" text={turn.user.text} />
+                    </div>
+                  )}
+                  {turn.heard && (
+                    <div>
+                      <p className="mb-1 text-[10px] text-zinc-600">Question</p>
+                      <p className="whitespace-pre-wrap text-[13px] leading-relaxed text-zinc-300">
+                        {turn.heard.text}
                       </p>
                     </div>
-                  </div>
-                  <div className="space-y-5">
-                    {turn.user && (
-                      <div>
-                        <p className="mb-1.5 text-[10px] font-semibold uppercase tracking-wide text-zinc-500">You (typed)</p>
-                        <MessageBubble role="user" text={turn.user.text} />
+                  )}
+                  {turn.replies.length > 0 && (
+                    <div>
+                      <p className="mb-2 text-[10px] text-accent/70">Answer</p>
+                      <div className="space-y-2">
+                        {turn.replies.map((m) => (
+                          <MessageBubble key={m.id} role={m.role} text={m.text} />
+                        ))}
                       </div>
-                    )}
-                    {turn.heard && (
-                      <div className={turn.user ? 'border-t border-white/[0.06] pt-5' : ''}>
-                        <p className="text-[13px] font-medium leading-relaxed text-gray-200">Question:</p>
-                        <p className="mt-1 whitespace-pre-wrap text-[13px] leading-relaxed text-gray-200">
-                          {turn.heard.text}
-                        </p>
-                      </div>
-                    )}
-                    {turn.replies.length > 0 && (
-                      <div className={turn.heard || turn.user ? 'border-t border-white/[0.06] pt-5' : ''}>
-                        <p className="mb-1.5 text-[10px] font-semibold uppercase tracking-wide text-accent-mid/85">Answer</p>
-                        <div className="space-y-3">
-                          {turn.replies.map((m) => (
-                            <MessageBubble key={m.id} role={m.role} text={m.text} />
-                          ))}
-                        </div>
-                      </div>
-                    )}
-                  </div>
-                </section>
+                    </div>
+                  )}
+                </div>
               </div>
             )
           })}
         </div>
 
         {hasActiveReply && (
-          <div
-            className={`mx-auto w-full max-w-full ${messages.length > 0 ? 'mt-16 border-t border-dashed border-accent/35 pt-12' : 'mt-2'}`}
-          >
-            <div className="mb-4 rounded-lg border border-accent/20 bg-accent/5 px-3 py-2">
-              <p className="text-[10px] font-bold uppercase tracking-widest text-accent-mid">Answer (in progress)</p>
-              {activeAskSource ? (
-                <p className="mt-1 text-[10px] font-medium text-zinc-400">{labelForAskSource(activeAskSource)}</p>
-              ) : null}
+          <div className={`mx-auto w-full max-w-full ${messages.length > 0 ? 'mt-8 pt-8 border-t border-white/[0.06]' : 'mt-2'}`}>
+            <div className="mb-2 flex items-center gap-2">
+              <span className="text-[10px] text-accent/80">Answering…</span>
+              {activeAskSource && (
+                <>
+                  <span className="h-px flex-1 bg-white/[0.05]" />
+                  <span className="text-[10px] text-zinc-700">{labelForAskSource(activeAskSource)}</span>
+                </>
+              )}
             </div>
-            {isThinking && !streaming && (
-              <div className="flex items-center gap-1.5 text-amber-400/90">
-                <span className="animate-pulse">●</span>
-                <span className="animate-pulse delay-75">●</span>
-                <span className="animate-pulse delay-150">●</span>
-              </div>
-            )}
-            {streaming ? (
-              <div className="w-full">
-                <StreamingBlock text={streaming} isThinking={isThinking} />
-              </div>
+            {isThinking ? (
+              <StreamDomMount streamTextRef={streamTextRef} streamPulseRef={streamPulseRef} isThinking={isThinking} />
             ) : null}
           </div>
         )}
@@ -555,4 +587,5 @@ const ResponsePanel = React.forwardRef(function ResponsePanel(
   )
 })
 
+const ResponsePanel = memo(ResponsePanelInner)
 export default ResponsePanel

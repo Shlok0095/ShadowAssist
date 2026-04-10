@@ -29,24 +29,6 @@ const CHECKS = [
   },
 ]
 
-function AmbientOrbs() {
-  return (
-    <div className="pointer-events-none fixed inset-0 z-[1] overflow-hidden">
-      <div className="absolute -left-[20%] top-[10%] h-[420px] w-[420px] rounded-full bg-phantom-600/20 blur-[120px] animate-shadow-drift" aria-hidden />
-      <div
-        className="absolute -right-[15%] bottom-[5%] h-[380px] w-[380px] rounded-full bg-indigo-500/12 blur-[100px] animate-shadow-drift"
-        style={{ animationDelay: '-6s' }}
-        aria-hidden
-      />
-      <div
-        className="absolute left-[40%] top-[60%] h-[200px] w-[200px] rounded-full bg-sky-500/10 blur-[80px] animate-shadow-drift"
-        style={{ animationDelay: '-12s' }}
-        aria-hidden
-      />
-    </div>
-  )
-}
-
 export default function ConsentApp() {
   const [state, setState] = useState({ c1: false, c2: false, c3: false, c4: false })
   const allOk = useMemo(() => state.c1 && state.c2 && state.c3 && state.c4, [state])
@@ -72,91 +54,80 @@ export default function ConsentApp() {
 
   return (
     <AppWindowFrame>
-    <div className="settings-root relative z-10 flex min-h-0 flex-1 flex-col overflow-hidden">
-      <AmbientOrbs />
-
-      <header className="relative z-20 shrink-0 border-b border-white/[0.06] bg-black/20 px-6 py-5 backdrop-blur-md lg:px-10">
-        <div className="mx-auto max-w-2xl">
-          <p className="font-mono text-[10px] font-medium uppercase tracking-[0.35em] text-phantom-400/90">ShadowAssist // consent</p>
-          <h1 className="font-display mt-1 text-2xl font-bold tracking-tight text-white md:text-3xl">
-            Before you{' '}
-            <span className="bg-gradient-to-r from-indigo-300 via-violet-300 to-phantom-400 bg-clip-text text-transparent">continue</span>
-          </h1>
-          <p className="mt-1 text-xs font-medium text-indigo-300/85">Undetectable AI for live meetings</p>
-          <p className="mt-2 max-w-xl text-sm text-mist-500">
-            ShadowAssist is a discreet, undetectable on-screen assistant for live meetings only. Confirm each item to match the same commitments you
-            will make in Settings → Privacy &amp; Data.
+      <div className="settings-root relative z-10 flex min-h-0 flex-1 flex-col overflow-hidden">
+        <header className="relative z-20 shrink-0 border-b border-white/[0.06] bg-black/30 px-5 py-4 backdrop-blur-xl lg:px-8">
+          <p className="text-[10px] font-medium uppercase tracking-[0.2em] text-zinc-500">ShadowAssist</p>
+          <h1 className="font-display mt-0.5 text-xl font-semibold tracking-tight text-white">Consent &amp; safety</h1>
+          <p className="mt-1 max-w-xl text-[13px] leading-snug text-zinc-500">
+            Read the legal documents, then confirm each statement. This matches the commitments in Settings → Privacy &amp; Data.
           </p>
-        </div>
-      </header>
+        </header>
 
-      <main className="settings-scroll-outer relative z-20 min-h-0 min-w-0 flex-1 overflow-y-auto overflow-x-hidden p-6 lg:p-8">
-        <div className="mx-auto max-w-2xl animate-fade-in">
-          <section className="glass-panel animate-border-pulse p-8">
-            <h2 className="font-display text-sm font-bold uppercase tracking-[0.2em] text-gray-300">Legal acknowledgment</h2>
-            <p className="mt-2 text-xs leading-relaxed text-gray-500">
-              All boxes must be checked. Open the full documents in your default viewer before you agree:
-            </p>
-            <div className="mt-3 flex flex-wrap gap-2">
-              <button
-                type="button"
-                onClick={() => openLegal('terms')}
-                className="rounded-lg border border-white/15 bg-white/[0.06] px-3 py-1.5 text-xs font-medium text-indigo-200 hover:bg-white/[0.1]"
-              >
-                Open Terms of Use
-              </button>
-              <button
-                type="button"
-                onClick={() => openLegal('privacy')}
-                className="rounded-lg border border-white/15 bg-white/[0.06] px-3 py-1.5 text-xs font-medium text-indigo-200 hover:bg-white/[0.1]"
-              >
-                Open Privacy
-              </button>
-              <button
-                type="button"
-                onClick={() => openLegal('license')}
-                className="rounded-lg border border-white/15 bg-white/[0.06] px-3 py-1.5 text-xs font-medium text-indigo-200 hover:bg-white/[0.1]"
-              >
-                Open License
-              </button>
-            </div>
-
-            <div className="mt-8 space-y-3">
-              {CHECKS.map(({ key, label }) => (
-                <label
-                  key={key}
-                  className={`settings-row-tile flex cursor-default gap-3 ${
-                    state[key] ? 'border-indigo-500/35 bg-indigo-500/[0.06]' : ''
-                  }`}
+        <main className="settings-scroll-outer relative z-20 min-h-0 min-w-0 flex-1 overflow-y-auto overflow-x-hidden p-5 lg:p-8">
+          <div className="mx-auto max-w-lg">
+            <section className="glass-panel p-5">
+              <h2 className="text-[11px] font-semibold uppercase tracking-wider text-zinc-500">Documents</h2>
+              <p className="mt-1 text-[12px] leading-relaxed text-zinc-600">Open in your default viewer before you agree.</p>
+              <div className="mt-3 flex flex-wrap gap-2">
+                <button
+                  type="button"
+                  onClick={() => openLegal('terms')}
+                  className="rounded-lg border border-white/[0.08] bg-white/[0.04] px-3 py-1.5 text-[11px] font-medium text-zinc-300 transition-colors duration-150 hover:border-white/15 hover:bg-white/[0.07]"
                 >
-                  <input
-                    type="checkbox"
-                    checked={state[key]}
-                    onChange={() => toggle(key)}
-                    className="mt-0.5 h-4 w-4 shrink-0 rounded border-white/20 bg-black/40 accent-indigo-500"
-                  />
-                  <span className="text-sm leading-snug text-gray-300">{label}</span>
-                </label>
-              ))}
-            </div>
+                  Terms of Use
+                </button>
+                <button
+                  type="button"
+                  onClick={() => openLegal('privacy')}
+                  className="rounded-lg border border-white/[0.08] bg-white/[0.04] px-3 py-1.5 text-[11px] font-medium text-zinc-300 transition-colors duration-150 hover:border-white/15 hover:bg-white/[0.07]"
+                >
+                  Privacy
+                </button>
+                <button
+                  type="button"
+                  onClick={() => openLegal('license')}
+                  className="rounded-lg border border-white/[0.08] bg-white/[0.04] px-3 py-1.5 text-[11px] font-medium text-zinc-300 transition-colors duration-150 hover:border-white/15 hover:bg-white/[0.07]"
+                >
+                  License
+                </button>
+              </div>
 
-            <div className="mt-10 flex flex-wrap items-center gap-3 border-t border-white/[0.06] pt-8">
-              <button
-                type="button"
-                disabled={!allOk}
-                onClick={onContinue}
-                className="btn-glow px-8 py-3 text-sm disabled:cursor-not-allowed disabled:opacity-35 disabled:shadow-none"
-              >
-                Continue
-              </button>
-              <button type="button" onClick={onDecline} className="btn-ghost px-6 py-3 text-sm">
-                Decline
-              </button>
-            </div>
-          </section>
-        </div>
-      </main>
-    </div>
+              <div className="mt-6 space-y-2">
+                {CHECKS.map(({ key, label }) => (
+                  <label
+                    key={key}
+                    className={`settings-row-tile flex cursor-default gap-3 py-3 ${
+                      state[key] ? 'border-indigo-500/25 bg-indigo-500/[0.04]' : ''
+                    }`}
+                  >
+                    <input
+                      type="checkbox"
+                      checked={state[key]}
+                      onChange={() => toggle(key)}
+                      className="mt-0.5 h-4 w-4 shrink-0 rounded border-white/15 bg-black/40 accent-indigo-500"
+                    />
+                    <span className="text-[13px] leading-snug text-zinc-300">{label}</span>
+                  </label>
+                ))}
+              </div>
+
+              <div className="mt-6 flex flex-wrap items-center gap-2 border-t border-white/[0.06] pt-5">
+                <button
+                  type="button"
+                  disabled={!allOk}
+                  onClick={onContinue}
+                  className="btn-glow px-6 py-2.5 text-[13px] disabled:cursor-not-allowed disabled:opacity-35"
+                >
+                  Continue
+                </button>
+                <button type="button" onClick={onDecline} className="btn-ghost px-4 py-2.5 text-[13px]">
+                  Decline
+                </button>
+              </div>
+            </section>
+          </div>
+        </main>
+      </div>
     </AppWindowFrame>
   )
 }

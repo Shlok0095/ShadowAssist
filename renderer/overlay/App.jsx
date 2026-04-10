@@ -2,15 +2,188 @@
 // Unauthorized copying or distribution is prohibited.
 
 import React, { useState, useEffect, useRef, useCallback } from 'react'
+import { flushSync } from 'react-dom'
 import StatusBar from './components/StatusBar'
 import ResponsePanel from './components/ResponsePanel'
 import InputBar from './components/InputBar'
+import LiveTranscriptPanel from './components/LiveTranscriptPanel'
 import { applyUiAccentTheme, normalizeUiAccentId } from '../shared/uiAccentThemes'
 import { createIpcShim } from '../shared/ipcShim'
 import { filterWhisperVerboseJson } from '../shared/whisperTranscriptGate'
 
 const ipc = createIpcShim()
 const COLLAPSED_H = 38
+const MIN_ASK_GAP_MS = 2000
+const AUDIO_CHUNK_MS = 1200
+/** Ms of silence after last STT chunk before speech Assist may fire. */
+const SPEECH_STABILITY_MS = 1800
+/** Clear rolling speech buffer after this long without a new chunk. */
+const MAX_SPEECH_WINDOW_MS = 20000
+/** Minimum buffered speech length before speech Assist may fire. */
+const MIN_SPEECH_LENGTH = 20
+/** Failsafe Assist poll interval when buffer stays large. */
+const SPEECH_FAILSAFE_MS = 4000
+/** Max rolling transcript chars sent to the LLM (tail window). */
+const MAX_BUFFER_CHARS = 1200
+/** Min ms between speech auto-triggers (dedupe). */
+const SPEECH_TRIGGER_COOLDOWN_MS = 2500
+/** Failsafe only if this long since last any speech/failsafe trigger. */
+const FAILSAFE_MIN_GAP_AFTER_TRIGGER_MS = 3000
+/** Chunks this close together stay on the same speaker. */
+const CHUNK_SAME_SPEAKER_MAX_GAP_MS = 800
+/** Silence beyond this → soft turn change (switch speaker). */
+const CHUNK_TURN_SWITCH_SILENCE_MS = 2000
+/** Defer speech trigger slightly so last STT chunk can land. */
+const SPEECH_TRIGGER_LEAD_IN_MS = 150
+/** Minimum OCR text length before a screen-driven Assist trigger is considered. */
+const MIN_OCR_TRIGGER_CHARS = 40
+/** Minimum ms between screen-based Assist triggers (spam cap). */
+const SCREEN_ASSIST_COOLDOWN_MS = 4000
+/** Minimum ms between any auto Assist trigger (speech or screen). */
+const GLOBAL_TRIGGER_COOLDOWN_MS = 2000
+/** Cap OCR bytes in structured prompt (full OCR still in ref; not content filtering). */
+const MAX_SCREEN_CONTEXT_CHARS = 1000
+
+const MAX_LIVE_SEGMENTS = 30
+
+function trimBufferSmart(buffer) {
+  const b = String(buffer || '')
+  if (b.length <= MAX_BUFFER_CHARS) return b
+  const cutIndex = b.indexOf('.', b.length - 1000)
+  if (cutIndex !== -1) return b.slice(cutIndex + 1).replace(/^\s+/, '')
+  return b.slice(-MAX_BUFFER_CHARS)
+}
+
+/** Stable speaker: question → participant; rapid chunks → same; long gap → turn switch; else unchanged. */
+function assignChunkSpeaker(trimmedChunk, silenceBeforeMs, lastSpeakerRef) {
+  if (/\?/.test(String(trimmedChunk || ''))) {
+    lastSpeakerRef.current = 'other'
+    return 'other'
+  }
+  const last = lastSpeakerRef.current
+  if (silenceBeforeMs <= CHUNK_SAME_SPEAKER_MAX_GAP_MS) {
+    return last
+  }
+  if (silenceBeforeMs > CHUNK_TURN_SWITCH_SILENCE_MS) {
+    const switched = last === 'me' ? 'other' : 'me'
+    lastSpeakerRef.current = switched
+    return switched
+  }
+  return last
+}
+
+function isDirectAnswerQuery(text) {
+  return /\bnumber\b|\blist\b|only answer|just answer/i.test(String(text || ''))
+}
+
+/**
+ * Build the LLM user-turn prompt.
+ * mode='audio'  → transcribing mode (speech trigger): full transcript, screen is supporting.
+ * mode='screen' → non-transcribing mode (Ctrl+Enter / screen trigger): screen only, NO stale audio.
+ * mode='typed'  → user typed a question: typed question + both contexts as support.
+ */
+function buildStructuredUserPrompt({ rawSpeech, micFallback, screenText, typedQuestion, mode = 'audio' }) {
+  const audioCtx = String(rawSpeech || '').trim() || String(micFallback || '').trim() || ''
+  const screenCtx = String(screenText || '').trim() || ''
+  const typedQ = typedQuestion ? String(typedQuestion).trim() : ''
+
+  const hasScreen = !!screenCtx
+  const hasTyped = !!typedQ
+
+  if (mode === 'screen') {
+    // Non-transcribing mode: screen is everything — do NOT inject stale audio as "question"
+    if (!hasScreen && !hasTyped) {
+      return 'The screen could not be read clearly. Please describe what you need help with.'
+    }
+    return [
+      hasScreen ? `## SCREEN\n${screenCtx}` : null,
+      hasTyped ? `## QUESTION\n${typedQ}` : null,
+    ]
+      .filter(Boolean)
+      .join('\n\n')
+  }
+
+  if (mode === 'typed') {
+    // User explicitly typed a question — typed text is primary
+    return [
+      hasTyped ? `## QUESTION\n${typedQ}` : null,
+      audioCtx ? `## TRANSCRIPT (background context)\n${audioCtx}` : null,
+      hasScreen ? `## SCREEN (supporting context)\n${screenCtx}` : null,
+    ]
+      .filter(Boolean)
+      .join('\n\n')
+  }
+
+  // Audio / transcribing mode — respond to last question in transcript
+  const hasAudio = !!audioCtx
+  if (!hasAudio && !hasScreen && !hasTyped) {
+    return 'No context available.'
+  }
+  return [
+    hasAudio ? `## TRANSCRIPT (respond to last question only)\n${audioCtx}` : null,
+    hasScreen ? `## SCREEN (use only if relevant to last question)\n${screenCtx}` : null,
+    hasTyped ? `## QUESTION\n${typedQ}` : null,
+  ]
+    .filter(Boolean)
+    .join('\n\n')
+}
+
+/** OCR dedupe only: same snapshot / near-duplicate → skip trigger (not content “usefulness”). */
+function normalizeOcrDedupe(s) {
+  return String(s || '')
+    .toLowerCase()
+    .replace(/\s+/g, ' ')
+    .replace(/[^a-z0-9 ]/g, '')
+    .trim()
+}
+
+/**
+ * Returns true only if the OCR text looks like real readable content.
+ * Three-stage filter:
+ *  1. Reject Windows terminal encoding artifacts (ΓÇö ┬⌐ ┬╗ etc.) — these appear when
+ *     the OCR captures a developer terminal running the app itself.
+ *  2. Require ≥25% purely-alphabetic words (≥3 chars) — filters symbol/code noise.
+ *  3. Require at least one common English word — confirms it's natural language, not
+ *     garbled OCR tokens like "shicemusis" or "hedewszzin".
+ */
+const COMMON_EN_WORDS = new Set([
+  'the','and','to','is','it','in','of','for','a','an','you','i','we','are','have',
+  'that','this','with','from','was','be','he','she','they','can','or','but','on',
+  'at','by','do','so','what','how','your','my','our','its','not','if','has','as',
+  'which','will','all','been','when','there','up','about','out','one','his','her',
+  'him','them','who','their','no','yes','into','would','could','should','may','just',
+  'more','also','other','some','any','here','there','then','than','very','well',
+  'like','want','need','get','got','see','know','think','say','said','make','made',
+])
+function isOcrQualityGood(text) {
+  if (!text || text.trim().length < 25) return false
+  // Stage 1: Windows terminal encoding artifacts are a hard disqualifier
+  if (/\u0393\u00c7\u00f6|\u252c\u2310|\u252c\u00bb|\u0393\u00c7\u00f4|\u0393\u00c7\u00a3/.test(text)) return false
+  const words = text.trim().split(/\s+/).filter(Boolean)
+  if (words.length < 5) return false
+  // Stage 2: at least 25% purely alphabetic words (≥3 chars)
+  const alphaWords = words.filter((w) => /^[a-zA-Z]{3,}$/.test(w))
+  if (alphaWords.length / words.length < 0.25) return false
+  // Stage 3: at least one recognisable common English word
+  const lower = alphaWords.map((w) => w.toLowerCase())
+  return lower.some((w) => COMMON_EN_WORDS.has(w))
+}
+
+function isSemanticallySameScreen(a, b) {
+  if (!a || !b) return false
+  const na = normalizeOcrDedupe(a)
+  const nb = normalizeOcrDedupe(b)
+  if (!na || !nb) return false
+  if (na === nb) return true
+  const wa = new Set(na.split(/\s+/).filter(Boolean))
+  const wb = new Set(nb.split(/\s+/).filter(Boolean))
+  if (wa.size < 2 || wb.size < 2) return false
+  let overlap = 0
+  wa.forEach((w) => {
+    if (wb.has(w)) overlap++
+  })
+  return overlap / Math.max(wa.size, wb.size) > 0.88
+}
 
 function ResizeHandle({ edge, onResizeEnd }) {
   const handleMouseDown = useCallback((e) => {
@@ -81,7 +254,7 @@ function ResizeHandle({ edge, onResizeEnd }) {
 /** Outline eye — “visible in capture” */
 function EyeVisibleIcon() {
   return (
-    <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.85" strokeLinecap="round" strokeLinejoin="round" aria-hidden>
+    <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.9" strokeLinecap="round" strokeLinejoin="round" aria-hidden>
       <path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z" />
       <circle cx="12" cy="12" r="3" />
     </svg>
@@ -91,7 +264,7 @@ function EyeVisibleIcon() {
 /** Fedora + glasses — stealth / incognito */
 function IncognitoGlyph() {
   return (
-    <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.75" strokeLinecap="round" strokeLinejoin="round" aria-hidden>
+    <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.9" strokeLinecap="round" strokeLinejoin="round" aria-hidden>
       <path d="M4 10.5c2.8-.9 5.6-1.35 8-1.35s5.2.45 8 1.35" />
       <path d="M7.5 10.2c.9-3.6 2.6-5.7 4.5-5.7s3.6 2.1 4.5 5.7" />
       <ellipse cx="9.25" cy="16" rx="3.25" ry="2.4" />
@@ -126,8 +299,12 @@ const MIN_RECORDING_BYTES = 1200
  * Per-path RMS (byte time-domain analyser). Mean + peak: blocks single-click / steady-hum false
  * STT. Mic and system are measured separately; a chunk is transcribed only if that path was active.
  */
-const CHUNK_ENERGY_MEAN_MIN = 1.45
-const CHUNK_ENERGY_PEAK_MIN = 4.25
+/** Slightly relaxed so quiet mics / system loopback still produce STT (was dropping real speech). */
+const CHUNK_ENERGY_MEAN_MIN = 1.08
+const CHUNK_ENERGY_PEAK_MIN = 3.35
+/** Below chunk gate; RMS at/above = “speech-like” activity for pre-trigger silence detection. */
+const SPEECH_ACTIVITY_RMS = 1.15
+const SPEECH_SILENCE_MS = 600
 
 function pathEnergyActive(stats) {
   if (!stats || stats.count < 1) return false
@@ -148,12 +325,12 @@ function highpassMicChain(ctx, mediaStream, dest) {
 
 export default function App() {
   const [messages, setMessages] = useState([])
-  const [streaming, setStreaming] = useState('')
   const [isThinking, setIsThinking] = useState(false)
   const [status, setStatus] = useState('idle')
   const [opacity, setOpacity] = useState(0.92)
   const [fontSize, setFontSize] = useState('medium')
   const [micTranscript, setMicTranscript] = useState('')
+  const [liveTranscriptSegments, setLiveTranscriptSegments] = useState([])
   const [sessionOn, setSessionOn] = useState(false)
   const [expanded, setExpanded] = useState(false)
   const [hiding, setHiding] = useState(false)
@@ -165,8 +342,9 @@ export default function App() {
   const streamRef = useRef(null)
   const recorderRef = useRef(null)
   const isListening = useRef(false)
-  const chunkMs = useRef(5000)
+  const sessionOnRef = useRef(false)
   const handleAskRef = useRef(null)
+  const clearRollingSpeechRef = useRef(null)
   const msgId = useRef(0)
   const expandedSize = useRef({ w: 400, h: 540 })
   const audioCtx = useRef(null)
@@ -176,9 +354,56 @@ export default function App() {
   const audioPathsRef = useRef({ hasMic: false, hasSys: false })
   const streamSpecsRef = useRef([])
   const lastTranscribeFingerprint = useRef('')
+  /** Last mic transcript activity (for main-process audioRecent). */
+  const lastAudioUpdateRef = useRef(0)
+  const lastOcrUpdateRef = useRef(0)
+  const lastSpeechActivityRef = useRef(0)
+  const lastLoudEnergyAtRef = useRef(0)
+  const micTranscriptRef = useRef('')
+  const latestTranscriptRef = useRef('')
+  /** Rolling STT accumulation for the current speech window (same chunks also go to mic transcript). */
+  const speechBufferRef = useRef('')
+  const lastSpeechTimeRef = useRef(0)
+  const lastChunkRef = useRef('')
+  const assistAutoTriggerRef = useRef(false)
+  const maybeTriggerAIRef = useRef(null)
+  const maybeTriggerFromScreenRef = useRef(null)
+  /** Side-by-side live captions: mic = me, system = other; capped in ref for UI + debug. */
+  const speechSegmentsRef = useRef([])
+  const liveSegmentIdRef = useRef(0)
+  const currentSpeakerRef = useRef('me')
+  const lastSpeakerRef = useRef('me')
+  const lastTriggerTimeRef = useRef(0)
+  /** Buffer content at last successful speech trigger — prevents re-triggering same text. */
+  const lastSentSpeechRef = useRef('')
+  const speechTriggerDelayRef = useRef(null)
+  const speechFailsafeIntervalRef = useRef(null)
+  const isProcessingAskRef = useRef(false)
+  const lastAskTimeRef = useRef(0)
+  /** Latest screen OCR text from main (`ocr-update`). */
+  const latestOcrTextRef = useRef('')
+  /** Last OCR text that produced a screen Assist trigger (dedupe). */
+  const lastOcrTriggerRef = useRef('')
+  const lastScreenTriggerTimeRef = useRef(0)
+  const lastGlobalTriggerTimeRef = useRef(0)
+  const bypassCaptureOnceRef = useRef(false)
+  const isThinkingRef = useRef(false)
+  /** True while main `ask-ai-with-transcript` handler is in flight (released when invoke settles). */
+  const responseLockRef = useRef(false)
+  const lastResponseRef = useRef('')
+  const commitLockRef = useRef(false)
 
-  const streamBufRef = useRef('')
-  const streamRafRef = useRef(null)
+  /** Full streamed text for commit to messages (DOM mirror lives in streamTextRef). */
+  const streamAccumRef = useRef('')
+  const streamTextRef = useRef(null)
+  const streamPulseRef = useRef(null)
+  const domTokenBufferRef = useRef('')
+  const domTokenFlushScheduledRef = useRef(false)
+  /** False after commit/error/clear — blocks stale microtasks from mutating the stream DOM. */
+  const streamDomAcceptingRef = useRef(false)
+  const streamScrollRafRef = useRef(null)
+  const perfAskT0Ref = useRef(0)
+  const perfFirstTokenLoggedRef = useRef(false)
   /** Matches the in-flight ask so the assistant/error bubble carries the same source label as the strip. */
   const activeTurnMetaRef = useRef(null)
   const [activeAskSource, setActiveAskSource] = useState(null)
@@ -189,68 +414,209 @@ export default function App() {
     )
   }, [])
 
-  const pumpStreamBuf = useCallback(() => {
-    streamRafRef.current = null
-    const chunk = streamBufRef.current
-    if (!chunk) return
-    streamBufRef.current = ''
-    setStreaming((s) => s + chunk)
-    if (streamBufRef.current) {
-      streamRafRef.current = requestAnimationFrame(pumpStreamBuf)
+  const clearRollingSpeech = useCallback(() => {
+    if (speechTriggerDelayRef.current != null) {
+      clearTimeout(speechTriggerDelayRef.current)
+      speechTriggerDelayRef.current = null
     }
+    speechBufferRef.current = ''
+    lastSpeechTimeRef.current = 0
+    lastChunkRef.current = ''
+    lastTranscribeFingerprint.current = ''
+    lastTriggerTimeRef.current = 0
+    lastSentSpeechRef.current = ''
+    lastSpeakerRef.current = 'me'
+    speechSegmentsRef.current = []
+    setLiveTranscriptSegments([])
+  }, [])
+
+  const applySpeechSilenceWindow = useCallback(() => {
+    const now = Date.now()
+    if (lastSpeechTimeRef.current > 0 && now - lastSpeechTimeRef.current > MAX_SPEECH_WINDOW_MS) {
+      clearRollingSpeech()
+    }
+  }, [clearRollingSpeech])
+
+  const appendLiveSegment = useCallback((speaker, textChunk) => {
+    const t = String(textChunk || '').trim()
+    if (!t) return
+    currentSpeakerRef.current = speaker
+    const segs = speechSegmentsRef.current
+    const last = segs[segs.length - 1]
+    let next
+    if (last && last.speaker === speaker) {
+      next = [...segs.slice(0, -1), { ...last, text: `${last.text} ${t}`.trim() }]
+    } else {
+      next = [...segs, { id: ++liveSegmentIdRef.current, speaker, text: t }]
+    }
+    const capped = next.slice(-MAX_LIVE_SEGMENTS)
+    speechSegmentsRef.current = capped
+    setLiveTranscriptSegments(capped)
   }, [])
 
   useEffect(() => {
+    micTranscriptRef.current = micTranscript
+    latestTranscriptRef.current = micTranscript
+  }, [micTranscript])
+
+  useEffect(() => {
+    isThinkingRef.current = isThinking
+  }, [isThinking])
+
+  useEffect(() => {
     if (!ipc) return
-    const cancelStreamPump = () => {
-      if (streamRafRef.current != null) {
-        cancelAnimationFrame(streamRafRef.current)
-        streamRafRef.current = null
-      }
+    ipc.invoke('get-store', 'assistAutoTrigger').then((v) => {
+      assistAutoTriggerRef.current = v === true
+    })
+    const unsub = ipc.on('ocr-update', (_, text) => {
+      lastOcrUpdateRef.current = Date.now()
+      if (typeof text === 'string') latestOcrTextRef.current = text
+      maybeTriggerFromScreenRef.current?.()
+    })
+    return () => unsub?.()
+  }, [])
+
+  const cancelStreamScroll = useCallback(() => {
+    if (streamScrollRafRef.current != null) {
+      cancelAnimationFrame(streamScrollRafRef.current)
+      streamScrollRafRef.current = null
     }
+  }, [])
+
+  const scheduleStreamScroll = useCallback(() => {
+    if (streamScrollRafRef.current != null) return
+    streamScrollRafRef.current = requestAnimationFrame(() => {
+      streamScrollRafRef.current = null
+      const el = panelRef.current
+      if (el) el.scrollTop = el.scrollHeight
+    })
+  }, [])
+
+  const clearStreamDom = useCallback(() => {
+    domTokenBufferRef.current = ''
+    domTokenFlushScheduledRef.current = false
+    const textEl = streamTextRef.current
+    if (textEl) {
+      textEl.replaceChildren()
+    }
+    if (streamPulseRef.current) streamPulseRef.current.style.display = ''
+  }, [])
+
+  /**
+   * Single microtask scheduler: at most one queued flush; all sync tokens merge into domTokenBufferRef.
+   * DOM: appendChild(createTextNode(chunk)) per flush — avoids O(n) re-copy of the full string each time.
+   */
+  const appendTokenToStreamDom = useCallback(
+    (t) => {
+      if (t == null || t === '' || !streamDomAcceptingRef.current) return
+      streamAccumRef.current += t
+      if (streamPulseRef.current) streamPulseRef.current.style.display = 'none'
+      domTokenBufferRef.current += t
+      if (domTokenFlushScheduledRef.current) return
+      domTokenFlushScheduledRef.current = true
+      queueMicrotask(() => {
+        domTokenFlushScheduledRef.current = false
+        const chunk = domTokenBufferRef.current
+        domTokenBufferRef.current = ''
+        if (!streamDomAcceptingRef.current) {
+          scheduleStreamScroll()
+          return
+        }
+        const textEl = streamTextRef.current
+        if (textEl && chunk) {
+          textEl.appendChild(document.createTextNode(chunk))
+          ipc?.send('shadowassist-stream-flush')
+        }
+        if (!perfFirstTokenLoggedRef.current) {
+          perfFirstTokenLoggedRef.current = true
+          if (perfAskT0Ref.current) {
+            const dt = Date.now() - perfAskT0Ref.current
+            console.log('UI_FIRST_TOKEN_MS', dt)
+            console.log('UI_RESPONSE_DELAY', dt)
+          }
+          try {
+            performance.mark('first-token-received')
+          } catch (_) {}
+          requestAnimationFrame(() => {
+            try {
+              performance.mark('painted')
+              performance.measure('PAINT_DELAY', 'first-token-received', 'painted')
+              const e = performance.getEntriesByName('PAINT_DELAY').pop()
+              if (e && typeof e.duration === 'number') console.log('PAINT_DELAY', Math.round(e.duration))
+              performance.clearMarks('first-token-received')
+              performance.clearMarks('painted')
+              performance.clearMeasures('PAINT_DELAY')
+            } catch (_) {}
+          })
+        }
+        scheduleStreamScroll()
+      })
+    },
+    [scheduleStreamScroll],
+  )
+
+  useEffect(() => {
+    if (!ipc) return
 
     const onStart = (_, meta) => {
-      cancelStreamPump()
-      streamBufRef.current = ''
-      setStreaming('')
-      setIsThinking(true)
-      setExpanded(true)
+      cancelStreamScroll()
+      streamDomAcceptingRef.current = true
+      streamAccumRef.current = ''
+      perfFirstTokenLoggedRef.current = false
+      domTokenBufferRef.current = ''
+      domTokenFlushScheduledRef.current = false
       const askSource =
         meta && typeof meta === 'object' && typeof meta.askSource === 'string' ? meta.askSource : 'screen'
       activeTurnMetaRef.current = { askSource }
-      setActiveAskSource(askSource)
       const echoRaw = meta && typeof meta === 'object' ? meta.transcriptEcho : null
       const echo = typeof echoRaw === 'string' && echoRaw.trim() ? echoRaw.trim() : ''
-      if (echo) {
-        setMessages((m) => [...m, { role: 'heard', text: echo, id: ++msgId.current }])
-        requestAnimationFrame(() =>
-          panelRef.current?.scrollTo({ top: panelRef.current.scrollHeight, behavior: 'smooth' }),
-        )
+      flushSync(() => {
+        setIsThinking(true)
+        setExpanded(true)
+        setActiveAskSource(askSource)
+        if (echo) {
+          setMessages((m) => [...m, { role: 'heard', text: echo, id: ++msgId.current }])
+        }
+      })
+      queueMicrotask(() => {
+        clearStreamDom()
+      })
+      if (perfAskT0Ref.current) {
+        console.log('UI_AI_START_MS', Date.now() - perfAskT0Ref.current)
       }
+      scheduleStreamScroll()
     }
     const onToken = (_, t) => {
-      streamBufRef.current += t
-      if (streamRafRef.current == null) {
-        streamRafRef.current = requestAnimationFrame(pumpStreamBuf)
-      }
+      appendTokenToStreamDom(t)
     }
     const commit = () => {
-      cancelStreamPump()
-      const pending = streamBufRef.current
-      streamBufRef.current = ''
-      const turnMeta = activeTurnMetaRef.current
-      activeTurnMetaRef.current = null
-      setActiveAskSource(null)
-      setStreaming((prev) => {
-        const full = prev + pending
+      if (commitLockRef.current) return
+      commitLockRef.current = true
+      try {
+        cancelStreamScroll()
+        streamDomAcceptingRef.current = false
+        ipc?.send('shadowassist-stream-ended')
+        const full = streamAccumRef.current
+        streamAccumRef.current = ''
+        const turnMeta = activeTurnMetaRef.current
         if (full) {
+          if (full === lastResponseRef.current) {
+            console.log('SKIP: duplicate response')
+            return
+          }
+          lastResponseRef.current = full
           setMessages((m) => [...m, { role: 'ai', text: full, id: ++msgId.current, askSource: turnMeta?.askSource }])
-          requestAnimationFrame(() =>
-            panelRef.current?.scrollTo({ top: panelRef.current.scrollHeight, behavior: 'smooth' }),
-          )
+          requestAnimationFrame(() => {
+            const el = panelRef.current
+            if (el) el.scrollTo({ top: el.scrollHeight, behavior: 'smooth' })
+          })
         }
-        return ''
-      })
+      } finally {
+        activeTurnMetaRef.current = null
+        setActiveAskSource(null)
+        clearStreamDom()
+        commitLockRef.current = false
+      }
     }
     const onThinking = (_, v) => {
       setIsThinking(v)
@@ -259,10 +625,12 @@ export default function App() {
     }
     const onAborted = () => { setIsThinking(false); commit() }
     const onError = (_, msg) => {
-      cancelStreamPump()
-      streamBufRef.current = ''
+      cancelStreamScroll()
+      streamDomAcceptingRef.current = false
+      ipc?.send('shadowassist-stream-ended')
+      streamAccumRef.current = ''
+      clearStreamDom()
       setIsThinking(false)
-      setStreaming('')
       const turnMeta = activeTurnMetaRef.current
       activeTurnMetaRef.current = null
       setActiveAskSource(null)
@@ -270,43 +638,62 @@ export default function App() {
       scrollBottom()
     }
     const onClear = () => {
-      cancelStreamPump()
-      streamBufRef.current = ''
+      cancelStreamScroll()
+      streamDomAcceptingRef.current = false
+      ipc?.send('shadowassist-stream-ended')
+      streamAccumRef.current = ''
+      clearStreamDom()
       activeTurnMetaRef.current = null
       setActiveAskSource(null)
       setMessages([])
-      setStreaming('')
       setMicTranscript('')
-      lastTranscribeFingerprint.current = ''
+      micTranscriptRef.current = ''
+      latestTranscriptRef.current = ''
+      clearRollingSpeech()
+      lastAudioUpdateRef.current = 0
+      lastOcrUpdateRef.current = 0
+      lastSpeechActivityRef.current = 0
+      lastLoudEnergyAtRef.current = Date.now()
+      latestOcrTextRef.current = ''
+      lastOcrTriggerRef.current = ''
+      lastScreenTriggerTimeRef.current = 0
+      lastGlobalTriggerTimeRef.current = 0
+      lastResponseRef.current = ''
+      commitLockRef.current = false
+      responseLockRef.current = false
       setIsThinking(false)
     }
-    const onTrigger = () => { setExpanded(true); handleAskRef.current?.(null) }
+    const onNoOutput = () => {
+      /* Preserve overlay content; thinking state ends via ai-thinking false → commit. */
+    }
+    const onTrigger = () => {
+      setExpanded(true)
+      handleAskRef.current?.(null, { bypassCaptureCooldown: true })
+    }
 
     ipc.on('ai-start', onStart)
     ipc.on('ai-token', onToken)
     ipc.on('ai-thinking', onThinking)
     ipc.on('ai-aborted', onAborted)
+    ipc.on('ai-no-output', onNoOutput)
     ipc.on('ai-error', onError)
     ipc.on('clear-conversation', onClear)
     ipc.on('trigger-ask-ai', onTrigger)
     ipc.on('scroll', (_, dir) => panelRef.current?.scrollBy(0, dir * 80))
 
     return () => {
-      cancelStreamPump()
-      ;['ai-start', 'ai-token', 'ai-thinking', 'ai-aborted', 'ai-error', 'clear-conversation', 'trigger-ask-ai', 'scroll'].forEach((ch) =>
+      cancelStreamScroll()
+      ;['ai-start', 'ai-token', 'ai-thinking', 'ai-aborted', 'ai-no-output', 'ai-error', 'clear-conversation', 'trigger-ask-ai', 'scroll'].forEach((ch) =>
         ipc.removeAllListeners(ch),
       )
     }
-  }, [scrollBottom, pumpStreamBuf])
+  }, [scrollBottom, cancelStreamScroll, scheduleStreamScroll, clearStreamDom, appendTokenToStreamDom, clearRollingSpeech])
 
   useEffect(() => {
     if (!ipc) return
     ipc.invoke('get-store', 'uiAccentTheme').then((id) => applyUiAccentTheme(document.documentElement, normalizeUiAccentId(id)))
     ipc.invoke('get-store', 'overlayOpacity').then((o) => o != null && setOpacity(o))
     ipc.invoke('get-store', 'overlayFontSize').then((f) => f && setFontSize(f))
-    ipc.invoke('get-store', 'audioChunkSize').then((s) => {
-      chunkMs.current = typeof s === 'number' && s >= 2000 ? s : 4000
-    })
     ipc.invoke('get-window-bounds').then((b) => {
       if (b && b.height > COLLAPSED_H) expandedSize.current = { w: b.width, h: b.height }
     })
@@ -319,19 +706,13 @@ export default function App() {
       if (p?.overlayOpacity != null) setOpacity(p.overlayOpacity)
       if (p?.overlayFontSize) setFontSize(p.overlayFontSize)
       if (p?.width != null && p?.height != null) expandedSize.current = { w: p.width, h: p.height }
-    }
-    const onSessionTiming = (_, p) => {
-      if (p?.audioChunkSize != null && typeof p.audioChunkSize === 'number' && p.audioChunkSize >= 2000) {
-        chunkMs.current = p.audioChunkSize
-      }
+      if (p?.assistAutoTrigger != null) assistAutoTriggerRef.current = !!p.assistAutoTrigger
     }
     const onUiAccent = (_, id) => applyUiAccentTheme(document.documentElement, normalizeUiAccentId(id))
     const u1 = ipc.on('overlay-display-update', onDisplay)
-    const u2 = ipc.on('session-timing-update', onSessionTiming)
     const u3 = ipc.on('ui-accent-update', onUiAccent)
     return () => {
       u1?.()
-      u2?.()
       u3?.()
     }
   }, [])
@@ -345,6 +726,7 @@ export default function App() {
   useEffect(() => {
     if (!ipc) return
     const onStatus = (_, active) => {
+      sessionOnRef.current = active
       setSessionOn(active)
       setStatus(active ? 'active' : 'idle')
       if (active) startMic()
@@ -352,6 +734,7 @@ export default function App() {
     }
     const unsub = ipc.on('session-status', onStatus)
     ipc.invoke('session-active').then((a) => {
+      sessionOnRef.current = a
       setSessionOn(a)
       setStatus(a ? 'active' : 'idle')
     })
@@ -382,11 +765,22 @@ export default function App() {
     if (!ipc) return
     const onPurge = () => {
       setMicTranscript('')
-      lastTranscribeFingerprint.current = ''
+      micTranscriptRef.current = ''
+      latestTranscriptRef.current = ''
+      clearRollingSpeech()
+      lastAudioUpdateRef.current = 0
+      lastSpeechActivityRef.current = 0
+      lastLoudEnergyAtRef.current = Date.now()
+      latestOcrTextRef.current = ''
+      lastOcrTriggerRef.current = ''
+      lastScreenTriggerTimeRef.current = 0
+      lastGlobalTriggerTimeRef.current = 0
+      lastResponseRef.current = ''
+      commitLockRef.current = false
     }
     const unsub = ipc.on('session-purge', onPurge)
     return () => unsub?.()
-  }, [])
+  }, [clearRollingSpeech])
 
   const setProtectionMode = useCallback(async (wantStealth) => {
     if (!ipc) return
@@ -477,17 +871,30 @@ export default function App() {
         sys: sys ? { sum: 0, count: 0, max: 0 } : null,
       }
 
+      lastLoudEnergyAtRef.current = Date.now()
+
       if (energyIntervalRef.current != null) clearInterval(energyIntervalRef.current)
       energyIntervalRef.current = setInterval(() => {
         const pack = energySampleRef.current
         const ce = chunkEnergyRef.current
-        if (!pack || !ce.active) return
+        if (!pack || !isListening.current) return
+
+        const bumpSilence = (rms) => {
+          const t = Date.now()
+          if (rms >= SPEECH_ACTIVITY_RMS) lastLoudEnergyAtRef.current = t
+          else if (t - lastLoudEnergyAtRef.current > SPEECH_SILENCE_MS) {
+            lastSpeechActivityRef.current = t - 1000
+          }
+        }
+
         const tick = (branch, key) => {
           if (!branch) return
           const node = pack[key]
           if (!node?.analyser) return
           node.analyser.getByteTimeDomainData(node.data)
           const rms = Math.sqrt(node.data.reduce((s, v) => s + (v - 128) ** 2, 0) / node.data.length)
+          bumpSilence(rms)
+          if (!ce.active) return
           branch.sum += rms
           branch.count += 1
           if (rms > branch.max) branch.max = rms
@@ -548,8 +955,7 @@ export default function App() {
           spec.key === 'mic'
             ? hasMic && pathEnergyActive(branch)
             : hasSys && pathEnergyActive(branch)
-        const role = spec.key === 'mic' ? 'User' : 'Other'
-        if (blob.size >= MIN_RECORDING_BYTES && pathOk) void transcribe(blob, mr.mimeType, role)
+        if (blob.size >= MIN_RECORDING_BYTES && pathOk) void transcribe(blob, mr.mimeType, spec.key)
       }
       try {
         mr.start()
@@ -559,12 +965,12 @@ export default function App() {
 
     recorderRef.current = recorders.length === 1 ? recorders[0] : recorders
     if (!recorders.length && isListening.current) {
-      setTimeout(() => startChunk(), chunkMs.current)
+      setTimeout(() => startChunk(), AUDIO_CHUNK_MS)
     }
 
     setTimeout(() => {
       recorders.forEach((r) => r.state === 'recording' && r.stop())
-    }, chunkMs.current)
+    }, AUDIO_CHUNK_MS)
   }
 
   function stopMic() {
@@ -581,9 +987,13 @@ export default function App() {
     streamSpecsRef.current = []
     closeMicAudioCtx()
     emit('mic-status', { active: false })
+    clearRollingSpeech()
+    setMicTranscript('')
+    micTranscriptRef.current = ''
+    latestTranscriptRef.current = ''
   }
 
-  async function transcribe(blob, mimeType, roleLabel) {
+  async function transcribe(blob, mimeType, audioPathKey) {
     try {
       const cfg = await ipc?.invoke('get-transcription-config')
       if (!cfg?.url || !cfg.apiKey) return
@@ -643,38 +1053,350 @@ export default function App() {
       }
       if (!text || text.length < 3 || HALLUCINATIONS.some((r) => r.test(text.trim()))) return
 
-      const labeled = `${roleLabel}: ${text.trim()}`
-      const fp = `${roleLabel}|${text.toLowerCase().replace(/\s+/g, ' ').trim().slice(0, 160)}`
+      const trimmedChunk = text.trim()
+      const tChunk = Date.now()
+      const silenceBeforeMs =
+        lastSpeechTimeRef.current > 0 ? tChunk - lastSpeechTimeRef.current : 0
+      const speaker = assignChunkSpeaker(trimmedChunk, silenceBeforeMs, lastSpeakerRef)
+      const roleTag = speaker === 'me' ? 'Me' : 'Participant'
+
+      const fp = `${audioPathKey}|${trimmedChunk.toLowerCase().replace(/\s+/g, ' ').slice(0, 160)}`
       if (fp === lastTranscribeFingerprint.current) return
       lastTranscribeFingerprint.current = fp
+      lastChunkRef.current = trimmedChunk
 
+      const stamp = Date.now()
+      lastAudioUpdateRef.current = stamp
+      lastSpeechActivityRef.current = stamp
+
+      const labeled = `${roleTag}: ${trimmedChunk}`
       ipc?.invoke('session-transcript-append', labeled)
+
+      if (speechTriggerDelayRef.current != null) {
+        clearTimeout(speechTriggerDelayRef.current)
+        speechTriggerDelayRef.current = null
+      }
+
+      const mergedBuff = speechBufferRef.current
+        ? `${speechBufferRef.current} ${trimmedChunk}`
+        : trimmedChunk
+      speechBufferRef.current = trimBufferSmart(mergedBuff)
+      lastSpeechTimeRef.current = Date.now()
+      appendLiveSegment(speaker, trimmedChunk)
+
       setMicTranscript((prev) => {
-        const combined = (prev + ' ' + text).trim().split(/\s+/).slice(-600).join(' ')
+        const combined = (prev + ' ' + trimmedChunk).trim().split(/\s+/).slice(-600).join(' ')
+        micTranscriptRef.current = combined
+        latestTranscriptRef.current = combined
         emit('transcript-updated', { latest: labeled, full: combined })
         return combined
       })
+
+      maybeTriggerAIRef.current?.()
     } catch {}
   }
 
-  const handleAsk = useCallback(
-    (q) => {
-      if (q === '' && !micTranscript) return
-      const trimmed = q?.trim() || null
-      if (trimmed) {
-        setMessages((m) => [...m, { role: 'user', text: trimmed, id: ++msgId.current }])
-        scrollBottom()
+  const maybeTriggerAI = useCallback(() => {
+    if (!sessionOnRef.current) return
+    if (!assistAutoTriggerRef.current) return
+    if (responseLockRef.current) return
+    const silenceMs = Date.now() - lastSpeechTimeRef.current
+    // Speech is too stale — clear and bail rather than trigger with old content
+    if (lastSpeechTimeRef.current > 0 && silenceMs > MAX_SPEECH_WINDOW_MS) {
+      clearRollingSpeech()
+      return
+    }
+    const speech = String(speechBufferRef.current || '').trim()
+    if (speech.length < MIN_SPEECH_LENGTH) return
+    if (silenceMs <= SPEECH_STABILITY_MS) return
+    if (Date.now() - lastTriggerTimeRef.current < SPEECH_TRIGGER_COOLDOWN_MS) return
+    /** Don't re-trigger if buffer hasn't grown since last send (same text = same answer). */
+    if (speech === lastSentSpeechRef.current) return
+    /** One armed delay only: clearing on every 500ms tick was starving the timer (never fired). */
+    if (speechTriggerDelayRef.current != null) return
+    /**
+     * CRITICAL: Claim this speech content SYNCHRONOUSLY before the async OCR path runs.
+     * Without this, the 500ms interval fires again before handleAsk's async block updates
+     * lastSentSpeechRef, causing a duplicate trigger with identical content.
+     */
+    lastSentSpeechRef.current = speech
+    console.log('🎤 BUFFER:', speechBufferRef.current)
+    console.log('⏱ LAST TRIGGER:', lastTriggerTimeRef.current)
+    speechTriggerDelayRef.current = window.setTimeout(() => {
+      speechTriggerDelayRef.current = null
+      if (!sessionOnRef.current || !assistAutoTriggerRef.current || responseLockRef.current) return
+      const silenceNow = Date.now() - lastSpeechTimeRef.current
+      if (lastSpeechTimeRef.current > 0 && silenceNow > MAX_SPEECH_WINDOW_MS) {
+        clearRollingSpeech()
+        return
       }
-      ipc?.invoke('ask-ai-with-transcript', trimmed, micTranscript)
-      setMicTranscript('')
+      const after = String(speechBufferRef.current || '').trim()
+      if (after.length < MIN_SPEECH_LENGTH) return
+      if (silenceNow <= SPEECH_STABILITY_MS) return
+      if (Date.now() - lastTriggerTimeRef.current < SPEECH_TRIGGER_COOLDOWN_MS) return
+      /** If new speech arrived during the 150ms lead-in, update the claim to the new content. */
+      if (after !== speech) lastSentSpeechRef.current = after
+      handleAskRef.current?.(null, { auto: true, source: 'speech' })
+    }, SPEECH_TRIGGER_LEAD_IN_MS)
+  }, [clearRollingSpeech])
+
+  const maybeTriggerFromScreen = useCallback(() => {
+    if (!sessionOnRef.current) return
+    if (!assistAutoTriggerRef.current) return
+    if (responseLockRef.current) return
+    handleAskRef.current?.(null, { auto: true, source: 'screen' })
+  }, [])
+
+  const handleAsk = useCallback(
+    (q, opts = {}) => {
+      const isAuto = opts.auto === true
+      const isScreenRead = opts.source === 'screen-read' || opts.source === 'screen'
+      const assistSource = isScreenRead
+        ? 'screen'
+        : opts.source === 'speech-failsafe'
+          ? 'speech-failsafe'
+          : 'speech'
+      /** Screen-read always bypasses OCR cooldown to get fresh context. */
+      if (isScreenRead) opts = { ...opts, bypassCaptureCooldown: true }
+      if (responseLockRef.current) {
+        console.log('BLOCKED: response in-flight')
+        return
+      }
+      if (isThinkingRef.current) {
+        console.log('BLOCKED: already processing')
+        return
+      }
+      if (isProcessingAskRef.current) return
+      const trimmed = q?.trim() || null
+      const hasText = !!(trimmed && trimmed.length > 0)
+      if (!sessionOnRef.current && !hasText) return
+      if (!isAuto && Date.now() - lastAskTimeRef.current < MIN_ASK_GAP_MS) return
+
+      const hasSpeechBuff = String(speechBufferRef.current || '').trim().length > 0
+      const hasScreenText = String(latestOcrTextRef.current || '').trim().length > 0
+
+      if (isAuto) {
+        if (!hasText && !hasSpeechBuff && hasScreenText && assistSource !== 'screen') return
+
+        let screenSnapshot = ''
+        if (assistSource === 'screen') {
+          screenSnapshot = String(latestOcrTextRef.current || '')
+          if (isSemanticallySameScreen(screenSnapshot, lastOcrTriggerRef.current)) return
+          if (screenSnapshot.trim().length < MIN_OCR_TRIGGER_CHARS) return
+          if (Date.now() - lastScreenTriggerTimeRef.current < SCREEN_ASSIST_COOLDOWN_MS) return
+          if (Date.now() - lastGlobalTriggerTimeRef.current < GLOBAL_TRIGGER_COOLDOWN_MS) return
+          lastGlobalTriggerTimeRef.current = Date.now()
+        } else if (assistSource === 'speech-failsafe') {
+          const sp = String(speechBufferRef.current || '').trim()
+          if (sp.length <= 20) return
+        } else {
+          const sp = String(speechBufferRef.current || '').trim()
+          if (sp.length < MIN_SPEECH_LENGTH) return
+          if (Date.now() - lastSpeechTimeRef.current <= SPEECH_STABILITY_MS) return
+        }
+
+        if (assistSource === 'screen') {
+          lastOcrTriggerRef.current = screenSnapshot
+          lastScreenTriggerTimeRef.current = Date.now()
+        }
+      }
+
+      const bypassCapture =
+        opts.bypassCaptureCooldown === true || bypassCaptureOnceRef.current
+      bypassCaptureOnceRef.current = false
+
+      void (async () => {
+        try {
+          if (isProcessingAskRef.current || isThinkingRef.current || responseLockRef.current) return
+
+          // Snapshot the speech buffer NOW — before async OCR wait and before
+          // applySpeechSilenceWindow() can wipe it (silence > 20s wipes the live ref).
+          const bufferedSpeech = String(speechBufferRef.current || '').trim()
+
+          if (sessionOnRef.current && ipc) {
+            const r = await ipc.invoke('pretrigger-refresh-ocr', {
+              bypassCaptureCooldown: bypassCapture,
+            })
+            if (r?.ok && typeof r.text === 'string') {
+              latestOcrTextRef.current = r.text
+              lastOcrUpdateRef.current = Date.now()
+            }
+          }
+
+          if (isProcessingAskRef.current || isThinkingRef.current || responseLockRef.current) return
+
+          if (isAuto && (assistSource === 'speech' || assistSource === 'speech-failsafe')) {
+            lastTriggerTimeRef.current = Date.now()
+            lastSentSpeechRef.current = bufferedSpeech
+          }
+          isProcessingAskRef.current = true
+          applySpeechSilenceWindow()
+
+          console.log('TRIGGER SOURCE:', opts?.source || 'speech')
+          console.log('SPEECH:', bufferedSpeech)
+          console.log('SCREEN:', latestOcrTextRef.current)
+
+          const ocrText = latestOcrTextRef.current || ''
+          const screenLimited = isOcrQualityGood(ocrText)
+            ? String(ocrText).slice(0, MAX_SCREEN_CONTEXT_CHARS)
+            : ''
+
+          /**
+           * Determine prompt mode (mirrors Cluely's two-prompt architecture):
+           *  'screen' → Ctrl+Enter with no typed text: DO NOT use stale audio, focus on screen.
+           *  'typed'  → user typed a question: typed text is primary.
+           *  'audio'  → speech/auto trigger: respond to last question in transcript.
+           */
+          const promptMode = (isScreenRead && !trimmed) ? 'screen' : trimmed ? 'typed' : 'audio'
+
+          /**
+           * Screen mode must NOT inject stale audio — the user wants screen info,
+           * not a replay of what they said minutes ago ("Am I audible to the meeting").
+           */
+          const rawSpeech = promptMode === 'screen' ? '' : bufferedSpeech
+          const transcriptToSend = rawSpeech || (promptMode !== 'screen' ? micTranscriptRef.current : '') || ''
+
+          console.log('🔀 PROMPT MODE:', promptMode, '| ocr_useful:', !!screenLimited, '| audio_len:', rawSpeech.length)
+
+          const finalPrompt = buildStructuredUserPrompt({
+            rawSpeech,
+            micFallback: transcriptToSend,
+            screenText: screenLimited,
+            typedQuestion: trimmed,
+            mode: promptMode,
+          })
+          console.log('FINAL PROMPT:', finalPrompt)
+
+          if (hasText) {
+            setMessages((m) => [...m, { role: 'user', text: trimmed, id: ++msgId.current }])
+            scrollBottom()
+          }
+
+          lastAskTimeRef.current = Date.now()
+          perfAskT0Ref.current = Date.now()
+          const meta = {
+            transcript: transcriptToSend,
+            screen: ocrText,
+            structuredUserPrompt: finalPrompt,
+            mode: promptMode,
+            promptSummary: {
+              hasTypedQuestion: !!trimmed,
+              hasSpeechContext: !!(rawSpeech || String(transcriptToSend || '').trim()),
+              hasScreen: !!String(ocrText || '').trim(),
+            },
+            assistTrigger: assistSource,
+            source: trimmed ? 'typed' : rawSpeech ? 'speech' : 'screen',
+            _llmTriggerAt: perfAskT0Ref.current,
+          }
+          console.log('TRIGGER INPUT', {
+            mode: promptMode,
+            speech: rawSpeech?.slice(0, 120),
+            transcriptLen: transcriptToSend.length,
+            ocr: ocrText?.slice(0, 80),
+          })
+
+          try {
+            responseLockRef.current = true
+            const askP = ipc?.invoke('ask-ai-with-transcript', trimmed, transcriptToSend, meta)
+            if (askP) {
+              await askP
+            }
+            /**
+             * ALWAYS clear the buffer after a successful trigger (auto or manual).
+             * Cluely "current moment" model: each answer consumes the speech window.
+             * Without this, old questions ("Am I audible?") stay in the buffer
+             * and re-fire whenever any new word arrives and the lastSentSpeechRef
+             * guard passes because the buffer string has changed.
+             *
+             * New speech that arrives during the LLM response will start a fresh
+             * window — exactly what the user wants.
+             */
+            clearRollingSpeechRef.current?.()
+          } catch (err) {
+            console.warn('[ask-ai-with-transcript]', err)
+          } finally {
+            responseLockRef.current = false
+            isProcessingAskRef.current = false
+          }
+        } catch (e) {
+          isProcessingAskRef.current = false
+          responseLockRef.current = false
+        }
+      })()
     },
-    [micTranscript, scrollBottom],
+    [scrollBottom, applySpeechSilenceWindow, clearRollingSpeech],
   )
-  useEffect(() => { handleAskRef.current = handleAsk }, [handleAsk])
+  useEffect(() => {
+    handleAskRef.current = handleAsk
+  }, [handleAsk])
+  useEffect(() => {
+    clearRollingSpeechRef.current = clearRollingSpeech
+  }, [clearRollingSpeech])
+  useEffect(() => {
+    maybeTriggerAIRef.current = maybeTriggerAI
+  }, [maybeTriggerAI])
+  useEffect(() => {
+    maybeTriggerFromScreenRef.current = maybeTriggerFromScreen
+  }, [maybeTriggerFromScreen])
+
+  useEffect(() => {
+    if (!sessionOn) return
+    const tick = window.setInterval(() => {
+      applySpeechSilenceWindow()
+      maybeTriggerAIRef.current?.()
+    }, 500)
+    return () => clearInterval(tick)
+  }, [sessionOn, applySpeechSilenceWindow])
+
+  useEffect(
+    () => () => {
+      if (speechTriggerDelayRef.current != null) {
+        clearTimeout(speechTriggerDelayRef.current)
+        speechTriggerDelayRef.current = null
+      }
+    },
+    [],
+  )
+
+  useEffect(() => {
+    if (!sessionOn) return
+    if (speechFailsafeIntervalRef.current) clearInterval(speechFailsafeIntervalRef.current)
+    speechFailsafeIntervalRef.current = window.setInterval(() => {
+      if (!sessionOnRef.current) return
+      if (!assistAutoTriggerRef.current || responseLockRef.current) return
+      applySpeechSilenceWindow()
+      const fsBuffer = String(speechBufferRef.current || '').trim()
+      if (fsBuffer.length <= 20) return
+      if (Date.now() - lastTriggerTimeRef.current <= FAILSAFE_MIN_GAP_AFTER_TRIGGER_MS) return
+      if (fsBuffer === lastSentSpeechRef.current) return
+      // Claim synchronously — same race-condition fix as maybeTriggerAI
+      lastSentSpeechRef.current = fsBuffer
+      console.log('🎤 BUFFER:', speechBufferRef.current)
+      console.log('⏱ LAST TRIGGER:', lastTriggerTimeRef.current)
+      handleAskRef.current?.(null, { auto: true, source: 'speech-failsafe' })
+    }, SPEECH_FAILSAFE_MS)
+    return () => {
+      if (speechFailsafeIntervalRef.current) {
+        clearInterval(speechFailsafeIntervalRef.current)
+        speechFailsafeIntervalRef.current = null
+      }
+    }
+  }, [sessionOn, applySpeechSilenceWindow])
 
   const hideOverlay = useCallback(() => {
     setHiding(true)
     setTimeout(() => { setHiding(false); ipc?.send('overlay-hide') }, 220)
+  }, [])
+
+  const onToggleSession = useCallback(() => {
+    ipc?.send('ui-toggle-session')
+  }, [])
+  const onOpenSettings = useCallback(() => {
+    ipc?.send('open-settings')
+  }, [])
+  const onExpandPanel = useCallback(() => {
+    bypassCaptureOnceRef.current = true
+    setExpanded(true)
   }, [])
 
   const onResizeEnd = useCallback((b) => {
@@ -686,37 +1408,41 @@ export default function App() {
       className="relative flex h-full w-full flex-col"
       style={{
         opacity: hiding ? 0 : 1,
-        transform: hiding ? 'translateY(-8px) scale(0.98)' : 'translateY(0) scale(1)',
-        transition: hiding ? 'opacity 0.22s, transform 0.22s' : 'none',
+        transform: hiding ? 'translateY(-6px) scale(0.98)' : 'translateY(0) scale(1)',
+        transition: hiding ? 'opacity 0.18s ease, transform 0.18s ease' : 'none',
       }}
     >
+      {/* Main card */}
       <div
-        className="relative flex min-h-0 w-full flex-1 flex-col overflow-hidden rounded-2xl border border-violet-500/35 shadow-[inset_0_0_0_1px_rgba(139,92,246,0.12)]"
+        className="relative flex min-h-0 w-full flex-1 flex-col overflow-hidden rounded-2xl border border-white/[0.09]"
         style={{
-          background: `linear-gradient(165deg, rgba(8,8,10,${opacity}) 0%, rgba(18,18,22,${opacity * 0.95}) 100%)`,
-          backdropFilter: 'blur(8px)',
-          boxShadow: '0 8px 32px -8px rgba(0,0,0,0.4)',
+          background: `rgba(10,10,13,${opacity})`,
+          backdropFilter: 'blur(24px) saturate(1.3)',
+          boxShadow: '0 0 0 0.5px rgba(255,255,255,0.05) inset, 0 8px 40px -10px rgba(0,0,0,0.65)',
         }}
       >
         <StatusBar
           status={status}
           sessionOn={sessionOn}
           expanded={expanded}
-          onToggleSession={() => ipc?.send('ui-toggle-session')}
-          onOpenSettings={() => ipc?.send('open-settings')}
-          onExpand={() => setExpanded(true)}
+          onToggleSession={onToggleSession}
+          onOpenSettings={onOpenSettings}
+          onExpand={onExpandPanel}
           onHide={hideOverlay}
         />
 
-        <div className="flex items-center justify-between gap-2 border-b border-white/[0.06] bg-zinc-950/30 px-3 py-2">
-          <p className="min-w-0 flex-1 text-[10px] font-medium leading-snug text-zinc-500">
-            {stealthMode ? 'Hidden from screen share' : 'Visible in screen share'}
-          </p>
+        {/* Compact stealth toggle */}
+        <div
+          className="flex shrink-0 items-center justify-between border-b border-white/[0.05] px-3 py-1.5"
+          style={{ WebkitAppRegion: 'no-drag' }}
+        >
+          <span className="text-[10px] text-zinc-700">
+            {stealthMode ? 'Hidden from capture' : 'Visible in capture'}
+          </span>
           <div
             role="group"
             aria-label="Screen capture visibility"
-            className="flex shrink-0 items-center rounded-full border border-white/[0.1] bg-[#0a0f1a] p-0.5 shadow-[inset_0_1px_0_rgba(255,255,255,0.04)]"
-            style={{ WebkitAppRegion: 'no-drag' }}
+            className="flex items-center rounded-full border border-white/[0.08] bg-white/[0.03] p-0.5"
           >
             <button
               type="button"
@@ -725,8 +1451,8 @@ export default function App() {
               aria-pressed={!stealthMode}
               onClick={() => void setProtectionMode(false)}
               className={[
-                'flex h-7 w-8 cursor-default items-center justify-center rounded-full transition-colors',
-                !stealthMode ? 'text-white' : 'text-zinc-500/40 hover:text-zinc-400/65',
+                'cursor-default flex h-5 w-6 items-center justify-center rounded-full transition-colors duration-150',
+                !stealthMode ? 'text-zinc-200' : 'text-zinc-700 hover:text-zinc-500',
               ].join(' ')}
             >
               <EyeVisibleIcon />
@@ -738,8 +1464,8 @@ export default function App() {
               aria-pressed={stealthMode}
               onClick={() => void setProtectionMode(true)}
               className={[
-                'flex h-7 w-8 cursor-default items-center justify-center rounded-full transition-colors',
-                stealthMode ? 'text-white' : 'text-zinc-500/40 hover:text-zinc-400/65',
+                'cursor-default flex h-5 w-6 items-center justify-center rounded-full transition-colors duration-150',
+                stealthMode ? 'text-zinc-200' : 'text-zinc-700 hover:text-zinc-500',
               ].join(' ')}
             >
               <IncognitoGlyph />
@@ -747,27 +1473,36 @@ export default function App() {
           </div>
         </div>
 
-        {/* flex-1 + min-h-0: fill space under StatusBar so input bar sits at card bottom */}
+        {/* Expandable content */}
         <div
-          className="grid min-h-0 flex-1 w-full overflow-hidden transition-[grid-template-rows] duration-300 ease-out-expo"
-          style={{ gridTemplateRows: expanded ? 'minmax(0, 1fr)' : '0fr' }}
+          className="grid min-h-0 flex-1 w-full overflow-hidden"
+          style={{
+            gridTemplateRows: expanded ? 'minmax(0, 1fr)' : '0fr',
+            transition: 'grid-template-rows 0.28s cubic-bezier(0.4, 0, 0.2, 1)',
+          }}
         >
           <div className="flex h-full min-h-0 flex-col overflow-hidden">
             <div
-              className="flex h-full min-h-0 flex-1 flex-col overflow-hidden transition-opacity duration-200 ease-out-expo"
-              style={{ opacity: expanded ? 1 : 0 }}
+              className="flex h-full min-h-0 flex-1 flex-col overflow-hidden"
+              style={{
+                opacity: expanded ? 1 : 0,
+                transition: 'opacity 0.18s ease',
+              }}
             >
               <ResponsePanel
                 ref={panelRef}
                 messages={messages}
-                streaming={streaming}
                 isThinking={isThinking}
+                streamTextRef={streamTextRef}
+                streamPulseRef={streamPulseRef}
                 fontSize={fontSize}
                 activeAskSource={activeAskSource}
               />
 
-              <div className="flex flex-shrink-0 flex-col border-t border-white/[0.08] bg-gradient-to-b from-void-950/95 to-black/50 shadow-[0_-8px_32px_-8px_rgba(0,0,0,0.45)]">
-                <InputBar onAsk={handleAsk} isThinking={isThinking} />
+              {/* LiveTranscriptPanel — logic + data intact, not rendered per UI spec */}
+
+              <div className="shrink-0 border-t border-white/[0.07]">
+                <InputBar onAsk={(t, opts) => handleAsk(t, opts || {})} isThinking={isThinking} />
               </div>
             </div>
           </div>
@@ -784,27 +1519,28 @@ export default function App() {
         )}
       </div>
 
+      {/* Audio consent modal */}
       {showAudioConsent && (
         <div
-          className="pointer-events-auto fixed inset-0 z-[100] flex items-center justify-center bg-black/50 px-4"
+          className="pointer-events-auto fixed inset-0 z-[100] flex items-center justify-center bg-black/60 px-4"
           style={{ WebkitAppRegion: 'no-drag' }}
         >
-          <div className="w-full max-w-md rounded-2xl border border-indigo-500/35 bg-zinc-950 p-6 shadow-2xl">
-            <p className="text-sm leading-relaxed text-zinc-200">
+          <div className="w-full max-w-sm rounded-2xl border border-white/10 bg-zinc-950/98 p-5 shadow-2xl">
+            <p className="text-[13px] leading-relaxed text-zinc-300">
               You are responsible for informing all participants that AI assistance is active in this session.
             </p>
-            <div className="mt-5 flex flex-wrap justify-end gap-2">
+            <div className="mt-4 flex flex-wrap justify-end gap-2">
               <button
                 type="button"
                 onClick={() => setShowAudioConsent(false)}
-                className="cursor-default rounded-xl border border-zinc-600 px-4 py-2 text-xs font-semibold text-zinc-300 hover:bg-zinc-900"
+                className="cursor-default rounded-xl border border-white/10 px-4 py-1.5 text-xs font-medium text-zinc-400 transition-colors hover:bg-white/5 hover:text-zinc-200"
               >
                 Cancel
               </button>
               <button
                 type="button"
                 onClick={confirmAudioSession}
-                className="cursor-default rounded-xl bg-indigo-600 px-4 py-2 text-xs font-semibold text-white hover:bg-indigo-500"
+                className="cursor-default rounded-xl bg-accent/20 border border-accent/30 px-4 py-1.5 text-xs font-medium text-accent-light transition-colors hover:bg-accent/30"
               >
                 I understand, start
               </button>
@@ -813,27 +1549,20 @@ export default function App() {
         </div>
       )}
 
+      {/* Collapse button */}
       {expanded && (
         <div
-          className="flex flex-shrink-0 justify-start pt-1.5"
+          className="flex shrink-0 justify-start pt-1.5"
           style={{ WebkitAppRegion: 'no-drag' }}
         >
           <button
             type="button"
             onClick={() => setExpanded(false)}
-            className="group flex cursor-default items-center gap-2 pl-4 pr-5 py-2 rounded-full text-xs font-semibold tracking-wide
-              text-rose-100
-              bg-gradient-to-b from-zinc-900/95 to-black/90
-              border border-rose-500/45 shadow-[inset_0_1px_0_rgba(255,255,255,0.08),0_2px_12px_-4px_rgba(0,0,0,0.5)]
-              hover:border-rose-400/60 hover:from-zinc-800/98 hover:to-zinc-950/95 hover:text-white
-              hover:shadow-[0_4px_20px_-4px_rgba(244,63,94,0.25)]
-              active:scale-[0.97] transition-all duration-200 ease-spring"
+            className="cursor-default flex items-center gap-1.5 rounded-full border border-white/[0.08] bg-black/70 px-3.5 py-1.5 text-[11px] font-medium text-zinc-500 transition-all duration-150 hover:border-white/15 hover:text-zinc-300 active:scale-95"
           >
-            <span className="inline-flex transition-transform duration-300 ease-out-expo group-hover:-translate-y-0.5">
-              <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round">
-                <polyline points="18 15 12 9 6 15" />
-              </svg>
-            </span>
+            <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+              <polyline points="18 15 12 9 6 15" />
+            </svg>
             Collapse
           </button>
         </div>
