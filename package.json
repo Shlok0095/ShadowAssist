@@ -12,9 +12,9 @@
     "kill-electron": "taskkill /F /IM electron.exe /T 2>nul || exit 0",
     "kill-shadowassist": "taskkill /F /IM ShadowAssist.exe /T 2>nul || exit 0",
     "start:force": "npm run kill-electron && npm run start",
-    "dist": "node scripts/make-win-ico.cjs && npm run build && electron-builder --win portable",
-    "dist:release": "node scripts/make-win-ico.cjs && npm run build && electron-builder --win portable nsis",
-    "dist:dir": "node scripts/make-win-ico.cjs && npm run build && electron-builder --win dir",
+    "dist": "node scripts/make-win-ico.cjs && npm run build && node scripts/run-electron-builder.cjs --win portable",
+    "dist:release": "node scripts/make-win-ico.cjs && npm run build && node scripts/run-electron-builder.cjs --win portable nsis",
+    "dist:dir": "node scripts/make-win-ico.cjs && npm run build && node scripts/run-electron-builder.cjs --win dir",
     "dist:checksums": "node scripts/sha256-dist.cjs",
     "open:portable": "start \"\" \"dist\\ShadowAssist.exe\"",
     "open:unpacked": "start \"\" \"dist\\win-unpacked\\ShadowAssist.exe\""
@@ -47,7 +47,8 @@
       "executableName": "ShadowAssist",
       "publisherName": "ShadowAssist",
       "target": "portable",
-      "sign": null
+      "sign": null,
+      "signAndEditExecutable": false
     },
     "portable": {
       "artifactName": "ShadowAssist.exe"
@@ -74,16 +75,16 @@
     "autoprefixer": "^10.4.16",
     "electron": "34.3.0",
     "electron-builder": "^24.9.1",
+    "png-to-ico": "^2.1.8",
     "postcss": "^8.4.32",
     "tailwindcss": "^3.4.0",
-    "png-to-ico": "^2.1.8",
     "vite": "^5.0.0"
   },
   "dependencies": {
+    "@anthropic-ai/sdk": "^0.39.0",
     "@fontsource/jetbrains-mono": "^5.2.5",
     "@fontsource/outfit": "^5.2.5",
     "@fontsource/syne": "^5.2.5",
-    "@anthropic-ai/sdk": "^0.39.0",
     "electron-store": "^8.1.0",
     "highlight.js": "^11.11.1",
     "openai": "^4.20.0",
