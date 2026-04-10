@@ -4,12 +4,12 @@ Everything below is served on this site — no GitHub wiki or raw files to open.
 
 ## Download
 
-Use the **Download** button in the header (or the home page). It resolves to the latest **NSIS installer** from GitHub Releases.
+Use **Download** in the header or the home page. It points at the rolling **stag** build on GitHub (tag **`latest-stag`**), not the generic “Latest” release (GitHub ignores prereleases there).
 
-- **Installer (`ShadowAssist-Setup-….exe`)** — classic wizard: license, folder, Start menu entry, optional desktop shortcut on the last page.
+- **Installer (`ShadowAssist-Setup.exe`)** — stable filename from CI; classic wizard: license, folder, Start menu entry, optional desktop shortcut on the last page.
 - **Portable (`ShadowAssist.exe`)** — one file, no install. Good for USB or locked-down machines.
 
-Release assets and **SHA256SUMS.txt** are on the [releases page](https://github.com/Shlok0095/ShadowAssist/releases). Verify hashes when SmartScreen or AV makes you nervous.
+Assets and **SHA256SUMS.txt** for that build: [latest-stag release](https://github.com/Shlok0095/ShadowAssist/releases/tag/latest-stag). Verify hashes when SmartScreen or AV makes you nervous.
 
 ## First launch
 

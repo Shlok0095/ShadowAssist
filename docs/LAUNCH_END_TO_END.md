@@ -35,28 +35,24 @@ Unsigned builds show SmartScreen warnings. To reduce friction:
 
 Signing is not automated in this repo because it requires your secret material.
 
-## 4. GitHub Releases (automated option)
+## 4. GitHub Releases (automated)
 
 The workflow `.github/workflows/release-windows.yml`:
 
-- On **workflow_dispatch**: builds and uploads a **workflow artifact** (no release).
-- On **push** of a tag matching `v*.*.*` (e.g. `v1.0.0`): builds, uploads artifacts, and creates/updates a **GitHub Release** with the portable exe, installer, and `SHA256SUMS.txt`.
+- On **push** to **`stag`** (and **workflow_dispatch**): builds NSIS + portable, uploads workflow artifacts, and creates/updates the prerelease **`latest-stag`** with **`ShadowAssist-Setup.exe`**, **`ShadowAssist.exe`**, and checksums. Direct installer URL:  
+  `https://github.com/<owner>/<repo>/releases/download/latest-stag/ShadowAssist-Setup.exe`
+- On **push** of a tag **`v*.*.*`**: builds and publishes a **versioned** GitHub Release (non-prerelease path) via `softprops/action-gh-release`.
 
-Steps:
+Versioned release (optional):
 
-1. Commit and push the workflow to your default branch.
-2. Tag and push:
-
-   ```powershell
-   git tag v1.0.0
-   git push origin v1.0.0
-   ```
-
-3. On GitHub → **Releases**, confirm files attached. Users can use **Latest** or direct download URLs documented on your site.
+```powershell
+git tag v1.0.1
+git push origin v1.0.1
+```
 
 ## 5. Landing page (`landing/`)
 
-1. Open `landing/site-config.js` — URLs point at **github.com/Shlok0095/ShadowAssist**; if you rename the repo or use a CDN, update them. Bump the installer URL when `package.json` version changes.
+1. Download URLs live in **`landing/src/config/site.ts`** (`rollingTag`, `downloadSetupExeUrl`, `downloadPortableExeUrl`). They target **`latest-stag`** so the site stays in sync with CI without using `releases/latest` (which skips prereleases).
 2. Copy legal files next to the site if you do not use GitHub raw URLs:
 
    ```powershell
@@ -64,13 +60,11 @@ Steps:
    Copy-Item legal\*.txt landing\legal\
    ```
 
-3. **GitHub Pages (in this repo):** Settings → **Pages** → Source: **GitHub Actions**. Pushes to **`stag`** run `.github/workflows/deploy-landing.yml`. URL shape: `https://<github-username>.github.io/ShadowAssist/` (e.g. **https://shlok0095.github.io/ShadowAssist/**).
+3. **GitHub Pages:** Settings → **Pages** → Source: **GitHub Actions**. Pushes to **`stag`** run `.github/workflows/deploy-landing.yml`. Example URL: `https://shlok0095.github.io/ShadowAssist/`.
 
-4. Or deploy the **contents** of `landing/` to any static host (Netlify, Vercel, Cloudflare, S3 + CloudFront, etc.). No build step required.
+4. Or deploy **`landing/dist`** from any static host after `npm run build` inside `landing/`.
 
-5. After each release, if you hard-coded the installer URL with a version in `site-config.js`, update the version string to match `package.json`.
-
-**Stable download pattern:** Linking to `https://github.com/<owner>/<repo>/releases/latest` avoids updating the portable filename if you always attach `ShadowAssist.exe` with that exact name.
+**Stable download pattern:** Use **`releases/download/latest-stag/ShadowAssist-Setup.exe`** (and the portable name) so every stag push replaces the same URLs.
 
 ## 6. Legal and policy
 
@@ -81,7 +75,7 @@ Steps:
 
 - [ ] `npm run dist:release` succeeds on a clean machine or CI.
 - [ ] `SHA256SUMS.txt` published alongside binaries; optional: tweet/post the hashes.
-- [ ] Landing `site-config.js` URLs updated; legal links work.
+- [ ] Landing `src/config/site.ts` URLs match your repo/tag; legal links work.
 - [ ] GitHub Pages uses **GitHub Actions**; **Deploy landing** workflow has run at least once.
 - [ ] Release notes mention Windows version, API keys (BYOK), and support channel.
 - [ ] SmartScreen / antivirus: expect false positives on new unsigned builds; signing helps.
