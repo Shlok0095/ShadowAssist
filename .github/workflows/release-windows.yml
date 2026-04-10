@@ -87,6 +87,7 @@ jobs:
           artifacts: |
             dist/ShadowAssist-Setup.exe
             dist/ShadowAssist.exe
+            dist/SHA256SUMS.txt
 
       - name: Versioned GitHub Release (git tag v*.*.*)
         if: startsWith(github.ref, 'refs/tags/v')

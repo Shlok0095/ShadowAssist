@@ -1380,6 +1380,87 @@ code {
   align-items: center;
 }
 
+/* Download block — direct GitHub asset links only (no JS navigation) */
+.hero-cluely-download {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 1rem;
+  max-width: 42rem;
+  margin: 0 auto;
+}
+
+.download-meta-line {
+  margin: 0;
+  font-size: 0.8125rem;
+  color: var(--muted);
+  text-align: center;
+  min-height: 1.25rem;
+}
+
+.download-meta-line__muted {
+  color: var(--muted);
+}
+
+.download-meta-line__warn {
+  color: #b45309;
+}
+
+.download-pair {
+  display: grid;
+  grid-template-columns: 1fr;
+  gap: 1.25rem;
+  width: 100%;
+}
+
+@media (min-width: 560px) {
+  .download-pair {
+    grid-template-columns: 1fr 1fr;
+    align-items: start;
+  }
+}
+
+.download-card {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 0.65rem;
+  text-align: center;
+}
+
+.download-card__desc {
+  margin: 0;
+  font-size: 0.78rem;
+  line-height: 1.45;
+  color: var(--muted);
+}
+
+.download-card__rec {
+  color: var(--text);
+  font-weight: 500;
+}
+
+.download-trust {
+  margin: 0;
+  font-size: 0.8125rem;
+  color: var(--muted);
+  text-align: center;
+}
+
+.download-trust a {
+  color: var(--muted);
+  text-decoration: underline;
+  text-underline-offset: 2px;
+}
+
+.download-trust a:hover {
+  color: var(--text);
+}
+
+.download-trust__sep {
+  opacity: 0.6;
+}
+
 .btn-cluely-primary {
   display: inline-flex;
   align-items: center;

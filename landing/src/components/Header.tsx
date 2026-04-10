@@ -1,7 +1,5 @@
-import { useEffect } from 'react'
 import { NavLink, useLocation } from 'react-router-dom'
 import { SITE } from '@/config/site'
-import { fetchLatestSetupUrl } from '@/lib/releases'
 
 const navCls = ({ isActive }: { isActive: boolean }) =>
   isActive ? 'nav-link nav-link--active' : 'nav-link'
@@ -14,18 +12,6 @@ function hashHref(id: string) {
 export function Header() {
   const { pathname } = useLocation()
   const isHome = pathname === '/' || pathname === ''
-
-  useEffect(() => {
-    const el = document.getElementById('nav-download-smart')
-    if (!el) return
-    const onClick = async (e: Event) => {
-      e.preventDefault()
-      window.location.href = await fetchLatestSetupUrl()
-    }
-    el.setAttribute('href', SITE.downloadSetupExeUrl)
-    el.addEventListener('click', onClick)
-    return () => el.removeEventListener('click', onClick)
-  }, [])
 
   return (
     <header className="top glass-bar">
@@ -52,7 +38,12 @@ export function Header() {
         <NavLink to="/docs" className={navCls}>
           Docs
         </NavLink>
-        <a className="nav-link nav-cta" href={SITE.downloadSetupExeUrl} id="nav-download-smart">
+        <a
+          className="nav-link nav-cta"
+          href={SITE.downloadSetupExeUrl}
+          target="_blank"
+          rel="noopener noreferrer"
+        >
           Download
         </a>
         <a className="nav-link" href={SITE.repoUrl} target="_blank" rel="noreferrer">

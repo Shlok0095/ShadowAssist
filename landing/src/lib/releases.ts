@@ -1,38 +1,34 @@
 import { SITE } from '@/config/site'
 
-export function pickAsset(
-  assets: { name: string; browser_download_url: string }[],
-  test: (a: { name: string }) => boolean
-) {
-  for (const a of assets) {
-    if (test(a)) return a
-  }
-  return null
+/** Metadata from GitHub only — never used for navigation or downloads. */
+export type RollingReleaseMeta = {
+  tagName: string
+  publishedAt: string | null
 }
 
-export async function fetchLatestSetupUrl(): Promise<string> {
+/**
+ * Fetches rolling release metadata for display (version line, “Updated” date).
+ * Returns null on any failure — callers must not depend on this for downloads.
+ */
+export async function fetchRollingReleaseMeta(): Promise<RollingReleaseMeta | null> {
   try {
     const r = await fetch(SITE.apiRollingRelease)
-    if (!r.ok) return SITE.downloadSetupExeUrl
-    const data = (await r.json()) as { assets?: { name: string; browser_download_url: string }[] }
-    const assets = data.assets ?? []
-    const a =
-      pickAsset(assets, (x) => x.name.toLowerCase() === 'shadowassist-setup.exe') ??
-      pickAsset(assets, (x) => /^ShadowAssist-Setup-.+\.exe$/i.test(x.name))
-    return a?.browser_download_url ?? SITE.downloadSetupExeUrl
+    if (!r.ok) return null
+    const data = (await r.json()) as { tag_name?: string; published_at?: string | null }
+    if (!data.tag_name) return null
+    return { tagName: data.tag_name, publishedAt: data.published_at ?? null }
   } catch {
-    return SITE.downloadSetupExeUrl
+    return null
   }
 }
 
-export async function fetchLatestPortableUrl(): Promise<string> {
-  try {
-    const r = await fetch(SITE.apiRollingRelease)
-    if (!r.ok) return SITE.downloadPortableExeUrl
-    const data = (await r.json()) as { assets?: { name: string; browser_download_url: string }[] }
-    const a = pickAsset(data.assets ?? [], (x) => x.name === 'ShadowAssist.exe')
-    return a?.browser_download_url ?? SITE.downloadPortableExeUrl
-  } catch {
-    return SITE.downloadPortableExeUrl
-  }
+export function formatReleaseDate(iso: string | null): string | null {
+  if (!iso) return null
+  const d = new Date(iso)
+  if (Number.isNaN(d.getTime())) return null
+  return d.toLocaleDateString(undefined, {
+    year: 'numeric',
+    month: 'short',
+    day: 'numeric',
+  })
 }

@@ -1,9 +1,8 @@
-import { useEffect } from 'react'
 import { Link } from 'react-router-dom'
 import { motion } from 'framer-motion'
 import { FaqAccordion } from '@/components/FaqAccordion'
 import { SITE } from '@/config/site'
-import { fetchLatestPortableUrl, fetchLatestSetupUrl } from '@/lib/releases'
+import { useRollingReleaseMeta } from '@/hooks/useRollingReleaseMeta'
 
 const fadeUp = {
   initial: { opacity: 0, y: 20 },
@@ -43,28 +42,10 @@ const demoBlocks = [
   },
 ]
 
+const downloadLinkRel = 'noopener noreferrer' as const
+
 export function Home() {
-  useEffect(() => {
-    const installer = document.getElementById('cta-installer')
-    const portable = document.getElementById('cta-portable')
-    const ctaBand = document.getElementById('cta-band-installer')
-    const onInstaller = async (e: Event) => {
-      e.preventDefault()
-      window.location.href = await fetchLatestSetupUrl()
-    }
-    const onPortable = async (e: Event) => {
-      e.preventDefault()
-      window.location.href = await fetchLatestPortableUrl()
-    }
-    installer?.addEventListener('click', onInstaller)
-    portable?.addEventListener('click', onPortable)
-    ctaBand?.addEventListener('click', onInstaller)
-    return () => {
-      installer?.removeEventListener('click', onInstaller)
-      portable?.removeEventListener('click', onPortable)
-      ctaBand?.removeEventListener('click', onInstaller)
-    }
-  }, [])
+  const downloadMeta = useRollingReleaseMeta()
 
   return (
     <>
@@ -79,13 +60,67 @@ export function Home() {
             ShadowAssist keeps concise answers and notes beside your work — without adding another participant to the
             call. You supply <strong>your own</strong> AI keys; requests go straight to the vendor you trust.
           </motion.p>
-          <motion.div className="hero-cluely-cta" {...fadeUp} transition={{ ...fadeUp.transition, delay: 0.1 }}>
-            <a className="btn btn-cluely-primary" href={SITE.downloadSetupExeUrl} id="cta-installer">
-              Download for Windows
-            </a>
-            <a className="btn btn-cluely-secondary" href={SITE.downloadPortableExeUrl} id="cta-portable">
-              Get portable .exe
-            </a>
+          <motion.div className="hero-cluely-download" {...fadeUp} transition={{ ...fadeUp.transition, delay: 0.1 }}>
+            <p className="download-meta-line" aria-live="polite">
+              {downloadMeta.kind === 'loading' && (
+                <span className="download-meta-line__muted">Latest build: …</span>
+              )}
+              {downloadMeta.kind === 'ok' && (
+                <>
+                  Latest build: <strong>{downloadMeta.tag}</strong>
+                  {downloadMeta.updatedLabel ? (
+                    <>
+                      {' '}
+                      · Updated: {downloadMeta.updatedLabel}
+                    </>
+                  ) : null}
+                </>
+              )}
+              {downloadMeta.kind === 'error' && (
+                <span className="download-meta-line__warn">Unable to fetch latest version</span>
+              )}
+            </p>
+            <div className="download-pair">
+              <div className="download-card">
+                <a
+                  className="btn btn-cluely-primary"
+                  href={SITE.downloadSetupExeUrl}
+                  target="_blank"
+                  rel={downloadLinkRel}
+                >
+                  Download for Windows
+                </a>
+                <p className="download-card__desc">
+                  Windows Installer (.exe)
+                  <br />
+                  <span className="download-card__rec">Standard installation (Recommended)</span>
+                </p>
+              </div>
+              <div className="download-card">
+                <a
+                  className="btn btn-cluely-secondary"
+                  href={SITE.downloadPortableExeUrl}
+                  target="_blank"
+                  rel={downloadLinkRel}
+                >
+                  Get portable .exe
+                </a>
+                <p className="download-card__desc">
+                  Portable (.exe)
+                  <br />
+                  No installation required
+                </p>
+              </div>
+            </div>
+            <p className="download-trust">
+              <a href={SITE.releasesRollingUrl} target="_blank" rel={downloadLinkRel}>
+                View on GitHub
+              </a>
+              <span className="download-trust__sep"> · </span>
+              <a href={SITE.checksumsTxtUrl} target="_blank" rel={downloadLinkRel}>
+                SHA256 checksums
+              </a>
+            </p>
           </motion.div>
           <motion.p className="hero-cluely-meta" {...fadeUp} transition={{ ...fadeUp.transition, delay: 0.14 }}>
             <a href={SITE.repoUrl} target="_blank" rel="noreferrer">
@@ -292,7 +327,12 @@ export function Home() {
           </h2>
           <p className="cta-band__sub">Download the latest Windows build and follow the setup guide.</p>
           <div className="cta-band__actions">
-            <a className="btn btn-cluely-inverse" href={SITE.downloadSetupExeUrl} id="cta-band-installer">
+            <a
+              className="btn btn-cluely-inverse"
+              href={SITE.downloadSetupExeUrl}
+              target="_blank"
+              rel={downloadLinkRel}
+            >
               Download for Windows
             </a>
             <Link className="btn btn-cluely-ghost" to="/docs/getting-started">
