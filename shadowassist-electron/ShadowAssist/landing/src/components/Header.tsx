@@ -41,12 +41,15 @@ export function Header() {
         {SITE.name}
       </NavLink>
       <nav className="flex max-w-full flex-wrap items-center justify-end gap-x-4 gap-y-2 sm:gap-x-6">
-        {isHome ? (
+        {        isHome ? (
           <>
+            {navLink(hashHref('how'), 'How')}
             {navLink(hashHref('features'), 'Features')}
+            {navLink(hashHref('overlay'), 'Overlay')}
             {navLink(hashHref('live'), 'Live')}
+            {navLink(hashHref('models'), 'Models')}
             {navLink(hashHref('download'), 'Download')}
-            {navLink(hashHref('requirements'), 'Requirements')}
+            {navLink(hashHref('requirements'), 'Specs')}
           </>
         ) : null}
         <NavLink
@@ -56,7 +59,7 @@ export function Header() {
               'text-sm font-medium no-underline transition-colors duration-200',
               isHome
                 ? isActive
-                  ? 'text-white'
+                  ? 'text-[#fdba74]'
                   : 'text-zinc-400 hover:text-white'
                 : isActive
                   ? 'text-blue-600'
@@ -73,7 +76,7 @@ export function Header() {
           className={cn(
             'inline-flex min-h-10 w-full max-w-[220px] items-center justify-center rounded-[12px] px-4 text-center text-sm font-semibold no-underline transition-[transform,box-shadow,background-color] duration-300 sm:w-auto sm:max-w-none sm:min-h-9 active:scale-[0.99]',
             isHome
-              ? 'bg-[#3b82f6] text-white shadow-[0_0_0_1px_rgba(59,130,246,0.25),0_6px_28px_-4px_rgba(59,130,246,0.5)] hover:bg-[#2563eb] hover:shadow-[0_0_0_1px_rgba(59,130,246,0.35),0_10px_40px_-2px_rgba(59,130,246,0.6)] hover:scale-[1.02]'
+              ? 'bg-[#fb923c] text-[#0a0a0a] shadow-[0_0_0_1px_rgba(251,146,60,0.35),0_6px_28px_-4px_rgba(251,146,60,0.45)] hover:bg-[#f97316] hover:shadow-[0_0_0_1px_rgba(249,115,22,0.4),0_10px_40px_-2px_rgba(249,115,22,0.5)] hover:scale-[1.02]'
               : 'bg-zinc-900 text-white hover:bg-zinc-800 hover:scale-[1.02]'
           )}
         >
