@@ -42,11 +42,11 @@ export function Header() {
           'text-sm font-medium no-underline transition-colors duration-200',
           isMarketing
             ? isActive
-              ? 'text-zinc-100'
-              : 'text-[#a1a1aa] hover:text-white'
+              ? 'text-white'
+              : 'text-zinc-200 hover:text-white'
             : isActive
-              ? 'text-blue-600'
-              : 'text-zinc-600 hover:text-zinc-900'
+              ? 'font-semibold text-blue-700'
+              : 'text-zinc-900 hover:text-zinc-950'
         )
       }
     >
@@ -54,8 +54,21 @@ export function Header() {
     </NavLink>
   )
 
-  const dropdownLinkClass =
-    'block rounded-xl px-4 py-3 text-sm font-medium text-[#e4e4e7] no-underline transition-colors hover:bg-white/[0.06] hover:text-white'
+  const menuPanelClass = cn(
+    'absolute right-0 top-full z-50 mt-2 w-[min(17rem,calc(100vw-2rem))] origin-top-right scale-100 rounded-2xl border-2 p-2 opacity-100 shadow-xl',
+    isMarketing
+      ? 'border-zinc-600 bg-[#1f1f1f] text-zinc-50 ring-1 ring-white/10'
+      : 'border-zinc-300 bg-white text-zinc-950 ring-1 ring-black/5'
+  )
+
+  const menuItemClass = cn(
+    'block rounded-xl px-4 py-3 text-sm font-semibold no-underline transition-colors',
+    isMarketing
+      ? 'text-zinc-50 hover:bg-zinc-800 hover:text-white'
+      : 'text-zinc-900 hover:bg-zinc-100 hover:text-black'
+  )
+
+  const menuSecondaryClass = isMarketing ? 'text-zinc-400' : 'text-zinc-600'
 
   return (
     <header
@@ -79,7 +92,10 @@ export function Header() {
           width={160}
           height={40}
           decoding="async"
-          className="h-8 w-auto max-w-[9.5rem] object-contain object-left sm:h-9 sm:max-w-[10.5rem]"
+          className={cn(
+            'h-8 w-auto max-w-[9.5rem] object-contain object-left sm:h-9 sm:max-w-[10.5rem]',
+            !isMarketing && 'drop-shadow-[0_1px_2px_rgba(0,0,0,0.18)]'
+          )}
         />
       </NavLink>
 
@@ -93,30 +109,14 @@ export function Header() {
               href={downloadSectionHref()}
               className={cn(
                 'text-sm font-medium no-underline transition-colors duration-200',
-                isMarketing ? 'text-[#a1a1aa] hover:text-white' : 'text-zinc-600 hover:text-zinc-900'
+                isMarketing ? 'text-zinc-200 hover:text-white' : 'text-zinc-900 hover:text-zinc-950'
               )}
             >
               Download
             </a>
           </>
         ) : null}
-        <NavLink
-          to="/docs"
-          className={({ isActive }) =>
-            cn(
-              'text-sm font-medium no-underline transition-colors duration-200',
-              isMarketing
-                ? isActive
-                  ? 'text-zinc-100'
-                  : 'text-[#a1a1aa] hover:text-white'
-                : isActive
-                  ? 'text-blue-600'
-                  : 'text-zinc-600 hover:text-zinc-900'
-            )
-          }
-        >
-          Docs
-        </NavLink>
+        {navLinkMarketing('/docs', 'Docs')}
         <a href={SITE.downloadSetupExeUrl} target="_blank" rel="noopener noreferrer" className={ctaDesktop}>
           <span className="hidden lg:inline">Download for Windows</span>
           <span className="lg:hidden">Download</span>
@@ -154,41 +154,37 @@ export function Header() {
               <button
                 type="button"
                 aria-label="Close menu"
-                className="fixed inset-0 z-40 bg-black/45 backdrop-blur-sm transition-opacity"
+                className={cn(
+                  'fixed inset-0 z-40 transition-opacity',
+                  isMarketing ? 'bg-black/60 backdrop-blur-sm' : 'bg-zinc-900/40 backdrop-blur-sm'
+                )}
                 onClick={() => setMenuOpen(false)}
               />
-              <div
-                className={cn(
-                  'absolute right-0 top-full z-50 mt-2 w-[min(17rem,calc(100vw-2rem))] origin-top-right rounded-2xl border p-2 shadow-[0_24px_64px_-12px_rgba(0,0,0,0.65)] transition-[transform,opacity] duration-200 ease-out',
-                  'border-[#2a2a2a]/90 bg-[#121212]/88 backdrop-blur-xl',
-                  menuOpen ? 'scale-100 opacity-100' : 'scale-[0.96] opacity-0'
-                )}
-                role="menu"
-              >
-                <NavLink to="/" className={dropdownLinkClass} role="menuitem" onClick={() => setMenuOpen(false)}>
+              <div className={menuPanelClass} role="menu">
+                <NavLink to="/" className={menuItemClass} role="menuitem" onClick={() => setMenuOpen(false)}>
                   Home
                 </NavLink>
-                <NavLink to="/how-it-works" className={dropdownLinkClass} role="menuitem" onClick={() => setMenuOpen(false)}>
+                <NavLink to="/how-it-works" className={menuItemClass} role="menuitem" onClick={() => setMenuOpen(false)}>
                   How it works
                 </NavLink>
                 <NavLink
                   to="/built-for-live-work"
-                  className={dropdownLinkClass}
+                  className={menuItemClass}
                   role="menuitem"
                   onClick={() => setMenuOpen(false)}
                 >
                   Built for live work
                 </NavLink>
-                <NavLink to="/docs" className={dropdownLinkClass} role="menuitem" onClick={() => setMenuOpen(false)}>
+                <NavLink to="/docs" className={menuItemClass} role="menuitem" onClick={() => setMenuOpen(false)}>
                   Docs
                 </NavLink>
                 <a
                   href={downloadSectionHref()}
-                  className={dropdownLinkClass}
+                  className={menuItemClass}
                   role="menuitem"
                   onClick={() => setMenuOpen(false)}
                 >
-                  Download <span className="text-[#71717a]">(on page)</span>
+                  Download <span className={cn('font-medium', menuSecondaryClass)}>(on page)</span>
                 </a>
                 <a
                   href={SITE.downloadSetupExeUrl}
