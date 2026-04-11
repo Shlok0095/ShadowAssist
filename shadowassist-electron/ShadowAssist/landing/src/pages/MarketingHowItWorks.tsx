@@ -4,18 +4,18 @@ import { SITE } from '@/config/site'
 const steps = [
   {
     n: '01',
-    title: 'Install',
-    body: 'Run the Windows installer. ShadowAssist lives in the tray — no browser tab required.',
+    title: 'Install the native shell',
+    body: 'Run the Windows installer; ShadowAssist registers as a tray app with a standard uninstall entry—no Electron tab strip, no silent auto-updater unless you opt in later.',
   },
   {
     n: '02',
-    title: 'Connect your AI',
-    body: 'Open Settings → add your provider API key and pick a chat model. Keys stay on your machine.',
+    title: 'Bind your provider + model',
+    body: 'In Settings, paste API credentials and select a chat completion model. Keys never ship inside the binary; traffic goes straight to the HTTPS endpoint you configure.',
   },
   {
     n: '03',
-    title: 'Summon the overlay',
-    body: 'Use the configured hotkey during calls or focus work. Ask in text, optionally enable listening or screen context when you are ready.',
+    title: 'Invoke the overlay on demand',
+    body: 'Map a global hotkey, then pull the panel over slides, IDEs, or the browser. Type prompts by default; enable listening or screen capture only when the workflow warrants it.',
   },
 ] as const
 
@@ -25,7 +25,9 @@ export function MarketingHowItWorks() {
       <div className="mx-auto max-w-2xl">
         <p className="text-xs font-semibold uppercase tracking-[0.2em] text-[#60a5fa]">Guide</p>
         <h1 className="mt-2 text-3xl font-bold tracking-tight sm:text-4xl">How it works</h1>
-        <p className="mt-3 text-[#a1a1aa]">Three steps from download to live answers.</p>
+        <p className="mt-3 text-[#a1a1aa]">
+          From artifact download to first grounded answer—three deliberate steps, no hand-wavy onboarding.
+        </p>
 
         <ol className="mt-12 space-y-8">
           {steps.map((s) => (

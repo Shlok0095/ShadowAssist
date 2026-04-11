@@ -3,22 +3,22 @@ import { motion } from 'framer-motion'
 import { useEffect, useRef, useState } from 'react'
 import { cn } from '@/components/ui/cn'
 
-const USER_PROMPT = 'Explain LLM models'
+const USER_PROMPT = 'Contrast RAG with fine-tuning at scale'
 
 const AI_FIRST =
-  'LLMs are large neural nets trained to predict the next token — so they summarize, draft, and reason over context. In ShadowAssist you choose the model in Settings; prompts go to your provider with only the context you enable.'
+  'Retrieval injects fresh evidence at inference time—higher p95 latency, materially lower factual drift when your corpus is curated. Fine-tuning reshapes the prior inside weights: capex-heavy to revise, excellent for tone and format. Production systems usually compose both. ShadowAssist keeps routing explicit: model + base URL in Settings, and only modalities you enable join the payload—no silent intermediary.'
 
-const OCR_SNIPPET = `Q3_Strategy.pdf (visible region)
+const OCR_SNIPPET = `Q3_GTM_Brief.pdf · viewport
 ─────────────────────────────
-Revenue +12% YoY · gross margin 61%
-Risk: single-region inference dependency
-Next: lock pricing before Nov 15 rollout`
+North star: +12% YoY rev · GM 61% (steady state)
+Critical risk: inference + egress concentrated us-east-1
+Decision gate: pricing freeze for enterprise tier by 15 Nov`
 
 const AI_SECOND =
-  "Grounded in what's on screen: your deck shows +12% YoY revenue and flags single-region inference as a risk. Want three bullets you can paste into the thread?"
+  'Cross-referencing the captured region: growth and margin are both called out, with single-region concentration flagged as the operational risk and a hard date on pricing. I can distill that into exec bullets, a risk register line, or paste-ready copy for your stand-up—specify format.'
 
 function typingDelay(char: string, fast: boolean): number {
-  let base = fast ? 14 + Math.random() * 18 : 22 + Math.random() * 38
+  let base = fast ? 10 + Math.random() * 14 : 20 + Math.random() * 34
   if (char === ' ') base *= 0.55
   if ('.,—·'.includes(char)) base += 70 + Math.random() * 100
   if (Math.random() < 0.08) base += 100 + Math.random() * 180
@@ -147,7 +147,7 @@ export function HeroLiveMock({ className }: HeroLiveMockProps) {
           </span>
         </div>
         <div className="min-w-0 flex-1">
-          <p className="text-[0.65rem] font-semibold uppercase tracking-[0.16em] text-[#3b82f6]">Live product</p>
+          <p className="text-[0.65rem] font-semibold uppercase tracking-[0.16em] text-[#3b82f6]">Live capture</p>
           <p className="truncate text-[0.6875rem] font-medium text-[#a1a1aa]">ShadowAssist · {modeLabel}</p>
         </div>
         <span className="rounded-md border border-[#2a2a2a] bg-[#1a1a1a] px-2 py-1 text-[0.65rem] font-mono text-[#a1a1aa]">REC</span>
@@ -173,12 +173,12 @@ export function HeroLiveMock({ className }: HeroLiveMockProps) {
         <div
           className={cn(
             'space-y-2 rounded-xl border border-[#2a2a2a] bg-gradient-to-br from-[#3b82f6]/[0.08] via-[#121212] to-[#8b5cf6]/[0.06] p-4 transition-all duration-500',
-            showAi1Panel ? 'max-h-[520px] translate-y-0 opacity-100' : 'pointer-events-none max-h-0 translate-y-2 overflow-hidden opacity-0 py-0'
+            showAi1Panel ? 'max-h-[640px] translate-y-0 opacity-100' : 'pointer-events-none max-h-0 translate-y-2 overflow-hidden opacity-0 py-0'
           )}
         >
           <div className="flex items-center gap-2">
             <span className="h-1.5 w-1.5 rounded-full bg-[#8b5cf6] shadow-[0_0_10px_rgba(139,92,246,0.65)] motion-safe:animate-pulse-soft" />
-            <p className="text-xs font-semibold uppercase tracking-wider text-[#a1a1aa]">Assistant</p>
+            <p className="text-xs font-semibold uppercase tracking-wider text-[#a1a1aa]">Model output</p>
           </div>
           <p className="text-sm leading-relaxed text-white">
             {AI_FIRST.slice(0, ai1Idx)}
@@ -191,22 +191,22 @@ export function HeroLiveMock({ className }: HeroLiveMockProps) {
         <div
           className={cn(
             'rounded-xl border border-[#2a2a2a] bg-[#0a0a0a] px-4 py-3 font-mono text-[0.7rem] leading-relaxed transition-all duration-500',
-            ocrVisible ? 'max-h-[220px] translate-y-0 opacity-100' : 'max-h-0 translate-y-2 overflow-hidden py-0 opacity-0'
+            ocrVisible ? 'max-h-[260px] translate-y-0 opacity-100' : 'max-h-0 translate-y-2 overflow-hidden py-0 opacity-0'
           )}
         >
-          <p className="mb-2 text-[0.6rem] font-semibold uppercase tracking-wider text-[#3b82f6]">Screen · OCR</p>
+          <p className="mb-2 text-[0.6rem] font-semibold uppercase tracking-wider text-[#3b82f6]">Screen · structured extract</p>
           <pre className="whitespace-pre-wrap break-words text-[#a1a1aa]">{OCR_SNIPPET.slice(0, ocrChars)}</pre>
         </div>
 
         <div
           className={cn(
             'space-y-2 rounded-xl border border-[#2a2a2a] bg-[#1a1a1a] p-4 transition-all duration-500',
-            showAi2 ? 'max-h-[320px] translate-y-0 opacity-100' : 'pointer-events-none max-h-0 translate-y-2 overflow-hidden py-0 opacity-0'
+            showAi2 ? 'max-h-[380px] translate-y-0 opacity-100' : 'pointer-events-none max-h-0 translate-y-2 overflow-hidden py-0 opacity-0'
           )}
         >
           <div className="flex items-center gap-2">
             <span className="h-1.5 w-1.5 rounded-full bg-[#3b82f6] shadow-[0_0_10px_rgba(59,130,246,0.6)]" />
-            <p className="text-xs font-semibold uppercase tracking-wider text-[#a1a1aa]">Grounded answer</p>
+            <p className="text-xs font-semibold uppercase tracking-wider text-[#a1a1aa]">Grounded synthesis</p>
           </div>
           <p className="text-sm leading-relaxed text-white">
             {AI_SECOND.slice(0, ai2Idx)}
@@ -218,10 +218,10 @@ export function HeroLiveMock({ className }: HeroLiveMockProps) {
 
         <div className="flex flex-wrap gap-2 pt-1">
           <span className="rounded-lg border border-[#3b82f6]/25 bg-[#3b82f6]/10 px-2.5 py-1 text-[0.7rem] text-[#93c5fd]">
-            Voice + screen context
+            Audio + viewport-grounded context
           </span>
           <span className="rounded-lg border border-[#2a2a2a] bg-[#1a1a1a] px-2.5 py-1 text-[0.7rem] text-[#a1a1aa]">
-            Live demo loop
+            Continuous preview · no API keys in-page
           </span>
         </div>
       </div>

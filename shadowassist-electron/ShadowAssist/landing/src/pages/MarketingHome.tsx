@@ -86,25 +86,25 @@ const bento = [
   {
     icon: IconMic,
     title: 'Real-time Listening',
-    desc: 'Optional mic context with clear controls — stay aligned with what was just said.',
+    desc: 'Optional audio path with explicit toggles—capture the last utterance, not a vague “always on” mic graph.',
     span: 'lg:col-span-2',
   },
   {
     icon: IconBolt,
     title: 'Instant Answers',
-    desc: 'Replies stream in-place. No tab roulette.',
+    desc: 'Token stream lands in the overlay; zero context switches when the meeting is moving.',
     span: 'lg:col-span-1',
   },
   {
     icon: IconScreen,
     title: 'Understands Your Screen',
-    desc: 'OCR and layout cues when you enable screen access — answers grounded in what is visible.',
+    desc: 'When you allow it, structured text from the viewport informs the model—grounding without pasting screenshots.',
     span: 'lg:col-span-2',
   },
   {
     icon: IconEye,
     title: 'Works Invisibly',
-    desc: 'Discreet overlay and hotkeys. Built to stay out of the way until you need it.',
+    desc: 'Hotkey-first chrome, minimal footprint—visible only when you summon it.',
     span: 'lg:col-span-1',
   },
 ] as const
@@ -122,15 +122,15 @@ export function MarketingHome() {
         <div className="relative z-[1] mx-auto grid max-w-6xl gap-12 lg:grid-cols-2 lg:items-center lg:gap-16">
           <div className="min-w-0 text-center lg:text-left">
             <FadeIn>
-              <p className="mb-3 text-xs font-semibold uppercase tracking-[0.22em] text-[#60a5fa]">Live on your desktop</p>
+              <p className="mb-3 text-xs font-semibold uppercase tracking-[0.22em] text-[#60a5fa]">Native intelligence layer</p>
               <h1 className="text-[1.65rem] font-bold leading-[1.1] tracking-tight text-white sm:text-4xl md:text-5xl lg:text-[2.75rem]">
-                Your AI sees, listens, and answers — in real time.
+                Context-aware AI that keeps pace with the room.
               </h1>
             </FadeIn>
             <FadeIn delayMs={70} className="mt-4 sm:mt-5">
-              <p className="mx-auto max-w-xl text-base leading-relaxed text-[#a1a1aa] lg:mx-0 lg:max-w-md">
-                Voice + screen-aware context. BYOK. A premium overlay for calls and deep work — try the live loop on the
-                right.
+              <p className="mx-auto max-w-xl text-base leading-relaxed text-[#a1a1aa] lg:mx-0 lg:max-w-[26rem]">
+                Fuse optional audio and viewport signals into one overlay—BYOK, provider-direct TLS, no baked-in keys. The
+                preview cycles voice → model output → structured screen extract → grounded synthesis.
               </p>
             </FadeIn>
             <FadeIn delayMs={130} className="relative mt-8 flex flex-col items-center gap-3 sm:mt-10 lg:items-start">
@@ -138,7 +138,7 @@ export function MarketingHome() {
               <a href={SITE.downloadSetupExeUrl} target="_blank" rel={downloadRel} className={`relative z-[1] ${CTA} w-full max-w-xs sm:w-auto`}>
                 Download for Windows
               </a>
-              <p className="text-sm text-[#71717a]">macOS coming soon</p>
+              <p className="text-sm text-[#71717a]">macOS · roadmap</p>
               <p className="text-xs text-[#52525b]">
                 <Link to="/how-it-works" className="text-[#a1a1aa] underline-offset-4 hover:text-white hover:underline">
                   How it works
@@ -168,8 +168,10 @@ export function MarketingHome() {
       <section id="features" className="scroll-mt-24 border-t border-[#2a2a2a] px-4 py-14 sm:px-6 sm:py-16">
         <div className="mx-auto max-w-6xl">
           <FadeIn>
-            <h2 className="text-center text-xl font-bold tracking-tight text-white sm:text-2xl">Why teams use it</h2>
-            <p className="mx-auto mt-2 max-w-md text-center text-sm text-[#a1a1aa]">Four capabilities. One surface.</p>
+            <h2 className="text-center text-xl font-bold tracking-tight text-white sm:text-2xl">Inference-adjacent, unified</h2>
+            <p className="mx-auto mt-2 max-w-lg text-center text-sm text-[#a1a1aa]">
+              Four primitives—listening, latency-bounded answers, viewport grounding, discreet UI—composed in one surface.
+            </p>
           </FadeIn>
           <div className="mt-10 grid auto-rows-fr gap-3 sm:grid-cols-2 sm:gap-4 lg:grid-cols-3">
             {bento.map((card, i) => (
@@ -194,7 +196,9 @@ export function MarketingHome() {
         <div className="mx-auto max-w-lg text-center">
           <FadeIn>
             <h2 className="text-2xl font-bold tracking-tight text-white sm:text-3xl">Download for Windows</h2>
-            <p className="mt-2 text-[#a1a1aa]">Installer · no account wall · add your keys after install.</p>
+            <p className="mt-2 text-[#a1a1aa]">
+              NSIS installer · no account gate · credentials stay local after first launch.
+            </p>
           </FadeIn>
           <FadeIn delayMs={90} className="relative mt-10">
             <div
@@ -209,7 +213,7 @@ export function MarketingHome() {
             >
               Download for Windows
             </a>
-            <p className="mt-4 text-sm text-[#71717a]">macOS coming soon</p>
+            <p className="mt-4 text-sm text-[#71717a]">macOS client · on the roadmap</p>
           </FadeIn>
         </div>
       </section>

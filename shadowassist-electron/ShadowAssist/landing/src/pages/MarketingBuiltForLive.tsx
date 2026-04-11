@@ -3,20 +3,20 @@ import { SITE } from '@/config/site'
 
 const bullets = [
   {
-    title: 'Built for live calls',
-    body: 'Overlay stays on top of slides, docs, and browsers. Read the room without breaking flow.',
+    title: 'Always-on-top without hijacking focus',
+    body: 'The overlay floats above decks, terminals, and CRM tabs so you can read model output without alt-tabbing out of the narrative—or losing your place in a dense spreadsheet.',
   },
   {
-    title: 'Screen-grounded answers',
-    body: 'When you enable capture, the model can reference visible text and structure — not guesses from memory.',
+    title: 'Grounding that cites the viewport',
+    body: 'Screen capture is opt-in and scoped: structured text from what you actually have open informs completions, reducing confabulation compared to “memory-only” chat UIs.',
   },
   {
-    title: 'BYOK by design',
-    body: 'Groq, OpenAI, Anthropic, OpenRouter, Gemini, and more — pick speed, cost, and compliance in Settings.',
+    title: 'BYOK as a control plane',
+    body: 'Wire Groq, OpenAI, Anthropic, OpenRouter, Gemini, NVIDIA NIM, or any OpenAI-compatible endpoint. Swap latency-optimized vs. reasoning-heavy models per workload without reinstalling.',
   },
   {
-    title: 'Discreet by default',
-    body: 'Small footprint, hotkey-driven. You choose when the panel is visible.',
+    title: 'Operational discretion',
+    body: 'Hotkey-driven visibility, compact chrome, and local-first settings—built for environments where subtlety matters as much as throughput.',
   },
 ] as const
 
@@ -27,7 +27,8 @@ export function MarketingBuiltForLive() {
         <p className="text-xs font-semibold uppercase tracking-[0.2em] text-[#8b5cf6]">Product</p>
         <h1 className="mt-2 text-3xl font-bold tracking-tight sm:text-4xl">Built for live work</h1>
         <p className="mt-3 text-[#a1a1aa]">
-          ShadowAssist is a native Windows layer for real-time intelligence — meetings, reviews, and deep sessions.
+          ShadowAssist is a Windows-native co-pilot layer: synchronous meetings, live document reviews, and any session
+          where latency and situational awareness beat batch chat.
         </p>
 
         <ul className="mt-12 space-y-6">
@@ -40,11 +41,11 @@ export function MarketingBuiltForLive() {
         </ul>
 
         <p className="mt-10 text-sm text-[#71717a]">
-          Technical setup and provider list: see{' '}
+          Provider matrix, env vars, and security notes live in{' '}
           <Link to="/docs/getting-started" className="text-[#60a5fa] no-underline hover:underline">
             Getting started
-          </Link>{' '}
-          in Docs.
+          </Link>
+          .
         </p>
 
         <div className="mt-8 flex flex-col gap-3 sm:flex-row sm:flex-wrap sm:gap-4">
