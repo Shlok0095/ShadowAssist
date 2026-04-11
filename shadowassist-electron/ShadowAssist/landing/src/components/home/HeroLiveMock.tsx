@@ -113,8 +113,8 @@ export function HeroLiveMock({ className }: HeroLiveMockProps) {
   return (
     <motion.div
       className={cn(
-        'relative overflow-hidden rounded-2xl border border-[#2a2a2a] bg-[#121212] shadow-[0_0_0_1px_rgba(59,130,246,0.12),0_24px_64px_-16px_rgba(0,0,0,0.65),0_0_80px_-24px_rgba(59,130,246,0.18)]',
-        'before:pointer-events-none before:absolute before:inset-0 before:bg-gradient-to-br before:from-[#3b82f6]/[0.06] before:via-transparent before:to-[#8b5cf6]/[0.07]',
+        'relative overflow-hidden rounded-2xl border border-[#2a2a2a] bg-[#121212] shadow-[0_0_0_1px_rgba(255,255,255,0.06),0_24px_64px_-16px_rgba(0,0,0,0.65),0_0_80px_-28px_rgba(255,255,255,0.04)]',
+        'before:pointer-events-none before:absolute before:inset-0 before:bg-gradient-to-br before:from-white/[0.04] before:via-transparent before:to-zinc-500/[0.05]',
         'motion-safe:animate-hero-float-mock max-md:motion-safe:[animation:none]',
         className
       )}
@@ -123,31 +123,31 @@ export function HeroLiveMock({ className }: HeroLiveMockProps) {
           ? undefined
           : {
               boxShadow: [
-                '0 0 0 1px rgba(59,130,246,0.12), 0 24px 64px -16px rgba(0,0,0,0.65), 0 0 80px -24px rgba(59,130,246,0.18)',
-                '0 0 0 1px rgba(59,130,246,0.2), 0 28px 72px -14px rgba(0,0,0,0.6), 0 0 96px -20px rgba(59,130,246,0.26)',
-                '0 0 0 1px rgba(59,130,246,0.12), 0 24px 64px -16px rgba(0,0,0,0.65), 0 0 80px -24px rgba(59,130,246,0.18)',
+                '0 0 0 1px rgba(255,255,255,0.06), 0 24px 64px -16px rgba(0,0,0,0.65), 0 0 80px -28px rgba(255,255,255,0.04)',
+                '0 0 0 1px rgba(255,255,255,0.09), 0 28px 72px -14px rgba(0,0,0,0.6), 0 0 96px -24px rgba(255,255,255,0.06)',
+                '0 0 0 1px rgba(255,255,255,0.06), 0 24px 64px -16px rgba(0,0,0,0.65), 0 0 80px -28px rgba(255,255,255,0.04)',
               ],
             }
       }
       transition={{ duration: 5.5, repeat: Infinity, ease: 'easeInOut' }}
     >
-      <div className="pointer-events-none absolute -right-24 -top-24 h-48 w-48 rounded-full bg-[#3b82f6]/15 blur-3xl" aria-hidden />
-      <div className="pointer-events-none absolute -bottom-20 -left-16 h-40 w-40 rounded-full bg-[#8b5cf6]/12 blur-3xl" aria-hidden />
+      <div className="pointer-events-none absolute -right-24 -top-24 h-48 w-48 rounded-full bg-zinc-500/12 blur-3xl" aria-hidden />
+      <div className="pointer-events-none absolute -bottom-20 -left-16 h-40 w-40 rounded-full bg-zinc-600/10 blur-3xl" aria-hidden />
 
       <div className="relative flex items-center gap-3 border-b border-[#2a2a2a] px-4 py-3">
         <div className="relative flex h-8 w-8 shrink-0 items-center justify-center">
-          <span className="absolute h-8 w-8 rounded-full border border-[#3b82f6]/35 motion-safe:animate-signal-ring" aria-hidden />
+          <span className="absolute h-8 w-8 rounded-full border border-zinc-500/40 motion-safe:animate-signal-ring" aria-hidden />
           <span
-            className="absolute h-8 w-8 rounded-full border border-[#8b5cf6]/25 motion-safe:animate-signal-ring [animation-delay:0.5s]"
+            className="absolute h-8 w-8 rounded-full border border-zinc-600/30 motion-safe:animate-signal-ring [animation-delay:0.5s]"
             aria-hidden
           />
           <span className="relative flex h-2 w-2">
-            <span className="absolute inline-flex h-full w-full motion-safe:animate-ping rounded-full bg-[#3b82f6] opacity-30" />
-            <span className="relative inline-flex h-2 w-2 rounded-full bg-[#3b82f6] shadow-[0_0_12px_rgba(59,130,246,0.85)]" />
+            <span className="absolute inline-flex h-full w-full motion-safe:animate-ping rounded-full bg-zinc-300 opacity-25" />
+            <span className="relative inline-flex h-2 w-2 rounded-full bg-zinc-200 shadow-[0_0_12px_rgba(255,255,255,0.35)]" />
           </span>
         </div>
         <div className="min-w-0 flex-1">
-          <p className="text-[0.65rem] font-semibold uppercase tracking-[0.16em] text-[#3b82f6]">Live capture</p>
+          <p className="font-mono text-[0.6rem] font-semibold uppercase tracking-[0.2em] text-zinc-400">Live capture</p>
           <p className="truncate text-[0.6875rem] font-medium text-[#a1a1aa]">ShadowAssist · {modeLabel}</p>
         </div>
         <span className="rounded-md border border-[#2a2a2a] bg-[#1a1a1a] px-2 py-1 text-[0.65rem] font-mono text-[#a1a1aa]">REC</span>
@@ -164,7 +164,7 @@ export function HeroLiveMock({ className }: HeroLiveMockProps) {
           {USER_PROMPT.slice(0, userIdx)}
           {userIdx < USER_PROMPT.length && !reduceMotion ? (
             <span
-              className="ml-0.5 inline-block h-3.5 w-px translate-y-0.5 bg-[#3b82f6] align-middle shadow-[0_0_8px_rgba(59,130,246,0.9)] motion-safe:animate-pulse"
+              className="ml-0.5 inline-block h-3.5 w-px translate-y-0.5 bg-zinc-400 align-middle shadow-[0_0_8px_rgba(255,255,255,0.25)] motion-safe:animate-pulse"
               aria-hidden
             />
           ) : null}
@@ -172,18 +172,18 @@ export function HeroLiveMock({ className }: HeroLiveMockProps) {
 
         <div
           className={cn(
-            'space-y-2 rounded-xl border border-[#2a2a2a] bg-gradient-to-br from-[#3b82f6]/[0.08] via-[#121212] to-[#8b5cf6]/[0.06] p-4 transition-all duration-500',
+            'space-y-2 rounded-xl border border-[#2a2a2a] bg-gradient-to-br from-white/[0.05] via-[#121212] to-zinc-800/30 p-4 transition-all duration-500',
             showAi1Panel ? 'max-h-[640px] translate-y-0 opacity-100' : 'pointer-events-none max-h-0 translate-y-2 overflow-hidden opacity-0 py-0'
           )}
         >
           <div className="flex items-center gap-2">
-            <span className="h-1.5 w-1.5 rounded-full bg-[#8b5cf6] shadow-[0_0_10px_rgba(139,92,246,0.65)] motion-safe:animate-pulse-soft" />
-            <p className="text-xs font-semibold uppercase tracking-wider text-[#a1a1aa]">Model output</p>
+            <span className="h-1.5 w-1.5 rounded-full bg-zinc-400 shadow-[0_0_10px_rgba(255,255,255,0.2)] motion-safe:animate-pulse-soft" />
+            <p className="font-mono text-[0.65rem] font-semibold uppercase tracking-wider text-zinc-500">Model output</p>
           </div>
           <p className="text-sm leading-relaxed text-white">
             {AI_FIRST.slice(0, ai1Idx)}
             {ai1Idx < AI_FIRST.length && !reduceMotion && showAi1Panel ? (
-              <span className="ml-0.5 inline-block h-3.5 w-px translate-y-0.5 bg-[#8b5cf6] align-middle motion-safe:animate-pulse" aria-hidden />
+              <span className="ml-0.5 inline-block h-3.5 w-px translate-y-0.5 bg-zinc-500 align-middle motion-safe:animate-pulse" aria-hidden />
             ) : null}
           </p>
         </div>
@@ -194,7 +194,7 @@ export function HeroLiveMock({ className }: HeroLiveMockProps) {
             ocrVisible ? 'max-h-[260px] translate-y-0 opacity-100' : 'max-h-0 translate-y-2 overflow-hidden py-0 opacity-0'
           )}
         >
-          <p className="mb-2 text-[0.6rem] font-semibold uppercase tracking-wider text-[#3b82f6]">Screen · structured extract</p>
+          <p className="mb-2 font-mono text-[0.6rem] font-semibold uppercase tracking-wider text-zinc-500">Screen · structured extract</p>
           <pre className="whitespace-pre-wrap break-words text-[#a1a1aa]">{OCR_SNIPPET.slice(0, ocrChars)}</pre>
         </div>
 
@@ -205,22 +205,22 @@ export function HeroLiveMock({ className }: HeroLiveMockProps) {
           )}
         >
           <div className="flex items-center gap-2">
-            <span className="h-1.5 w-1.5 rounded-full bg-[#3b82f6] shadow-[0_0_10px_rgba(59,130,246,0.6)]" />
-            <p className="text-xs font-semibold uppercase tracking-wider text-[#a1a1aa]">Grounded synthesis</p>
+            <span className="h-1.5 w-1.5 rounded-full bg-zinc-300 shadow-[0_0_10px_rgba(255,255,255,0.15)]" />
+            <p className="font-mono text-[0.65rem] font-semibold uppercase tracking-wider text-zinc-500">Grounded synthesis</p>
           </div>
           <p className="text-sm leading-relaxed text-white">
             {AI_SECOND.slice(0, ai2Idx)}
             {ai2Idx < AI_SECOND.length && !reduceMotion && showAi2 ? (
-              <span className="ml-0.5 inline-block h-3.5 w-px translate-y-0.5 bg-[#3b82f6] align-middle motion-safe:animate-pulse" aria-hidden />
+              <span className="ml-0.5 inline-block h-3.5 w-px translate-y-0.5 bg-zinc-400 align-middle motion-safe:animate-pulse" aria-hidden />
             ) : null}
           </p>
         </div>
 
         <div className="flex flex-wrap gap-2 pt-1">
-          <span className="rounded-lg border border-[#3b82f6]/25 bg-[#3b82f6]/10 px-2.5 py-1 text-[0.7rem] text-[#93c5fd]">
+          <span className="rounded-lg border border-zinc-700/80 bg-zinc-900/80 px-2.5 py-1 font-mono text-[0.65rem] tracking-wide text-zinc-400">
             Audio + viewport-grounded context
           </span>
-          <span className="rounded-lg border border-[#2a2a2a] bg-[#1a1a1a] px-2.5 py-1 text-[0.7rem] text-[#a1a1aa]">
+          <span className="rounded-lg border border-[#2a2a2a] bg-[#1a1a1a] px-2.5 py-1 font-mono text-[0.65rem] tracking-wide text-zinc-500">
             Continuous preview · no API keys in-page
           </span>
         </div>

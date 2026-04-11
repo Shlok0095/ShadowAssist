@@ -9,10 +9,10 @@ function downloadSectionHref() {
 }
 
 const ctaDesktop =
-  'inline-flex min-h-9 items-center justify-center rounded-xl bg-[#3b82f6] px-4 text-sm font-semibold text-white no-underline shadow-[0_0_0_1px_rgba(59,130,246,0.35),0_6px_28px_-4px_rgba(59,130,246,0.45)] transition-[transform,box-shadow,background-color] duration-300 hover:scale-[1.03] hover:bg-[#2563eb] hover:shadow-[0_0_0_1px_rgba(59,130,246,0.45),0_10px_40px_-4px_rgba(59,130,246,0.55)] active:scale-[0.99]'
+  'marketing-cta inline-flex min-h-9 items-center justify-center rounded-xl border border-[#3f3f46] bg-[#1f1f1f] px-4 font-display text-sm font-semibold tracking-wide text-zinc-50 shadow-[0_0_0_1px_rgba(255,255,255,0.04),0_8px_28px_-8px_rgba(0,0,0,0.55)] transition-[transform,box-shadow,background-color,border-color] duration-300 hover:scale-[1.03] hover:border-[#52525b] hover:bg-[#2a2a2a] active:scale-[0.99]'
 
 const ctaMobile =
-  'inline-flex min-h-9 min-w-[5.5rem] items-center justify-center rounded-xl bg-[#3b82f6] px-3 text-xs font-semibold text-white no-underline shadow-[0_0_24px_-6px_rgba(59,130,246,0.5)] transition-[transform,box-shadow] duration-300 hover:scale-[1.03] active:scale-[0.99]'
+  'marketing-cta inline-flex min-h-9 min-w-[5.5rem] items-center justify-center rounded-xl border border-[#3f3f46] bg-[#1f1f1f] px-3 font-display text-xs font-semibold tracking-wide text-zinc-50 shadow-[0_0_24px_-8px_rgba(0,0,0,0.5)] transition-[transform,box-shadow,background-color] duration-300 hover:scale-[1.03] hover:bg-[#2a2a2a] active:scale-[0.99]'
 
 export function Header() {
   const { pathname } = useLocation()
@@ -41,7 +41,7 @@ export function Header() {
           'text-sm font-medium no-underline transition-colors duration-200',
           isMarketing
             ? isActive
-              ? 'text-[#93c5fd]'
+              ? 'text-zinc-100'
               : 'text-[#a1a1aa] hover:text-white'
             : isActive
               ? 'text-blue-600'
@@ -59,7 +59,7 @@ export function Header() {
   return (
     <header
       className={cn(
-        'sticky top-0 z-20 flex w-full max-w-none flex-wrap items-center justify-between gap-3 border-b px-4 py-3 backdrop-blur-xl sm:px-6 md:px-8 md:py-4',
+        'sticky top-0 z-20 flex w-full max-w-none flex-wrap items-center justify-between gap-3 border-b px-4 py-3 backdrop-blur-xl sm:px-8 md:px-10 md:py-4 lg:px-14 xl:px-16',
         isMarketing ? 'border-[#2a2a2a]/80 bg-[#0a0a0a]/80' : 'border-zinc-200/80 bg-white/85'
       )}
     >
@@ -67,7 +67,7 @@ export function Header() {
         to="/"
         end
         className={cn(
-          'min-w-0 text-base font-bold tracking-tight no-underline',
+          'min-w-0 font-display text-base font-semibold tracking-tight no-underline',
           isMarketing ? 'text-white hover:text-white' : 'text-zinc-900 hover:text-zinc-900'
         )}
       >
@@ -98,7 +98,7 @@ export function Header() {
               'text-sm font-medium no-underline transition-colors duration-200',
               isMarketing
                 ? isActive
-                  ? 'text-[#93c5fd]'
+                  ? 'text-zinc-100'
                   : 'text-[#a1a1aa] hover:text-white'
                 : isActive
                   ? 'text-blue-600'
@@ -129,7 +129,7 @@ export function Header() {
             className={cn(
               'flex h-10 w-10 items-center justify-center rounded-xl border transition-colors',
               isMarketing
-                ? 'border-[#2a2a2a] bg-[#121212] text-[#a1a1aa] hover:border-[#3b82f6]/35 hover:text-white'
+                ? 'border-[#2a2a2a] bg-[#121212] text-[#a1a1aa] hover:border-zinc-600 hover:text-white'
                 : 'border-zinc-200 bg-white text-zinc-700 hover:bg-zinc-50'
             )}
           >
@@ -185,7 +185,7 @@ export function Header() {
                   href={SITE.downloadSetupExeUrl}
                   target="_blank"
                   rel="noopener noreferrer"
-                  className="mt-1 block rounded-xl bg-[#3b82f6] px-4 py-3 text-center text-sm font-semibold text-white no-underline shadow-[0_0_28px_-6px_rgba(59,130,246,0.55)] transition-transform hover:scale-[1.02]"
+                  className="marketing-cta mt-1 block rounded-xl border border-[#3f3f46] bg-[#1f1f1f] px-4 py-3 text-center font-display text-sm font-semibold tracking-wide text-zinc-50 shadow-[0_0_28px_-8px_rgba(0,0,0,0.55)] transition-[transform,background-color] hover:scale-[1.02] hover:bg-[#2a2a2a]"
                   role="menuitem"
                   onClick={() => setMenuOpen(false)}
                 >
