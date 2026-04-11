@@ -147,6 +147,8 @@ export default function Settings() {
   const [hasCompletedOnboarding, setHasCompletedOnboarding] = useState(true)
   const [ocrEnabled, setOcrEnabled] = useState(true)
   const [audioEnabled, setAudioEnabled] = useState(true)
+  const [micListenLanguage, setMicListenLanguage] = useState('en_hi_hinglish')
+  const [micSensitivity, setMicSensitivity] = useState('standard')
   const [assistAutoTrigger, setAssistAutoTrigger] = useState(false)
   const [audioFallbackKey, setAudioFallbackKey] = useState('')
   const [audioFallbackProvider, setAudioFallbackProvider] = useState('openai')
@@ -183,6 +185,9 @@ export default function Settings() {
         setHasCompletedOnboarding(!!s.hasCompletedOnboarding)
         setOcrEnabled(s.ocrEnabled !== false)
         setAudioEnabled(s.audioEnabled !== false)
+        const ml = s.micListenLanguage
+        setMicListenLanguage(ml === 'en' || ml === 'hi' || ml === 'en_hi_hinglish' ? ml : 'en_hi_hinglish')
+        setMicSensitivity(s.micSensitivity === 'boost' ? 'boost' : 'standard')
         setAssistAutoTrigger(s.assistAutoTrigger === true)
         setAudioFallbackProvider(s.audioFallbackProvider || 'openai')
         setResumeContext(s.resumeContext || '')
@@ -1066,6 +1071,62 @@ export default function Settings() {
                       className="h-5 w-5 rounded border-white/20 accent-accent"
                     />
                   </label>
+                  <div className="settings-row-tile flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+                    <div className="min-w-0 flex-1">
+                      <span className="font-medium text-gray-200">Mic language (transcription)</span>
+                      <p className="mt-1 text-xs text-gray-600">
+                        English + Hindi + Hinglish uses auto language detection plus a short hint to the speech model (Whisper-style
+                        APIs). Forcing English or Hindi sets the API <span className="font-mono text-zinc-500">language</span> code
+                        only — best when you speak one language. Mistral Voxtral does not get the mixed-language prompt; use Groq,
+                        OpenAI, Together, or Fireworks for that mode.
+                      </p>
+                    </div>
+                    <select
+                      value={micListenLanguage}
+                      onChange={(e) => {
+                        const v = e.target.value
+                        setMicListenLanguage(v)
+                        save('micListenLanguage', v)
+                      }}
+                      className="input-shadow w-full shrink-0 px-3 py-2 text-sm sm:w-64"
+                    >
+                      <option value="en_hi_hinglish" className="bg-void-900">
+                        English + Hindi + Hinglish (auto)
+                      </option>
+                      <option value="en" className="bg-void-900">
+                        English only (forced)
+                      </option>
+                      <option value="hi" className="bg-void-900">
+                        Hindi only (forced)
+                      </option>
+                    </select>
+                  </div>
+                  <div className="settings-row-tile flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+                    <div className="min-w-0 flex-1">
+                      <span className="font-medium text-gray-200">Mic sensitivity</span>
+                      <p className="mt-1 text-xs text-gray-600">
+                        Standard applies a light digital boost and slightly easier voice detection than before. Boost is for quiet
+                        rooms, soft voices, or sitting farther from the mic — it raises gain and relaxes the gate so more chunks are
+                        sent to transcription (may pick up more background noise). Restart the Listen session after changing this.
+                      </p>
+                    </div>
+                    <select
+                      value={micSensitivity}
+                      onChange={(e) => {
+                        const v = e.target.value === 'boost' ? 'boost' : 'standard'
+                        setMicSensitivity(v)
+                        save('micSensitivity', v)
+                      }}
+                      className="input-shadow w-full shrink-0 px-3 py-2 text-sm sm:w-64"
+                    >
+                      <option value="standard" className="bg-void-900">
+                        Standard
+                      </option>
+                      <option value="boost" className="bg-void-900">
+                        Boost (quiet mic)
+                      </option>
+                    </select>
+                  </div>
                   <label className="settings-row-tile flex cursor-pointer items-center justify-between gap-4">
                     <div>
                       <span className="font-medium text-gray-200">Assist mode (auto AI)</span>

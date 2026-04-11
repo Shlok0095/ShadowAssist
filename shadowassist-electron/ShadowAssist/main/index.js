@@ -217,13 +217,27 @@ function applyContentProtectionAllWindows() {
 }
 
 /**
- * Desktop thumbnails include the overlay unless it is visually hidden. Stealth uses
- * setContentProtection (WDA_EXCLUDEFROMCAPTURE) so no extra step. In normal mode we set opacity
- * to 0 in the main process immediately before desktopCapturer so the compositor omits the overlay.
+ * Exclude the overlay from desktop capture during OCR/vision.
+ * - Stealth already uses content protection → no extra step.
+ * - Overlay visible: brief setContentProtection(true) so capture APIs omit the chat UI without
+ *   driving opacity (no local flicker); restore to match stealth after.
+ * - Overlay hidden: opacity 0 before capture (unchanged).
  */
 async function withOverlayExcludedFromScreenCapture(fn) {
   if (!overlayWindow || overlayWindow.isDestroyed()) return fn()
   if (isStealthModeEnabled()) return fn()
+
+  if (overlayVisible) {
+    try {
+      overlayWindow.setContentProtection(true)
+      await new Promise((resolve) => setTimeout(resolve, 50))
+      return await fn()
+    } finally {
+      if (!overlayWindow.isDestroyed()) {
+        overlayWindow.setContentProtection(isStealthModeEnabled())
+      }
+    }
+  }
 
   const previousOpacity = overlayWindow.getOpacity()
   try {

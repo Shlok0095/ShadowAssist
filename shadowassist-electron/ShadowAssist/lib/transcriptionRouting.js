@@ -88,17 +88,44 @@ function fallbackTranscription(get) {
   }
 }
 
+const MIC_LISTEN_LANG_MODES = new Set(['en', 'hi', 'en_hi_hinglish'])
+
+/** Short Whisper `prompt` to bias English / Hindi / Roman Hinglish (under typical token limits). */
+const MIC_LISTEN_MIXED_PROMPT =
+  'English, Hindi (Devanagari or Roman), or mixed Hinglish. Transcribe in the scripts and wording the speaker uses.'
+
 /**
  * @param {(key: string) => any} get
- * @returns {{ url: string, model: string, apiKey: string, responseKind: 'text'|'json', useWhisperSegmentMeta?: boolean } | null}
+ * @param {string} sttVendor — provider id used for this request (groq, openai, together, mistral, fireworks, …)
+ * @returns {{ language?: string, prompt?: string }}
  */
-function getTranscriptionRequestConfig(get) {
+function micListenLanguageFormFields(get, sttVendor) {
+  const raw = get('micListenLanguage')
+  const mode = MIC_LISTEN_LANG_MODES.has(raw) ? raw : 'en_hi_hinglish'
+
+  if (mode === 'en') return { language: 'en' }
+  if (mode === 'hi') return { language: 'hi' }
+
+  // Mixed: APIs have no multi-language whitelist; auto + optional prompt. Mistral Voxtral may ignore unknown fields.
+  if (sttVendor === 'mistral') return {}
+  return { prompt: MIC_LISTEN_MIXED_PROMPT }
+}
+
+function fallbackMicSttVendor(get) {
+  return get('audioFallbackProvider') === 'groq' ? 'groq' : 'openai'
+}
+
+/**
+ * @param {(key: string) => any} get
+ * @returns {{ cfg: object | null, sttVendor: string | null }}
+ */
+function resolveSttConfigAndVendor(get) {
   const provider = get('provider') || 'groq'
 
   if (provider === 'fireworks') {
     const cfg = fireworksStt(get)
-    if (cfg) return cfg
-    return fallbackTranscription(get)
+    if (cfg) return { cfg, sttVendor: 'fireworks' }
+    return { cfg: fallbackTranscription(get), sttVendor: fallbackMicSttVendor(get) }
   }
 
   const native = OPENAI_STYLE_STT[provider]
@@ -108,15 +135,29 @@ function getTranscriptionRequestConfig(get) {
       const model = native.fixedModel || (get(native.modelFromStore) || native.defaultModel)
       const base = native.baseURL.replace(/\/$/, '')
       return {
-        url: `${base}/audio/transcriptions`,
-        model,
-        apiKey,
-        responseKind: provider === 'mistral' ? 'json' : 'text',
-        useWhisperSegmentMeta: provider !== 'mistral',
+        cfg: {
+          url: `${base}/audio/transcriptions`,
+          model,
+          apiKey,
+          responseKind: provider === 'mistral' ? 'json' : 'text',
+          useWhisperSegmentMeta: provider !== 'mistral',
+        },
+        sttVendor: provider,
       }
     }
   }
-  return fallbackTranscription(get)
+  return { cfg: fallbackTranscription(get), sttVendor: fallbackMicSttVendor(get) }
+}
+
+/**
+ * @param {(key: string) => any} get
+ * @returns {{ url: string, model: string, apiKey: string, responseKind: 'text'|'json', useWhisperSegmentMeta?: boolean, language?: string, prompt?: string } | null}
+ */
+function getTranscriptionRequestConfig(get) {
+  const { cfg, sttVendor } = resolveSttConfigAndVendor(get)
+  if (!cfg || !sttVendor) return cfg
+  const lang = micListenLanguageFormFields(get, sttVendor)
+  return { ...cfg, ...lang }
 }
 
 function needsThirdPartyMicKey(provider) {

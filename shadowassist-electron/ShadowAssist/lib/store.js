@@ -100,6 +100,14 @@ If unclear, summarize or interpret best effort.`,
   },
   playbooks: { type: 'array', default: [] },
   audioEnabled: { type: 'boolean', default: true },
+  /**
+   * Mic STT language hint for Whisper-style APIs.
+   * en_hi_hinglish: auto-detect + prompt bias (English, Hindi, Hinglish).
+   * en / hi: force ISO language (no Hinglish prompt).
+   */
+  micListenLanguage: { type: 'string', default: 'en_hi_hinglish' },
+  /** standard | boost — input gain + looser VAD thresholds for quiet or distant mics */
+  micSensitivity: { type: 'string', default: 'standard' },
   /** false = Listen (context only, no auto AI); true = Assist (intent-based auto trigger). */
   assistAutoTrigger: { type: 'boolean', default: false },
   ocrEnabled: { type: 'boolean', default: true },

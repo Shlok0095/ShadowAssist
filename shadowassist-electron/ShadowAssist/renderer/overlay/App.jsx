@@ -14,7 +14,7 @@ const ipc = createIpcShim()
 const COLLAPSED_H = 38
 const MIN_ASK_GAP_MS = 2000
 /** Longer chunks give Whisper more phonetic context (fewer mid-phrase cuts); ~2s is a good live balance. */
-const AUDIO_CHUNK_MS = 2400
+const AUDIO_CHUNK_MS = 3500
 /** Ms of silence after last STT chunk before speech Assist may fire. */
 const SPEECH_STABILITY_MS = 1800
 /** Clear rolling speech buffer after this long without a new chunk. */
@@ -295,33 +295,48 @@ const HALLUCINATIONS = [
 /** Skip only obviously empty blobs (scales with chunk length + codec overhead). */
 const MIN_RECORDING_BYTES = 2200
 
-/**
- * Per-path RMS (byte time-domain analyser). Mean + peak: blocks single-click / steady-hum false
- * STT. Mic and system are measured separately; a chunk is transcribed only if that path was active.
- */
-/** Slightly relaxed so quiet mics / system loopback still produce STT (was dropping real speech). */
-const CHUNK_ENERGY_MEAN_MIN = 1.02
-const CHUNK_ENERGY_PEAK_MIN = 2.85
-/** Below chunk gate; RMS at/above = “speech-like” activity for pre-trigger silence detection. */
-const SPEECH_ACTIVITY_RMS = 1.06
+/** Per-path RMS gate + gain; `micSensitivity` in settings picks standard vs boost. */
+const MIC_CAPTURE_PROFILES = {
+  standard: {
+    gain: 1.55,
+    chunkMeanMin: 0.96,
+    chunkPeakMin: 2.35,
+    speechActivityRms: 0.98,
+  },
+  boost: {
+    gain: 2.45,
+    chunkMeanMin: 0.82,
+    chunkPeakMin: 1.9,
+    speechActivityRms: 0.88,
+  },
+}
+
 const SPEECH_SILENCE_MS = 600
 
-function pathEnergyActive(stats) {
-  if (!stats || stats.count < 1) return false
+function resolveMicCaptureProfile(raw) {
+  return raw === 'boost' ? MIC_CAPTURE_PROFILES.boost : MIC_CAPTURE_PROFILES.standard
+}
+
+function pathEnergyActive(stats, profile) {
+  if (!stats || stats.count < 1 || !profile) return false
   const mean = stats.sum / stats.count
-  return mean >= CHUNK_ENERGY_MEAN_MIN && stats.max >= CHUNK_ENERGY_PEAK_MIN
+  return mean >= profile.chunkMeanMin && stats.max >= profile.chunkPeakMin
 }
 
 /**
- * Path into MediaRecorder: HPF (rumble) → light compression so quiet speech isn’t lost in STT
- * while loud system/meeting audio doesn’t clip as hard. Energy analyser should tap the same tail.
+ * Path into MediaRecorder: HPF → gain (quiet speech) → compressor (limit peaks) → dest.
+ * Analyser taps the same tail as MediaRecorder so energy gating matches what we encode.
  */
-function buildVoiceCaptureChain(ctx, mediaStream, dest) {
+function buildVoiceCaptureChain(ctx, mediaStream, dest, profile) {
+  const gainLinear =
+    profile && typeof profile.gain === 'number' && profile.gain > 0 ? profile.gain : 1
   const src = ctx.createMediaStreamSource(mediaStream)
   const hp = ctx.createBiquadFilter()
   hp.type = 'highpass'
   hp.frequency.value = 80
   hp.Q.value = 0.707
+  const gainNode = ctx.createGain()
+  gainNode.gain.value = gainLinear
   const comp = ctx.createDynamicsCompressor()
   comp.threshold.value = -22
   comp.knee.value = 28
@@ -329,7 +344,8 @@ function buildVoiceCaptureChain(ctx, mediaStream, dest) {
   comp.attack.value = 0.003
   comp.release.value = 0.22
   src.connect(hp)
-  hp.connect(comp)
+  hp.connect(gainNode)
+  gainNode.connect(comp)
   comp.connect(dest)
   return comp
 }
@@ -362,6 +378,7 @@ export default function App() {
   const energyIntervalRef = useRef(null)
   const energySampleRef = useRef(null)
   const chunkEnergyRef = useRef({ active: false, mic: null, sys: null })
+  const micCaptureProfileRef = useRef(MIC_CAPTURE_PROFILES.standard)
   const audioPathsRef = useRef({ hasMic: false, hasSys: false })
   const streamSpecsRef = useRef([])
   const lastTranscribeFingerprint = useRef('')
@@ -822,6 +839,10 @@ export default function App() {
   async function startMic() {
     if ((await ipc?.invoke('get-store', 'audioEnabled')) === false || isListening.current) return
     try {
+      const sensRaw = await ipc?.invoke('get-store', 'micSensitivity')
+      const captureProfile = resolveMicCaptureProfile(sensRaw)
+      micCaptureProfileRef.current = captureProfile
+
       const mic = await navigator.mediaDevices
         .getUserMedia({
           audio: {
@@ -862,7 +883,7 @@ export default function App() {
 
       if (mic) {
         const micDest = ctx.createMediaStreamDestination()
-        const tail = buildVoiceCaptureChain(ctx, mic, micDest)
+        const tail = buildVoiceCaptureChain(ctx, mic, micDest, captureProfile)
         const a = ctx.createAnalyser()
         a.fftSize = 512
         tail.connect(a)
@@ -871,7 +892,7 @@ export default function App() {
       }
       if (sys) {
         const sysDest = ctx.createMediaStreamDestination()
-        const tail = buildVoiceCaptureChain(ctx, sys, sysDest)
+        const tail = buildVoiceCaptureChain(ctx, sys, sysDest, captureProfile)
         const a = ctx.createAnalyser()
         a.fftSize = 512
         tail.connect(a)
@@ -898,7 +919,8 @@ export default function App() {
 
         const bumpSilence = (rms) => {
           const t = Date.now()
-          if (rms >= SPEECH_ACTIVITY_RMS) lastLoudEnergyAtRef.current = t
+          const act = micCaptureProfileRef.current?.speechActivityRms ?? 0.98
+          if (rms >= act) lastLoudEnergyAtRef.current = t
           else if (t - lastLoudEnergyAtRef.current > SPEECH_SILENCE_MS) {
             lastSpeechActivityRef.current = t - 1000
           }
@@ -971,10 +993,11 @@ export default function App() {
         const blob = new Blob(chunks, { type: mr.mimeType || 'audio/webm' })
         const branch = spec.key === 'mic' ? chunkEnergyRef.current.mic : chunkEnergyRef.current.sys
         const { hasMic, hasSys } = audioPathsRef.current
+        const prof = micCaptureProfileRef.current
         const pathOk =
           spec.key === 'mic'
-            ? hasMic && pathEnergyActive(branch)
-            : hasSys && pathEnergyActive(branch)
+            ? hasMic && pathEnergyActive(branch, prof)
+            : hasSys && pathEnergyActive(branch, prof)
         if (blob.size >= MIN_RECORDING_BYTES && pathOk) void transcribe(blob, mr.mimeType, spec.key)
       }
       try {
@@ -1024,6 +1047,8 @@ export default function App() {
         fd.append('file', blob, `a.${ext}`)
         fd.append('model', cfg.model)
         fd.append('temperature', '0')
+        if (cfg.language) fd.append('language', cfg.language)
+        if (cfg.prompt) fd.append('prompt', cfg.prompt)
         if (format === 'verbose_json') {
           fd.append('response_format', 'verbose_json')
           fd.append('timestamp_granularities[]', 'segment')
