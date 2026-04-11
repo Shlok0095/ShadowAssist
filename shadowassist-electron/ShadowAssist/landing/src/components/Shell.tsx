@@ -5,14 +5,17 @@ import { Footer } from '@/components/Footer'
 import { Header } from '@/components/Header'
 import { cn } from '@/components/ui/cn'
 
+const MARKETING_PATHS = new Set(['/', '/how-it-works', '/built-for-live-work'])
+
 export function Shell() {
   const { pathname } = useLocation()
+  const isMarketingSurface = MARKETING_PATHS.has(pathname)
   const isHome = pathname === '/' || pathname === ''
 
   useEffect(() => {
-    document.body.classList.toggle('marketing-dark', isHome)
+    document.body.classList.toggle('marketing-dark', isMarketingSurface)
     return () => document.body.classList.remove('marketing-dark')
-  }, [isHome])
+  }, [isMarketingSurface])
 
   useEffect(() => {
     const lenis = new Lenis({ duration: 1.05, smoothWheel: true })
@@ -33,7 +36,7 @@ export function Shell() {
       <div className="bg-grid" aria-hidden />
       <div className="glow glow-a" aria-hidden />
       <div className="glow glow-b" aria-hidden />
-      {isHome ? (
+      {isMarketingSurface ? (
         <>
           <div className="marketing-grain" aria-hidden />
           <div className="marketing-blob marketing-blob--blue" aria-hidden />
@@ -42,7 +45,7 @@ export function Shell() {
         </>
       ) : null}
       <Header />
-      <main className={cn('main-shell min-w-0', isHome && 'saas-root overflow-x-hidden')}>
+      <main className={cn('main-shell min-w-0', isMarketingSurface && 'saas-root overflow-x-hidden')}>
         <Outlet />
       </main>
       {!isHome ? <Footer /> : null}

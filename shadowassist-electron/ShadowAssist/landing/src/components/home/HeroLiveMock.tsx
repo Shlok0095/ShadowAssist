@@ -1,129 +1,230 @@
 import { useReducedMotion } from 'framer-motion'
+import { motion } from 'framer-motion'
 import { useEffect, useRef, useState } from 'react'
 import { cn } from '@/components/ui/cn'
 
-const PROMPT = 'Map the decision → three crisp bullets for the room…'
+const USER_PROMPT = 'Explain LLM models'
+
+const AI_FIRST =
+  'LLMs are large neural nets trained to predict the next token — so they summarize, draft, and reason over context. In ShadowAssist you choose the model in Settings; prompts go to your provider with only the context you enable.'
+
+const OCR_SNIPPET = `Q3_Strategy.pdf (visible region)
+─────────────────────────────
+Revenue +12% YoY · gross margin 61%
+Risk: single-region inference dependency
+Next: lock pricing before Nov 15 rollout`
+
+const AI_SECOND =
+  "Grounded in what's on screen: your deck shows +12% YoY revenue and flags single-region inference as a risk. Want three bullets you can paste into the thread?"
+
+function typingDelay(char: string, fast: boolean): number {
+  let base = fast ? 14 + Math.random() * 18 : 22 + Math.random() * 38
+  if (char === ' ') base *= 0.55
+  if ('.,—·'.includes(char)) base += 70 + Math.random() * 100
+  if (Math.random() < 0.08) base += 100 + Math.random() * 180
+  return base
+}
+
+function wait(ms: number) {
+  return new Promise<void>((resolve) => {
+    window.setTimeout(resolve, ms)
+  })
+}
 
 type HeroLiveMockProps = {
   className?: string
 }
 
-function nextTypingDelay(charIndex: number): number {
-  const ch = PROMPT[charIndex]
-  let base = 28 + Math.random() * 56
-  if (ch === ' ') base *= 0.65
-  if ('.,→—'.includes(ch)) base += 80 + Math.random() * 120
-  if (Math.random() < 0.12) base += 160 + Math.random() * 220
-  return base
-}
-
 export function HeroLiveMock({ className }: HeroLiveMockProps) {
   const reduceMotion = useReducedMotion()
-  const [charIndex, setCharIndex] = useState(0)
-  const [showResponse, setShowResponse] = useState(false)
-  const [cursorPeriod, setCursorPeriod] = useState(0.85 + Math.random() * 0.45)
-  const timeoutRef = useRef(0)
+  const [modeLabel, setModeLabel] = useState('Voice')
+  const [userIdx, setUserIdx] = useState(0)
+  const [ai1Idx, setAi1Idx] = useState(0)
+  const [ai2Idx, setAi2Idx] = useState(0)
+  const [ocrVisible, setOcrVisible] = useState(false)
+  const [ocrChars, setOcrChars] = useState(0)
+  const runId = useRef(0)
 
   useEffect(() => {
     if (reduceMotion) {
-      setCharIndex(PROMPT.length)
-      setShowResponse(true)
-      return
+      setModeLabel('Live')
+      setUserIdx(USER_PROMPT.length)
+      setAi1Idx(AI_FIRST.length)
+      setAi2Idx(AI_SECOND.length)
+      setOcrVisible(true)
+      setOcrChars(OCR_SNIPPET.length)
+      return undefined
     }
-    if (charIndex >= PROMPT.length) {
-      timeoutRef.current = window.setTimeout(() => setShowResponse(true), 320)
-      return () => window.clearTimeout(timeoutRef.current)
-    }
-    const delay = nextTypingDelay(charIndex)
-    timeoutRef.current = window.setTimeout(() => setCharIndex((c) => c + 1), delay)
-    return () => window.clearTimeout(timeoutRef.current)
-  }, [charIndex, reduceMotion])
 
-  useEffect(() => {
-    if (reduceMotion) return
-    const id = window.setInterval(() => {
-      setCursorPeriod(0.72 + Math.random() * 0.55)
-    }, 1400 + Math.random() * 900)
-    return () => window.clearInterval(id)
+    const id = ++runId.current
+    let cancelled = false
+
+    async function loop() {
+      while (!cancelled && runId.current === id) {
+        setModeLabel('Voice')
+        setUserIdx(0)
+        setAi1Idx(0)
+        setAi2Idx(0)
+        setOcrVisible(false)
+        setOcrChars(0)
+
+        for (let i = 0; i <= USER_PROMPT.length && !cancelled && runId.current === id; i++) {
+          setUserIdx(i)
+          if (i < USER_PROMPT.length) await wait(typingDelay(USER_PROMPT[i], false))
+        }
+        await wait(420)
+
+        setModeLabel('Answer')
+        for (let i = 0; i <= AI_FIRST.length && !cancelled && runId.current === id; i++) {
+          setAi1Idx(i)
+          if (i < AI_FIRST.length) await wait(typingDelay(AI_FIRST[i], true))
+        }
+        await wait(520)
+
+        setModeLabel('Screen')
+        setOcrVisible(true)
+        for (let i = 0; i <= OCR_SNIPPET.length && !cancelled && runId.current === id; i++) {
+          setOcrChars(i)
+          if (i < OCR_SNIPPET.length) await wait(11 + Math.random() * 8)
+        }
+        await wait(640)
+
+        setModeLabel('Answer')
+        for (let i = 0; i <= AI_SECOND.length && !cancelled && runId.current === id; i++) {
+          setAi2Idx(i)
+          if (i < AI_SECOND.length) await wait(typingDelay(AI_SECOND[i], true))
+        }
+
+        setModeLabel('Live')
+        await wait(2400)
+      }
+    }
+
+    void loop()
+    return () => {
+      cancelled = true
+      runId.current += 1
+    }
   }, [reduceMotion])
 
+  const showAi1Panel = userIdx >= USER_PROMPT.length
+  const showAi2 = ocrChars >= OCR_SNIPPET.length && userIdx >= USER_PROMPT.length
+
   return (
-    <div
+    <motion.div
       className={cn(
-        'relative overflow-hidden rounded-2xl border border-cyan-500/20 bg-night-900/95 shadow-[0_0_0_1px_rgba(59,130,246,0.12),0_24px_64px_-12px_rgba(0,0,0,0.55)]',
-        'before:pointer-events-none before:absolute before:inset-0 before:bg-gradient-to-br before:from-blue-500/5 before:via-transparent before:to-violet-500/10',
+        'relative overflow-hidden rounded-2xl border border-[#2a2a2a] bg-[#121212] shadow-[0_0_0_1px_rgba(59,130,246,0.12),0_24px_64px_-16px_rgba(0,0,0,0.65),0_0_80px_-24px_rgba(59,130,246,0.18)]',
+        'before:pointer-events-none before:absolute before:inset-0 before:bg-gradient-to-br before:from-[#3b82f6]/[0.06] before:via-transparent before:to-[#8b5cf6]/[0.07]',
+        'motion-safe:animate-hero-float-mock max-md:motion-safe:[animation:none]',
         className
       )}
+      animate={
+        reduceMotion
+          ? undefined
+          : {
+              boxShadow: [
+                '0 0 0 1px rgba(59,130,246,0.12), 0 24px 64px -16px rgba(0,0,0,0.65), 0 0 80px -24px rgba(59,130,246,0.18)',
+                '0 0 0 1px rgba(59,130,246,0.2), 0 28px 72px -14px rgba(0,0,0,0.6), 0 0 96px -20px rgba(59,130,246,0.26)',
+                '0 0 0 1px rgba(59,130,246,0.12), 0 24px 64px -16px rgba(0,0,0,0.65), 0 0 80px -24px rgba(59,130,246,0.18)',
+              ],
+            }
+      }
+      transition={{ duration: 5.5, repeat: Infinity, ease: 'easeInOut' }}
     >
-      <div className="relative flex items-center gap-3 border-b border-white/10 px-4 py-3">
+      <div className="pointer-events-none absolute -right-24 -top-24 h-48 w-48 rounded-full bg-[#3b82f6]/15 blur-3xl" aria-hidden />
+      <div className="pointer-events-none absolute -bottom-20 -left-16 h-40 w-40 rounded-full bg-[#8b5cf6]/12 blur-3xl" aria-hidden />
+
+      <div className="relative flex items-center gap-3 border-b border-[#2a2a2a] px-4 py-3">
         <div className="relative flex h-8 w-8 shrink-0 items-center justify-center">
-          <span className="absolute h-8 w-8 rounded-full border border-cyan-400/30 motion-safe:animate-signal-ring" aria-hidden />
+          <span className="absolute h-8 w-8 rounded-full border border-[#3b82f6]/35 motion-safe:animate-signal-ring" aria-hidden />
           <span
-            className="absolute h-8 w-8 rounded-full border border-violet-400/25 motion-safe:animate-signal-ring [animation-delay:0.55s]"
+            className="absolute h-8 w-8 rounded-full border border-[#8b5cf6]/25 motion-safe:animate-signal-ring [animation-delay:0.5s]"
             aria-hidden
           />
           <span className="relative flex h-2 w-2">
-            <span className="absolute inline-flex h-full w-full motion-safe:animate-ping rounded-full bg-cyan-400 opacity-35" />
-            <span className="relative inline-flex h-2 w-2 rounded-full bg-cyan-400 shadow-[0_0_10px_rgba(6,182,212,0.8)]" />
+            <span className="absolute inline-flex h-full w-full motion-safe:animate-ping rounded-full bg-[#3b82f6] opacity-30" />
+            <span className="relative inline-flex h-2 w-2 rounded-full bg-[#3b82f6] shadow-[0_0_12px_rgba(59,130,246,0.85)]" />
           </span>
         </div>
         <div className="min-w-0 flex-1">
-          <p className="text-[0.65rem] font-semibold uppercase tracking-[0.16em] text-cyan-400/90">Live stream</p>
-          <p className="truncate text-[0.6875rem] font-medium text-zinc-500">ShadowAssist · real-time intelligence layer</p>
+          <p className="text-[0.65rem] font-semibold uppercase tracking-[0.16em] text-[#3b82f6]">Live product</p>
+          <p className="truncate text-[0.6875rem] font-medium text-[#a1a1aa]">ShadowAssist · {modeLabel}</p>
         </div>
-        <span className="rounded-md border border-white/10 bg-white/[0.06] px-2 py-1 text-[0.65rem] font-mono text-zinc-500">
-          REC
-        </span>
+        <span className="rounded-md border border-[#2a2a2a] bg-[#1a1a1a] px-2 py-1 text-[0.65rem] font-mono text-[#a1a1aa]">REC</span>
       </div>
 
-      <div className="space-y-4 p-5">
-        <div className="rounded-xl border border-white/10 bg-black/30 px-4 py-3 font-mono text-[0.8125rem] leading-relaxed text-zinc-300">
-          <span className="text-zinc-500">{'>'} </span>
-          {PROMPT.slice(0, charIndex)}
-          <span
-            className="ml-0.5 inline-block h-4 w-px translate-y-0.5 bg-cyan-400 align-middle shadow-[0_0_8px_rgba(6,182,212,0.85)] motion-reduce:opacity-100"
-            style={{
-              animation: reduceMotion ? undefined : `sa-cursor-blink ${cursorPeriod}s steps(1, end) infinite`,
-            }}
-            aria-hidden
-          />
+      <div className="relative space-y-3 p-4 sm:p-5">
+        <div
+          className={cn(
+            'rounded-xl border border-[#2a2a2a] bg-[#0a0a0a] px-4 py-3 font-mono text-[0.8125rem] leading-relaxed text-[#a1a1aa] transition-opacity duration-300',
+            userIdx > 0 ? 'opacity-100' : 'opacity-50'
+          )}
+        >
+          <span className="text-[#52525b]">You · </span>
+          {USER_PROMPT.slice(0, userIdx)}
+          {userIdx < USER_PROMPT.length && !reduceMotion ? (
+            <span
+              className="ml-0.5 inline-block h-3.5 w-px translate-y-0.5 bg-[#3b82f6] align-middle shadow-[0_0_8px_rgba(59,130,246,0.9)] motion-safe:animate-pulse"
+              aria-hidden
+            />
+          ) : null}
         </div>
 
         <div
           className={cn(
-            'space-y-2 rounded-xl border border-violet-500/30 bg-gradient-to-br from-violet-500/10 via-transparent to-cyan-500/10 p-4 transition-[opacity,transform] duration-500 ease-out',
-            showResponse ? 'translate-y-0 opacity-100' : 'pointer-events-none translate-y-2 opacity-0'
+            'space-y-2 rounded-xl border border-[#2a2a2a] bg-gradient-to-br from-[#3b82f6]/[0.08] via-[#121212] to-[#8b5cf6]/[0.06] p-4 transition-all duration-500',
+            showAi1Panel ? 'max-h-[520px] translate-y-0 opacity-100' : 'pointer-events-none max-h-0 translate-y-2 overflow-hidden opacity-0 py-0'
           )}
         >
           <div className="flex items-center gap-2">
-            <span className="h-1.5 w-1.5 rounded-full bg-violet-400 shadow-[0_0_10px_rgba(139,92,246,0.7)] motion-safe:animate-pulse-soft" />
-            <p className="text-xs font-semibold uppercase tracking-wider text-violet-200/90">Synthesizing</p>
+            <span className="h-1.5 w-1.5 rounded-full bg-[#8b5cf6] shadow-[0_0_10px_rgba(139,92,246,0.65)] motion-safe:animate-pulse-soft" />
+            <p className="text-xs font-semibold uppercase tracking-wider text-[#a1a1aa]">Assistant</p>
           </div>
-          <ul className="list-none space-y-2 text-sm leading-snug text-zinc-200">
-            <li className="flex gap-2">
-              <span className="text-cyan-400">▸</span>
-              Pilot scope: two regions, checkpoint at day 30.
-            </li>
-            <li className="flex gap-2">
-              <span className="text-cyan-400">▸</span>
-              Risk: legal sign-off before external demo.
-            </li>
-            <li className="flex gap-2">
-              <span className="text-cyan-400">▸</span>
-              Next: finance confirms headcount by Thursday.
-            </li>
-          </ul>
+          <p className="text-sm leading-relaxed text-white">
+            {AI_FIRST.slice(0, ai1Idx)}
+            {ai1Idx < AI_FIRST.length && !reduceMotion && showAi1Panel ? (
+              <span className="ml-0.5 inline-block h-3.5 w-px translate-y-0.5 bg-[#8b5cf6] align-middle motion-safe:animate-pulse" aria-hidden />
+            ) : null}
+          </p>
         </div>
 
-        <div className="flex flex-wrap gap-2">
-          <span className="rounded-lg border border-cyan-500/20 bg-cyan-500/5 px-2.5 py-1 text-[0.7rem] text-cyan-200/80">
-            Understands your screen instantly
+        <div
+          className={cn(
+            'rounded-xl border border-[#2a2a2a] bg-[#0a0a0a] px-4 py-3 font-mono text-[0.7rem] leading-relaxed transition-all duration-500',
+            ocrVisible ? 'max-h-[220px] translate-y-0 opacity-100' : 'max-h-0 translate-y-2 overflow-hidden py-0 opacity-0'
+          )}
+        >
+          <p className="mb-2 text-[0.6rem] font-semibold uppercase tracking-wider text-[#3b82f6]">Screen · OCR</p>
+          <pre className="whitespace-pre-wrap break-words text-[#a1a1aa]">{OCR_SNIPPET.slice(0, ocrChars)}</pre>
+        </div>
+
+        <div
+          className={cn(
+            'space-y-2 rounded-xl border border-[#2a2a2a] bg-[#1a1a1a] p-4 transition-all duration-500',
+            showAi2 ? 'max-h-[320px] translate-y-0 opacity-100' : 'pointer-events-none max-h-0 translate-y-2 overflow-hidden py-0 opacity-0'
+          )}
+        >
+          <div className="flex items-center gap-2">
+            <span className="h-1.5 w-1.5 rounded-full bg-[#3b82f6] shadow-[0_0_10px_rgba(59,130,246,0.6)]" />
+            <p className="text-xs font-semibold uppercase tracking-wider text-[#a1a1aa]">Grounded answer</p>
+          </div>
+          <p className="text-sm leading-relaxed text-white">
+            {AI_SECOND.slice(0, ai2Idx)}
+            {ai2Idx < AI_SECOND.length && !reduceMotion && showAi2 ? (
+              <span className="ml-0.5 inline-block h-3.5 w-px translate-y-0.5 bg-[#3b82f6] align-middle motion-safe:animate-pulse" aria-hidden />
+            ) : null}
+          </p>
+        </div>
+
+        <div className="flex flex-wrap gap-2 pt-1">
+          <span className="rounded-lg border border-[#3b82f6]/25 bg-[#3b82f6]/10 px-2.5 py-1 text-[0.7rem] text-[#93c5fd]">
+            Voice + screen context
           </span>
-          <span className="rounded-lg border border-white/10 bg-white/[0.04] px-2.5 py-1 text-[0.7rem] text-zinc-500">
-            Responds as things happen
+          <span className="rounded-lg border border-[#2a2a2a] bg-[#1a1a1a] px-2.5 py-1 text-[0.7rem] text-[#a1a1aa]">
+            Live demo loop
           </span>
         </div>
       </div>
-    </div>
+    </motion.div>
   )
 }

@@ -1940,13 +1940,13 @@ body.marketing-dark {
   --glass: rgba(15, 23, 42, 0.78);
   --text: #fafafa;
   --muted: #a1a1aa;
-  --accent: #fb923c;
-  --accent2: #fdba74;
-  --mint: #fb923c;
+  --accent: #60a5fa;
+  --accent2: #a78bfa;
+  --mint: #3b82f6;
   background-color: var(--bg);
   background-image:
-    radial-gradient(ellipse 85% 55% at 50% -18%, rgba(251, 146, 60, 0.07), transparent 58%),
-    radial-gradient(ellipse 45% 40% at 100% 0%, rgba(249, 115, 22, 0.05), transparent 48%);
+    radial-gradient(ellipse 85% 55% at 50% -18%, rgba(59, 130, 246, 0.08), transparent 58%),
+    radial-gradient(ellipse 45% 40% at 100% 0%, rgba(139, 92, 246, 0.06), transparent 48%);
   color: var(--text);
 }
 
@@ -1962,13 +1962,13 @@ body.marketing-dark .bg-grid {
 }
 
 body.marketing-dark .glow-a {
-  background: #fb923c;
-  opacity: 0.1;
+  background: #3b82f6;
+  opacity: 0.11;
 }
 
 body.marketing-dark .glow-b {
-  background: #f97316;
-  opacity: 0.08;
+  background: #8b5cf6;
+  opacity: 0.09;
 }
 
 body.marketing-dark .faq-acc__item.glass-panel {
@@ -2005,18 +2005,18 @@ body.marketing-dark .marketing-blob {
 body.marketing-dark .marketing-blob--cyan {
   width: 380px;
   height: 380px;
-  background: #fdba74;
+  background: #06b6d4;
   bottom: 8%;
   right: -6%;
   animation-delay: -9s;
   animation-duration: 58s;
-  opacity: 0.12;
+  opacity: 0.1;
 }
 
 body.marketing-dark .marketing-blob--blue {
   width: 440px;
   height: 440px;
-  background: #fb923c;
+  background: #3b82f6;
   top: 4%;
   left: -8%;
   animation-duration: 54s;
@@ -2025,10 +2025,10 @@ body.marketing-dark .marketing-blob--blue {
 body.marketing-dark .marketing-blob--violet {
   width: 360px;
   height: 360px;
-  background: #f97316;
+  background: #8b5cf6;
   top: 42%;
   left: 35%;
-  opacity: 0.12;
+  opacity: 0.14;
   animation-delay: -16s;
   animation-duration: 62s;
 }
