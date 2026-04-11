@@ -1932,6 +1932,10 @@ code {
 }
 
 /* ─── Marketing home (dark) — toggled from Shell via `body.marketing-dark` ─── */
+html:has(body.marketing-dark) {
+  scrollbar-gutter: stable;
+}
+
 body.marketing-dark {
   --bg: #0a0a0a;
   --surface: rgba(15, 23, 42, 0.82);

@@ -113,7 +113,7 @@ export function HeroLiveMock({ className }: HeroLiveMockProps) {
   return (
     <motion.div
       className={cn(
-        'relative overflow-hidden rounded-2xl border border-[#2a2a2a] bg-[#121212] shadow-[0_0_0_1px_rgba(255,255,255,0.06),0_24px_64px_-16px_rgba(0,0,0,0.65),0_0_80px_-28px_rgba(255,255,255,0.04)]',
+        'relative flex flex-col overflow-hidden rounded-2xl border border-[#2a2a2a] bg-[#121212] shadow-[0_0_0_1px_rgba(255,255,255,0.06),0_24px_64px_-16px_rgba(0,0,0,0.65),0_0_80px_-28px_rgba(255,255,255,0.04)]',
         'before:pointer-events-none before:absolute before:inset-0 before:bg-gradient-to-br before:from-white/[0.04] before:via-transparent before:to-zinc-500/[0.05]',
         'motion-safe:animate-hero-float-mock max-md:motion-safe:[animation:none]',
         className
@@ -153,7 +153,8 @@ export function HeroLiveMock({ className }: HeroLiveMockProps) {
         <span className="rounded-md border border-[#2a2a2a] bg-[#1a1a1a] px-2 py-1 text-[0.65rem] font-mono text-[#a1a1aa]">REC</span>
       </div>
 
-      <div className="relative space-y-3 p-4 sm:p-5">
+      <div className="h-[min(44vh,380px)] overflow-x-hidden overflow-y-auto overscroll-y-contain px-4 pb-1 pt-4 [scrollbar-color:rgba(63,63,70,0.55)_transparent] [scrollbar-gutter:stable] sm:h-[min(48vh,440px)] sm:px-5 sm:pb-2 sm:pt-5">
+        <div className="space-y-3">
         <div
           className={cn(
             'rounded-xl border border-[#2a2a2a] bg-[#0a0a0a] px-4 py-3 font-mono text-[0.8125rem] leading-relaxed text-[#a1a1aa] transition-opacity duration-300',
@@ -215,15 +216,16 @@ export function HeroLiveMock({ className }: HeroLiveMockProps) {
             ) : null}
           </p>
         </div>
-
-        <div className="flex flex-wrap gap-2 pt-1">
-          <span className="rounded-lg border border-zinc-700/80 bg-zinc-900/80 px-2.5 py-1 font-mono text-[0.65rem] tracking-wide text-zinc-400">
-            Audio + viewport-grounded context
-          </span>
-          <span className="rounded-lg border border-[#2a2a2a] bg-[#1a1a1a] px-2.5 py-1 font-mono text-[0.65rem] tracking-wide text-zinc-500">
-            Continuous preview · no API keys in-page
-          </span>
         </div>
+      </div>
+
+      <div className="flex flex-wrap gap-2 border-t border-[#2a2a2a] px-4 py-3 sm:px-5">
+        <span className="rounded-lg border border-zinc-700/80 bg-zinc-900/80 px-2.5 py-1 font-mono text-[0.65rem] tracking-wide text-zinc-400">
+          Audio + viewport-grounded context
+        </span>
+        <span className="rounded-lg border border-[#2a2a2a] bg-[#1a1a1a] px-2.5 py-1 font-mono text-[0.65rem] tracking-wide text-zinc-500">
+          Continuous preview · no API keys in-page
+        </span>
       </div>
     </motion.div>
   )

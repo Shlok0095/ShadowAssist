@@ -119,8 +119,8 @@ export function MarketingHome() {
           <div className="absolute bottom-[8%] right-[-5%] h-[min(50vw,420px)] w-[min(50vw,420px)] rounded-full bg-zinc-600/10 blur-[100px]" />
         </div>
 
-        <div className="relative z-[1] mx-auto grid w-full max-w-[90rem] gap-12 lg:grid-cols-2 lg:items-center lg:gap-x-16 lg:gap-y-12 xl:gap-x-24">
-          <div className="min-w-0 text-center lg:max-w-none lg:text-left">
+        <div className="relative z-[1] mx-auto grid w-full max-w-[90rem] gap-12 lg:grid-cols-2 lg:items-start lg:gap-x-16 lg:gap-y-12 xl:gap-x-24">
+          <div className="min-w-0 text-center lg:max-w-none lg:text-left lg:pt-1">
             <FadeIn>
               <p className="mb-4 font-mono text-[10px] font-medium uppercase tracking-[0.28em] text-zinc-500 sm:text-xs sm:tracking-[0.22em]">
                 Native intelligence layer
@@ -156,7 +156,10 @@ export function MarketingHome() {
             </FadeIn>
           </div>
 
-          <FadeIn delayMs={90} className="relative min-w-0 w-full lg:justify-self-end xl:max-w-[36rem] xl:justify-self-end">
+          <FadeIn
+            delayMs={90}
+            className="relative min-w-0 w-full lg:justify-self-end xl:max-w-[36rem] xl:justify-self-end [contain:layout]"
+          >
             <div
               className="pointer-events-none absolute -inset-4 rounded-[1.5rem] bg-gradient-to-br from-white/[0.06] via-transparent to-zinc-600/10 opacity-90 blur-2xl motion-safe:animate-pulse sm:-inset-6"
               aria-hidden
