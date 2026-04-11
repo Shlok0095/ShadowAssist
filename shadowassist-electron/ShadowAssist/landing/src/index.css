@@ -1933,7 +1933,7 @@ code {
 
 /* ─── Marketing home (dark) — toggled from Shell via `body.marketing-dark` ─── */
 body.marketing-dark {
-  --bg: #030712;
+  --bg: #0a0a0a;
   --surface: rgba(15, 23, 42, 0.82);
   --surface2: rgba(24, 24, 27, 0.55);
   --border: rgba(255, 255, 255, 0.09);
@@ -1945,8 +1945,8 @@ body.marketing-dark {
   --mint: #2dd4bf;
   background-color: var(--bg);
   background-image:
-    radial-gradient(ellipse 85% 55% at 50% -18%, rgba(59, 130, 246, 0.14), transparent 58%),
-    radial-gradient(ellipse 45% 40% at 100% 0%, rgba(139, 92, 246, 0.1), transparent 48%);
+    radial-gradient(ellipse 85% 55% at 50% -18%, rgba(59, 130, 246, 0.06), transparent 58%),
+    radial-gradient(ellipse 45% 40% at 100% 0%, rgba(139, 92, 246, 0.04), transparent 48%);
   color: var(--text);
 }
 

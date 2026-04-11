@@ -45,7 +45,7 @@ export function Shell() {
       <main className={cn('main-shell min-w-0', isHome && 'saas-root overflow-x-hidden')}>
         <Outlet />
       </main>
-      <Footer />
+      {!isHome ? <Footer /> : null}
     </>
   )
 }

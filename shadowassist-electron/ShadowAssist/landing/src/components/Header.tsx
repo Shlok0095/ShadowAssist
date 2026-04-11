@@ -43,10 +43,10 @@ export function Header() {
       <nav className="flex max-w-full flex-wrap items-center justify-end gap-x-4 gap-y-2 sm:gap-x-6">
         {isHome ? (
           <>
-            {navLink(hashHref('features'), 'Product')}
-            {navLink(hashHref('preview'), 'Preview')}
+            {navLink(hashHref('features'), 'Features')}
+            {navLink(hashHref('live'), 'Live')}
             {navLink(hashHref('download'), 'Download')}
-            {navLink(hashHref('faq'), 'FAQ')}
+            {navLink(hashHref('requirements'), 'Requirements')}
           </>
         ) : null}
         <NavLink
@@ -71,10 +71,10 @@ export function Header() {
           target="_blank"
           rel="noopener noreferrer"
           className={cn(
-            'inline-flex min-h-10 w-full max-w-[220px] items-center justify-center rounded-full px-4 text-center text-sm font-semibold no-underline transition-[transform,box-shadow] duration-200 sm:w-auto sm:max-w-none sm:min-h-9 hover:scale-[1.02] active:scale-[0.99]',
+            'inline-flex min-h-10 w-full max-w-[220px] items-center justify-center rounded-[12px] px-4 text-center text-sm font-semibold no-underline transition-[transform,box-shadow,background-color] duration-300 sm:w-auto sm:max-w-none sm:min-h-9 active:scale-[0.99]',
             isHome
-              ? 'bg-gradient-to-br from-blue-500 via-violet-500 to-cyan-500 text-white shadow-md shadow-violet-500/20 hover:shadow-lg'
-              : 'bg-zinc-900 text-white hover:bg-zinc-800'
+              ? 'bg-[#3b82f6] text-white shadow-[0_0_0_1px_rgba(59,130,246,0.25),0_6px_28px_-4px_rgba(59,130,246,0.5)] hover:bg-[#2563eb] hover:shadow-[0_0_0_1px_rgba(59,130,246,0.35),0_10px_40px_-2px_rgba(59,130,246,0.6)] hover:scale-[1.02]'
+              : 'bg-zinc-900 text-white hover:bg-zinc-800 hover:scale-[1.02]'
           )}
         >
           <span className="hidden sm:inline">Download for Windows</span>
