@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from 'react'
 import { NavLink, useLocation } from 'react-router-dom'
 import { cn } from '@/components/ui/cn'
 import { SITE } from '@/config/site'
+import brandLogo from '../../../logo.png'
 
 function downloadSectionHref() {
   const base = import.meta.env.BASE_URL.replace(/\/?$/, '/')
@@ -66,12 +67,20 @@ export function Header() {
       <NavLink
         to="/"
         end
+        aria-label={SITE.name}
         className={cn(
-          'min-w-0 font-display text-base font-semibold tracking-tight no-underline',
-          isMarketing ? 'text-white hover:text-white' : 'text-zinc-900 hover:text-zinc-900'
+          'flex min-w-0 shrink-0 items-center no-underline',
+          isMarketing ? 'text-white hover:opacity-90' : 'text-zinc-900 hover:opacity-90'
         )}
       >
-        {SITE.name}
+        <img
+          src={brandLogo}
+          alt=""
+          width={160}
+          height={40}
+          decoding="async"
+          className="h-8 w-auto max-w-[9.5rem] object-contain object-left sm:h-9 sm:max-w-[10.5rem]"
+        />
       </NavLink>
 
       {/* Desktop */}

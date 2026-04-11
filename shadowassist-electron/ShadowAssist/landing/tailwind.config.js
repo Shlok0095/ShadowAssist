@@ -67,8 +67,8 @@ export default {
           '50%': { transform: 'translateY(-6px) scale(1.006)' },
         },
         'hero-float-mock': {
-          '0%, 100%': { transform: 'translateY(0) scale(1)' },
-          '50%': { transform: 'translateY(-11px) scale(1.012)' },
+          '0%, 100%': { transform: 'translateY(0)' },
+          '50%': { transform: 'translateY(-8px)' },
         },
         'hero-radial-breathe': {
           '0%, 100%': { opacity: '0.82', transform: 'scale(1)' },
