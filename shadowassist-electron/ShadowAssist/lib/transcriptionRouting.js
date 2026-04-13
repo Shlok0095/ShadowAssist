@@ -90,25 +90,22 @@ function fallbackTranscription(get) {
 
 const MIC_LISTEN_LANG_MODES = new Set(['en', 'hi', 'en_hi_hinglish'])
 
-/** Short Whisper `prompt` to bias English / Hindi / Roman Hinglish (under typical token limits). */
-const MIC_LISTEN_MIXED_PROMPT =
-  'English, Hindi (Devanagari or Roman), or mixed Hinglish. Transcribe in the scripts and wording the speaker uses.'
-
 /**
+ * Mixed en/hi/hinglish: no Whisper `prompt` — instructional prompts are often echoed as fake transcript
+ * on quiet audio. Omitting `language` keeps auto-detect for code-switching.
+ *
  * @param {(key: string) => any} get
- * @param {string} sttVendor — provider id used for this request (groq, openai, together, mistral, fireworks, …)
+ * @param {string} _sttVendor unused (kept for call-site symmetry)
  * @returns {{ language?: string, prompt?: string }}
  */
-function micListenLanguageFormFields(get, sttVendor) {
+function micListenLanguageFormFields(get, _sttVendor) {
   const raw = get('micListenLanguage')
   const mode = MIC_LISTEN_LANG_MODES.has(raw) ? raw : 'en_hi_hinglish'
 
   if (mode === 'en') return { language: 'en' }
   if (mode === 'hi') return { language: 'hi' }
 
-  // Mixed: APIs have no multi-language whitelist; auto + optional prompt. Mistral Voxtral may ignore unknown fields.
-  if (sttVendor === 'mistral') return {}
-  return { prompt: MIC_LISTEN_MIXED_PROMPT }
+  return {}
 }
 
 function fallbackMicSttVendor(get) {

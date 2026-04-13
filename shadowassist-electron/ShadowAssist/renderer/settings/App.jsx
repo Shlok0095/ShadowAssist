@@ -1075,10 +1075,9 @@ export default function Settings() {
                     <div className="min-w-0 flex-1">
                       <span className="font-medium text-gray-200">Mic language (transcription)</span>
                       <p className="mt-1 text-xs text-gray-600">
-                        English + Hindi + Hinglish uses auto language detection plus a short hint to the speech model (Whisper-style
-                        APIs). Forcing English or Hindi sets the API <span className="font-mono text-zinc-500">language</span> code
-                        only — best when you speak one language. Mistral Voxtral does not get the mixed-language prompt; use Groq,
-                        OpenAI, Together, or Fireworks for that mode.
+                        English + Hindi + Hinglish uses auto language detection (no <span className="font-mono text-zinc-500">language</span>{' '}
+                        code — avoids forcing one script). We do not send a Whisper “prompt” here: instructional prompts are often
+                        hallucinated as fake words on quiet audio. Forcing English or Hindi sets <span className="font-mono text-zinc-500">language</span> only — best for single-language sessions.
                       </p>
                     </div>
                     <select

@@ -47,8 +47,7 @@
       "executableName": "ShadowAssist",
       "publisherName": "ShadowAssist",
       "target": "portable",
-      "sign": null,
-      "signAndEditExecutable": false
+      "sign": null
     },
     "portable": {
       "artifactName": "ShadowAssist.exe"

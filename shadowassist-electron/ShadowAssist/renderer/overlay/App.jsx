@@ -8,7 +8,10 @@ import ResponsePanel from './components/ResponsePanel'
 import InputBar from './components/InputBar'
 import { applyUiAccentTheme, normalizeUiAccentId } from '../shared/uiAccentThemes'
 import { createIpcShim } from '../shared/ipcShim'
-import { filterWhisperVerboseJson } from '../shared/whisperTranscriptGate'
+import {
+  AGGREGATE_DROP_HARD_MIN,
+  filterWhisperVerboseJson,
+} from '../shared/whisperTranscriptGate'
 
 const ipc = createIpcShim()
 const COLLAPSED_H = 38
@@ -290,6 +293,14 @@ const HALLUCINATIONS = [
   /^(subtitle|subtitles)\b/i, /^\.{2,}$/,
   /\bplease subscribe\b/i, /\blike and subscribe\b/i, /^(silence|inaudible)\b/i,
   /^\(?typing\)?$/i, /^watching in \d+p\b/i,
+  // Whisper filler on silence / noise — subtitle vendors & prompt echo (substring OK on whole chunk)
+  /\bcastingwords\b/i,
+  /\btranscription by\b/i,
+  /\btranslation by\b/i,
+  /transcribe only words that are spoken/i,
+  /Дякую за перегляд/u,
+  /\bamara\.org\b/i,
+  /\bsubtitles? by\b/i,
 ]
 
 /** Skip only obviously empty blobs (scales with chunk length + codec overhead). */
@@ -381,7 +392,6 @@ export default function App() {
   const micCaptureProfileRef = useRef(MIC_CAPTURE_PROFILES.standard)
   const audioPathsRef = useRef({ hasMic: false, hasSys: false })
   const streamSpecsRef = useRef([])
-  const lastTranscribeFingerprint = useRef('')
   /** Last mic transcript activity (for main-process audioRecent). */
   const lastAudioUpdateRef = useRef(0)
   const lastOcrUpdateRef = useRef(0)
@@ -450,7 +460,6 @@ export default function App() {
     speechBufferRef.current = ''
     lastSpeechTimeRef.current = 0
     lastChunkRef.current = ''
-    lastTranscribeFingerprint.current = ''
     lastTriggerTimeRef.current = 0
     lastSentSpeechRef.current = ''
     lastSpeakerRef.current = 'me'
@@ -1086,7 +1095,18 @@ export default function App() {
           const j = await res.json()
           if (useWhisperMeta) {
             const gated = filterWhisperVerboseJson(j)
-            text = gated.ok ? gated.text : ''
+            text = String(gated.text || '').trim()
+            // Drop only clearly garbage utterances (Groq/OpenAI: very negative avg_logprob + segment filters).
+            // Softer than gating on `ok` alone so normal speech is not frozen.
+            const agg = gated.aggregateLogprob
+            if (
+              text &&
+              typeof agg === 'number' &&
+              Number.isFinite(agg) &&
+              agg < AGGREGATE_DROP_HARD_MIN
+            ) {
+              text = ''
+            }
           } else {
             text = String(j.text || j.transcription || '').trim()
           }
@@ -1105,9 +1125,6 @@ export default function App() {
       const speaker = assignChunkSpeaker(trimmedChunk, silenceBeforeMs, lastSpeakerRef)
       const roleTag = speaker === 'me' ? 'Me' : 'Participant'
 
-      const fp = `${audioPathKey}|${trimmedChunk.toLowerCase().replace(/\s+/g, ' ').slice(0, 160)}`
-      if (fp === lastTranscribeFingerprint.current) return
-      lastTranscribeFingerprint.current = fp
       lastChunkRef.current = trimmedChunk
 
       const stamp = Date.now()
