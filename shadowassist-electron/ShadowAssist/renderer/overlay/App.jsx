@@ -12,6 +12,7 @@ import {
   AGGREGATE_DROP_HARD_MIN,
   filterWhisperVerboseJson,
 } from '../shared/whisperTranscriptGate'
+import { captureScreenTextLocal, terminateLocalOcr, warmupLocalOcr } from './localOcr'
 
 const ipc = createIpcShim()
 const COLLAPSED_H = 38
@@ -46,6 +47,8 @@ const SCREEN_ASSIST_COOLDOWN_MS = 4000
 const GLOBAL_TRIGGER_COOLDOWN_MS = 2000
 /** Cap OCR bytes in structured prompt (full OCR still in ref; not content filtering). */
 const MAX_SCREEN_CONTEXT_CHARS = 1000
+/** Screen-read can reuse very fresh OCR to avoid extra wait. */
+const FRESH_OCR_MAX_AGE_MS = 1200
 
 const MAX_LIVE_SEGMENTS = 30
 
@@ -418,8 +421,10 @@ export default function App() {
   const speechFailsafeIntervalRef = useRef(null)
   const isProcessingAskRef = useRef(false)
   const lastAskTimeRef = useRef(0)
-  /** Latest screen OCR text from main (`ocr-update`). */
+  /** Latest renderer-local OCR text (same downstream integration as previous IPC flow). */
   const latestOcrTextRef = useRef('')
+  const localOcrRuntimeRef = useRef({})
+  const localOcrTickRef = useRef(null)
   /** Last OCR text that produced a screen Assist trigger (dedupe). */
   const lastOcrTriggerRef = useRef('')
   const lastScreenTriggerTimeRef = useRef(0)
@@ -505,13 +510,27 @@ export default function App() {
     ipc.invoke('get-store', 'assistAutoTrigger').then((v) => {
       assistAutoTriggerRef.current = v === true
     })
-    const unsub = ipc.on('ocr-update', (_, text) => {
-      lastOcrUpdateRef.current = Date.now()
-      if (typeof text === 'string') latestOcrTextRef.current = text
-      maybeTriggerFromScreenRef.current?.()
-    })
-    return () => unsub?.()
   }, [])
+
+  const refreshLocalOcr = useCallback(
+    async (opts = {}) => {
+      if (!ipc) return { ok: false, reason: 'no_ipc' }
+      try {
+        const text = await captureScreenTextLocal(ipc, opts, localOcrRuntimeRef.current)
+        if (typeof text === 'string') {
+          latestOcrTextRef.current = text
+          lastOcrUpdateRef.current = Date.now()
+          if (opts.allowAutoTrigger === true && text.trim()) {
+            maybeTriggerFromScreenRef.current?.()
+          }
+        }
+        return { ok: true, text: String(text || '') }
+      } catch (e) {
+        return { ok: false, error: e?.message || String(e) }
+      }
+    },
+    [],
+  )
 
   const cancelStreamScroll = useCallback(() => {
     if (streamScrollRafRef.current != null) {
@@ -1276,12 +1295,23 @@ export default function App() {
           const bufferedSpeech = String(speechBufferRef.current || '').trim()
 
           if (sessionOnRef.current && ipc) {
-            const r = await ipc.invoke('pretrigger-refresh-ocr', {
-              bypassCaptureCooldown: bypassCapture,
-            })
-            if (r?.ok && typeof r.text === 'string') {
-              latestOcrTextRef.current = r.text
-              lastOcrUpdateRef.current = Date.now()
+            const ocrAgeMs = Date.now() - lastOcrUpdateRef.current
+            const hasFreshOcr =
+              ocrAgeMs >= 0 &&
+              ocrAgeMs <= FRESH_OCR_MAX_AGE_MS &&
+              String(latestOcrTextRef.current || '').trim().length > 0
+            const preferFastStart = isScreenRead
+            if (hasFreshOcr && preferFastStart) {
+              // Keep latency low for Ctrl+Enter: use fresh OCR now, refresh in background.
+              void refreshLocalOcr({ bypassCaptureCooldown: false })
+            } else {
+              const r = await refreshLocalOcr({
+                bypassCaptureCooldown: bypassCapture,
+              })
+              if (r?.ok && typeof r.text === 'string') {
+                latestOcrTextRef.current = r.text
+                lastOcrUpdateRef.current = Date.now()
+              }
             }
           }
 
@@ -1407,12 +1437,38 @@ export default function App() {
     return () => clearInterval(tick)
   }, [sessionOn, applySpeechSilenceWindow])
 
+  useEffect(() => {
+    if (!sessionOn) return
+    void warmupLocalOcr()
+    void refreshLocalOcr({ allowAutoTrigger: false })
+  }, [sessionOn, refreshLocalOcr])
+
+  useEffect(() => {
+    if (!sessionOn) return
+    if (localOcrTickRef.current) clearInterval(localOcrTickRef.current)
+    localOcrTickRef.current = window.setInterval(() => {
+      if (!sessionOnRef.current || responseLockRef.current || isThinkingRef.current) return
+      void refreshLocalOcr({ allowAutoTrigger: true })
+    }, 1200)
+    return () => {
+      if (localOcrTickRef.current) {
+        clearInterval(localOcrTickRef.current)
+        localOcrTickRef.current = null
+      }
+    }
+  }, [sessionOn, refreshLocalOcr])
+
   useEffect(
     () => () => {
       if (speechTriggerDelayRef.current != null) {
         clearTimeout(speechTriggerDelayRef.current)
         speechTriggerDelayRef.current = null
       }
+      if (localOcrTickRef.current) {
+        clearInterval(localOcrTickRef.current)
+        localOcrTickRef.current = null
+      }
+      void terminateLocalOcr()
     },
     [],
   )

@@ -24,6 +24,9 @@
     "productName": "ShadowAssist",
     "publish": null,
     "forceCodeSigning": false,
+    "asarUnpack": [
+      "lib/meetingScanMeet.ps1"
+    ],
     "icon": "logo.png",
     "directories": {
       "output": "dist"

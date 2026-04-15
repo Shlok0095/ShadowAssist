@@ -47,6 +47,7 @@ const {
   STT_VENDOR_NOTES,
 } = require('../lib/transcriptionRouting')
 const sessionMemory = require('../lib/sessionMemory')
+const { detectMeetingForegroundOrScan, MEETING_POLL_MS } = require('../lib/meetingForegroundWindows')
 
 let aiClientModule = null
 function getAiClient() {
@@ -63,6 +64,12 @@ const CONSENT_VERSION = '2.0'
 const preloadPath = path.join(__dirname, '..', 'preload.js')
 
 const useBuilt = fs.existsSync(path.join(__dirname, '..', 'out', 'overlay', 'index.html'))
+
+function getMeetingToastHtmlPath() {
+  const built = path.join(__dirname, '..', 'out', 'meeting-toast', 'index.html')
+  if (fs.existsSync(built)) return built
+  return path.join(__dirname, '..', 'renderer', 'meeting-toast', 'index.html')
+}
 
 /** Window / taskbar icon: dev uses repo root logo.png; packaged uses extraResources copy. */
 function resolveAppIconPath() {
@@ -84,12 +91,18 @@ let savedOpacity = 0.92
 let screenOcrText = ''
 let lastOcrTime = 0
 let lastResponse = ''
-/** Last OCR text sent to overlay (`ocr-update` IPC). */
-let lastOcrBroadcastText = ''
 let llmResponseInFlight = false
 let currentAbortController = null
 let consentWindow = null
 let onboardingWindow = null
+/** Top-right meeting chip — excluded from stealth content-protection list. */
+let meetingToastWindow = null
+/** Once shown or dismissed, same `eventId` is not shown again until `clearMeetingToastDedupe()` (e.g. stop session). */
+const meetingToastSuppressedEventIds = new Set()
+/** If user dismisses a platform toast (e.g. Teams), keep it suppressed for this run/session. */
+const meetingToastSuppressedPlatforms = new Set()
+let currentMeetingToastPlatform = ''
+let meetingForegroundPollTimer = null
 let appCoreStarted = false
 
 function createTrayIcon(active = false) {
@@ -205,15 +218,144 @@ function isStealthModeEnabled() {
   return store.get('stealth_mode') === true
 }
 
+/** Windows that must follow Stealth (content protection). Never include meeting toast or future summary window. */
+function getStealthManagedWindows() {
+  return [overlayWindow, settingsWindow, consentWindow, onboardingWindow].filter((w) => w && !w.isDestroyed())
+}
+
 function applyContentProtectionAllWindows() {
   const enabled = isStealthModeEnabled()
-  ;[overlayWindow, settingsWindow, consentWindow, onboardingWindow].forEach((win) => {
-    if (win && !win.isDestroyed()) {
+  for (const win of getStealthManagedWindows()) {
+    try {
+      win.setContentProtection(enabled)
+    } catch (_) {}
+  }
+}
+
+function clearMeetingToastDedupe() {
+  meetingToastSuppressedEventIds.clear()
+  meetingToastSuppressedPlatforms.clear()
+  currentMeetingToastPlatform = ''
+}
+
+function closeMeetingToastWindow() {
+  if (meetingToastWindow && !meetingToastWindow.isDestroyed()) {
+    try {
+      meetingToastWindow.destroy()
+    } catch (_) {}
+  }
+  meetingToastWindow = null
+  currentMeetingToastPlatform = ''
+}
+
+/**
+ * Show top-right meeting toast (separate BrowserWindow; not stealth-managed).
+ * @returns {{ ok: true } | { ok: false, reason?: string, error?: string }}
+ */
+function showMeetingToastFromMain(payload) {
+  const eventId = String(payload?.eventId || '').trim()
+  const headline = String(payload?.headline || payload?.title || 'Meeting detected').trim()
+  const platform = String(payload?.platform || 'generic').trim().toLowerCase() || 'generic'
+
+  if (!eventId) return { ok: false, error: 'missing_eventId' }
+  if (meetingToastSuppressedEventIds.has(eventId)) {
+    return { ok: false, reason: 'duplicate' }
+  }
+  if (meetingToastSuppressedPlatforms.has(platform)) {
+    return { ok: false, reason: 'dismissed_platform' }
+  }
+
+  closeMeetingToastWindow()
+
+  meetingToastSuppressedEventIds.add(eventId)
+  currentMeetingToastPlatform = platform
+
+  const display = screen.getPrimaryDisplay()
+  const wa = display.workArea
+  const chipW = 360
+  const chipH = 102
+  const posX = Math.round(wa.x + wa.width - chipW - 16)
+  const posY = Math.round(wa.y + 16)
+
+  const toastPreload = path.join(__dirname, '..', 'preload-meeting-toast.cjs')
+
+  meetingToastWindow = new BrowserWindow({
+    width: chipW,
+    height: chipH,
+    x: posX,
+    y: posY,
+    show: false,
+    frame: false,
+    transparent: true,
+    backgroundColor: '#00000000',
+    hasShadow: false,
+    skipTaskbar: true,
+    focusable: false,
+    alwaysOnTop: true,
+    roundedCorners: true,
+    ...(APP_ICON ? { icon: APP_ICON } : {}),
+    webPreferences: {
+      preload: toastPreload,
+      contextIsolation: true,
+      nodeIntegration: false,
+      sandbox: false,
+      backgroundThrottling: false,
+    },
+  })
+  meetingToastWindow.setMenuBarVisibility(false)
+  try {
+    meetingToastWindow.setVisibleOnAllWorkspaces(true)
+  } catch (_) {}
+  meetingToastWindow.loadFile(getMeetingToastHtmlPath()).catch((e) => console.error('[meeting-toast] load', e))
+  meetingToastWindow.once('ready-to-show', () => {
+    if (meetingToastWindow && !meetingToastWindow.isDestroyed()) {
       try {
-        win.setContentProtection(enabled)
-      } catch (_) {}
+        meetingToastWindow.showInactive()
+      } catch (_) {
+        meetingToastWindow.show()
+      }
     }
   })
+  meetingToastWindow.webContents.once('did-finish-load', () => {
+    if (!meetingToastWindow || meetingToastWindow.isDestroyed()) return
+    meetingToastWindow.webContents.send('meeting-toast-payload', {
+      headline: headline.slice(0, 48),
+      platform,
+      eventId,
+    })
+  })
+  meetingToastWindow.on('closed', () => {
+    meetingToastWindow = null
+  })
+
+  return { ok: true }
+}
+
+function stopMeetingForegroundPoll() {
+  if (meetingForegroundPollTimer) {
+    clearInterval(meetingForegroundPollTimer)
+    meetingForegroundPollTimer = null
+  }
+}
+
+function runMeetingForegroundTick() {
+  if (process.platform !== 'win32') return
+  detectMeetingForegroundOrScan((err, hit) => {
+    if (err || !hit) return
+    if (meetingToastSuppressedPlatforms.has(String(hit.platform || '').toLowerCase())) return
+    showMeetingToastFromMain({
+      eventId: hit.eventId,
+      headline: hit.headline,
+      platform: hit.platform,
+    })
+  })
+}
+
+function startMeetingForegroundPoll() {
+  stopMeetingForegroundPoll()
+  if (process.platform !== 'win32') return
+  runMeetingForegroundTick()
+  meetingForegroundPollTimer = setInterval(runMeetingForegroundTick, MEETING_POLL_MS)
 }
 
 /**
@@ -300,11 +442,16 @@ function quitApplication() {
     hotkeys.unregisterAll()
   } catch (_) {}
   try {
+    globalShortcut.unregister('CommandOrControl+Shift+Alt+M')
+  } catch (_) {}
+  try {
     sessionMemory.shutdown()
   } catch (_) {}
   try {
     screenCapture.terminateTesseract()
   } catch (_) {}
+  stopMeetingForegroundPoll()
+  closeMeetingToastWindow()
   for (const w of [overlayWindow, settingsWindow, consentWindow, onboardingWindow]) {
     try {
       if (w && !w.isDestroyed()) w.destroy()
@@ -494,13 +641,6 @@ function setupTray() {
 
 function updateTrayIcon() { if (tray) tray.setImage(createTrayIcon(sessionActive)) }
 
-function broadcastOcrToOverlay(text) {
-  const t = String(text ?? '')
-  if (t === lastOcrBroadcastText) return
-  lastOcrBroadcastText = t
-  sendToOverlay('ocr-update', t)
-}
-
 function startSession() {
   if (sessionActive) return
   sessionActive = true
@@ -514,8 +654,8 @@ function stopSession() {
   if (!sessionActive) return
   sessionActive = false
   sessionMemory.wipe()
+  clearMeetingToastDedupe()
   screenOcrText = ''
-  lastOcrBroadcastText = ''
   sendToOverlay('session-purge')
   updateTrayIcon()
   if (tray?.updateTrayMenu) tray.updateTrayMenu()
@@ -604,35 +744,22 @@ async function handleAskAI(userQuestion, audioTranscript, _askMeta = {}) {
   sendToOverlay('ai-thinking', true)
   sessionMemory.touch()
 
-  const ocrEnabled = store.get('ocrEnabled') !== false
-  const ocrStale = !screenOcrText || (Date.now() - lastOcrTime) > 10000
   const wantVision = providers.supportsVision(provider)
   let visionB64 = null
 
-  if ((ocrEnabled && ocrStale) || wantVision) {
-    const ocrPromise = withOverlayExcludedFromScreenCapture(async () => {
-      if (ocrEnabled && ocrStale) {
-        try {
-          const text = await screenCapture.captureScreenText()
-          screenOcrText = text
-          lastOcrTime = Date.now()
-          sessionMemory.addOcrSnapshot(screenOcrText)
-          sendToOverlay('ocr-update', screenOcrText)
-        } catch (e) {
-          console.warn('OCR:', e.message)
-        }
-      }
+  if (wantVision) {
+    const visionPromise = withOverlayExcludedFromScreenCapture(async () => {
       if (wantVision) {
         try {
           visionB64 = await screenCapture.captureScreenForVision()
         } catch (_) {}
       }
     })
-    void ocrPromise
+    void visionPromise
       .then(() => {
-        console.log('OCR ready post-start')
+        console.log('Vision snapshot ready post-start')
       })
-      .catch((e) => console.warn('post-start OCR/vision:', e?.message || e))
+      .catch((e) => console.warn('post-start vision:', e?.message || e))
   }
 
   const sp = store.get('systemPrompt')
@@ -877,6 +1004,24 @@ function setupIPC() {
   })
   ipcMain.handle('protection:get', () => !!store.get('stealth_mode'))
 
+  ipcMain.handle('meeting-toast:show', (_, payload) => {
+    try {
+      return showMeetingToastFromMain(payload && typeof payload === 'object' ? payload : {})
+    } catch (e) {
+      return { ok: false, error: e?.message || String(e) }
+    }
+  })
+  ipcMain.on('meeting-toast:dismiss', (e, rawEventId) => {
+    if (!meetingToastWindow || meetingToastWindow.isDestroyed()) return
+    if (e.sender !== meetingToastWindow.webContents) return
+    const dismissedId = String(rawEventId || '').trim()
+    if (dismissedId) meetingToastSuppressedEventIds.add(dismissedId)
+    if (currentMeetingToastPlatform) meetingToastSuppressedPlatforms.add(currentMeetingToastPlatform)
+    try {
+      meetingToastWindow.close()
+    } catch (_) {}
+  })
+
   const windowFromSender = (e) => BrowserWindow.fromWebContents(e.sender)
   ipcMain.handle('window:minimize', (e) => {
     windowFromSender(e)?.minimize()
@@ -989,23 +1134,13 @@ function setupIPC() {
     if (meta && typeof meta._llmTriggerAt === 'number') {
       console.log('LLM_START_DELAY_MS', Date.now() - meta._llmTriggerAt)
     }
-    console.time('LLM_START_DELAY')
-    return handleAskAI(q, t, meta)
-  })
-  /** Pre-trigger only: one OCR snapshot to align screen text before ask (does not change handleAskAI). */
-  ipcMain.handle('pretrigger-refresh-ocr', async (_, opts) => {
-    if (store.get('ocrEnabled') === false) return { ok: false, reason: 'disabled' }
-    try {
-      const o = opts && typeof opts === 'object' ? opts : {}
-      screenOcrText = await withOverlayExcludedFromScreenCapture(() => screenCapture.captureScreenText(o))
+    if (meta && typeof meta.screen === 'string') {
+      screenOcrText = meta.screen
       lastOcrTime = Date.now()
       sessionMemory.addOcrSnapshot(screenOcrText)
-      broadcastOcrToOverlay(screenOcrText)
-      return { ok: true, text: screenOcrText }
-    } catch (e) {
-      console.warn('pretrigger-refresh-ocr:', e?.message || e)
-      return { ok: false, error: e?.message || String(e) }
     }
+    console.time('LLM_START_DELAY')
+    return handleAskAI(q, t, meta)
   })
   ipcMain.handle('session-active', () => sessionActive)
   ipcMain.handle('get-hotkeys', () => store.get('hotkeys') || hotkeys.DEFAULT_HOTKEYS)
@@ -1137,19 +1272,30 @@ async function initApp() {
   session.defaultSession.setDisplayMediaRequestHandler((request, callback) => {
     desktopCapturer.getSources({ types: ['screen'] }).then(s => callback({ video: s[0], audio: 'loopback' })).catch(() => callback({}))
   })
-  // Start Tesseract init in background — don't block UI startup
-  screenCapture.initTesseract().catch(() => {})
   seedOverlayPositionIfNeeded()
   setupTray()
   setupHotkeys()
+  if (!app.isPackaged) {
+    try {
+      globalShortcut.register('CommandOrControl+Shift+Alt+M', () => {
+        showMeetingToastFromMain({
+          eventId: `dev-toast-${Date.now()}`,
+          headline: 'Zoom meeting detected (dev)',
+          platform: 'zoom',
+        })
+      })
+    } catch (e) {
+      console.warn('[meeting-toast] dev shortcut:', e?.message || e)
+    }
+  }
   sessionMemory.startInactivityWatcher(() => {
     sendToOverlay('session-purge')
     lastResponse = ''
     screenOcrText = ''
-    lastOcrBroadcastText = ''
   })
   createOverlayWindow()
   showOverlay()
+  startMeetingForegroundPoll()
 }
 
 app.whenReady().then(() => {
@@ -1163,15 +1309,9 @@ app.whenReady().then(() => {
 
 app.on('window-all-closed', () => {
   hotkeys.unregisterAll()
-  try {
-    screenCapture.terminateTesseract()
-  } catch (_) {}
 })
 app.on('will-quit', () => {
   hotkeys.unregisterAll()
-  try {
-    screenCapture.terminateTesseract()
-  } catch (_) {}
 })
 app.on('second-instance', () => {
   if (!overlayWindow || overlayWindow.isDestroyed()) {

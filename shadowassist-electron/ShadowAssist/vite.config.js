@@ -28,6 +28,7 @@ export default defineConfig({
         'settings/index': path.join(__dirname, 'renderer', 'settings', 'index.html'),
         'onboarding/index': path.join(__dirname, 'renderer', 'onboarding', 'index.html'),
         'consent/index': path.join(__dirname, 'renderer', 'consent', 'index.html'),
+        'meeting-toast/index': path.join(__dirname, 'renderer', 'meeting-toast', 'index.html'),
       },
       output: {
         manualChunks(id) {
