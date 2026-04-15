@@ -1,7 +1,7 @@
 // Copyright (c) 2026 ShadowAssist. All rights reserved.
 // Unauthorized copying or distribution is prohibited.
 
-const { app, BrowserWindow, ipcMain, globalShortcut, Tray, nativeImage, screen, dialog, Menu, clipboard, desktopCapturer, shell } = require('electron')
+const { app, BrowserWindow, ipcMain, globalShortcut, Tray, nativeImage, screen, dialog, Menu, clipboard, desktopCapturer, shell, Notification } = require('electron')
 const path = require('path')
 const fs = require('fs')
 const fsPromises = require('fs').promises
@@ -99,10 +99,9 @@ let onboardingWindow = null
 let meetingToastWindow = null
 /** Once shown or dismissed, same `eventId` is not shown again until `clearMeetingToastDedupe()` (e.g. stop session). */
 const meetingToastSuppressedEventIds = new Set()
-/** If user dismisses a platform toast (e.g. Teams), keep it suppressed for this run/session. */
-const meetingToastSuppressedPlatforms = new Set()
-let currentMeetingToastPlatform = ''
 let meetingForegroundPollTimer = null
+let meetingForegroundTickInFlight = false
+let meetingForegroundTickCount = 0
 let appCoreStarted = false
 
 function createTrayIcon(active = false) {
@@ -234,8 +233,6 @@ function applyContentProtectionAllWindows() {
 
 function clearMeetingToastDedupe() {
   meetingToastSuppressedEventIds.clear()
-  meetingToastSuppressedPlatforms.clear()
-  currentMeetingToastPlatform = ''
 }
 
 function closeMeetingToastWindow() {
@@ -245,7 +242,6 @@ function closeMeetingToastWindow() {
     } catch (_) {}
   }
   meetingToastWindow = null
-  currentMeetingToastPlatform = ''
 }
 
 /**
@@ -261,21 +257,18 @@ function showMeetingToastFromMain(payload) {
   if (meetingToastSuppressedEventIds.has(eventId)) {
     return { ok: false, reason: 'duplicate' }
   }
-  if (meetingToastSuppressedPlatforms.has(platform)) {
-    return { ok: false, reason: 'dismissed_platform' }
-  }
 
   closeMeetingToastWindow()
 
   meetingToastSuppressedEventIds.add(eventId)
-  currentMeetingToastPlatform = platform
 
-  const display = screen.getPrimaryDisplay()
+  const display = screen.getDisplayNearestPoint(screen.getCursorScreenPoint())
   const wa = display.workArea
   const chipW = 360
   const chipH = 102
   const posX = Math.round(wa.x + wa.width - chipW - 16)
   const posY = Math.round(wa.y + 16)
+  console.log('[meeting-toast] show', { eventId, platform, posX, posY, displayId: display.id })
 
   const toastPreload = path.join(__dirname, '..', 'preload-meeting-toast.cjs')
 
@@ -304,19 +297,26 @@ function showMeetingToastFromMain(payload) {
   })
   meetingToastWindow.setMenuBarVisibility(false)
   try {
+    meetingToastWindow.setAlwaysOnTop(true, 'screen-saver')
     meetingToastWindow.setVisibleOnAllWorkspaces(true)
   } catch (_) {}
+  console.log('[meeting-toast] creating window')
   meetingToastWindow.loadFile(getMeetingToastHtmlPath()).catch((e) => console.error('[meeting-toast] load', e))
   meetingToastWindow.once('ready-to-show', () => {
+    console.log('[meeting-toast] ready-to-show')
     if (meetingToastWindow && !meetingToastWindow.isDestroyed()) {
       try {
         meetingToastWindow.showInactive()
       } catch (_) {
         meetingToastWindow.show()
       }
+      try {
+        meetingToastWindow.moveTop()
+      } catch (_) {}
     }
   })
   meetingToastWindow.webContents.once('did-finish-load', () => {
+    console.log('[meeting-toast] did-finish-load')
     if (!meetingToastWindow || meetingToastWindow.isDestroyed()) return
     meetingToastWindow.webContents.send('meeting-toast-payload', {
       headline: headline.slice(0, 48),
@@ -327,6 +327,25 @@ function showMeetingToastFromMain(payload) {
   meetingToastWindow.on('closed', () => {
     meetingToastWindow = null
   })
+
+  // Fallback for systems where transparent toast windows fail to render.
+  setTimeout(() => {
+    if (!meetingToastWindow || meetingToastWindow.isDestroyed()) return
+    let visible = false
+    try {
+      visible = meetingToastWindow.isVisible()
+    } catch (_) {}
+    if (visible) return
+    try {
+      new Notification({
+        title: 'ShadowAssist',
+        body: headline.slice(0, 80),
+      }).show()
+      console.log('[meeting-toast] native notification fallback shown')
+    } catch (e) {
+      console.warn('[meeting-toast] native fallback failed:', e?.message || e)
+    }
+  }, 1200)
 
   return { ok: true }
 }
@@ -340,9 +359,20 @@ function stopMeetingForegroundPoll() {
 
 function runMeetingForegroundTick() {
   if (process.platform !== 'win32') return
+  if (meetingForegroundTickInFlight) return
+  meetingForegroundTickInFlight = true
+  meetingForegroundTickCount += 1
+  if (meetingForegroundTickCount % 8 === 0) {
+    console.log('[meeting-detect] polling alive')
+  }
   detectMeetingForegroundOrScan((err, hit) => {
-    if (err || !hit) return
-    if (meetingToastSuppressedPlatforms.has(String(hit.platform || '').toLowerCase())) return
+    meetingForegroundTickInFlight = false
+    if (err) {
+      console.warn('[meeting-detect] tick error:', err?.message || err)
+      return
+    }
+    if (!hit) return
+    console.log('[meeting-detect] hit', hit)
     showMeetingToastFromMain({
       eventId: hit.eventId,
       headline: hit.headline,
@@ -1016,7 +1046,6 @@ function setupIPC() {
     if (e.sender !== meetingToastWindow.webContents) return
     const dismissedId = String(rawEventId || '').trim()
     if (dismissedId) meetingToastSuppressedEventIds.add(dismissedId)
-    if (currentMeetingToastPlatform) meetingToastSuppressedPlatforms.add(currentMeetingToastPlatform)
     try {
       meetingToastWindow.close()
     } catch (_) {}
@@ -1275,18 +1304,27 @@ async function initApp() {
   seedOverlayPositionIfNeeded()
   setupTray()
   setupHotkeys()
-  if (!app.isPackaged) {
-    try {
-      globalShortcut.register('CommandOrControl+Shift+Alt+M', () => {
-        showMeetingToastFromMain({
-          eventId: `dev-toast-${Date.now()}`,
-          headline: 'Zoom meeting detected (dev)',
-          platform: 'zoom',
-        })
+  try {
+    const primary = 'CommandOrControl+Shift+Alt+M'
+    const fallback = 'CommandOrControl+Shift+M'
+    const triggerMeetingToastTest = () => {
+      console.log('[meeting-toast] test hotkey pressed', { packaged: app.isPackaged })
+      showMeetingToastFromMain({
+        eventId: `dev-toast-${Date.now()}`,
+        headline: 'Meeting toast test',
+        platform: 'meet',
       })
-    } catch (e) {
-      console.warn('[meeting-toast] dev shortcut:', e?.message || e)
     }
+    const okPrimary = globalShortcut.register(primary, triggerMeetingToastTest)
+    if (okPrimary) {
+      console.log(`[meeting-toast] test hotkey active: ${primary}`)
+    } else {
+      const okFallback = globalShortcut.register(fallback, triggerMeetingToastTest)
+      if (okFallback) console.log(`[meeting-toast] test hotkey fallback active: ${fallback}`)
+      else console.warn('[meeting-toast] test hotkey registration failed')
+    }
+  } catch (e) {
+    console.warn('[meeting-toast] test hotkey register error:', e?.message || e)
   }
   sessionMemory.startInactivityWatcher(() => {
     sendToOverlay('session-purge')

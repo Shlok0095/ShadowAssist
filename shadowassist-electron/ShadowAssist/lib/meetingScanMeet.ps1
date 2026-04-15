@@ -137,6 +137,7 @@ public static class SaVisibleMeetingScan {
     int pid = (int)pidInit;
 
     if (pid <= 0) return "";
+    string browserCandidate = "";
 
     for (int step = 0; step < 18 && pid > 0; step++) {
 
@@ -156,7 +157,7 @@ public static class SaVisibleMeetingScan {
 
             if (IsTeamsCoreExe(low)) return low;
 
-            if (IsBrowserExe(low)) return low;
+            if (IsBrowserExe(low) && string.IsNullOrEmpty(browserCandidate)) browserCandidate = low;
 
             pid = Convert.ToInt32(mo["ParentProcessId"]);
 
@@ -179,6 +180,8 @@ public static class SaVisibleMeetingScan {
       if (n == "msedgewebview2") return n;
 
     } catch { }
+
+    if (!string.IsNullOrEmpty(browserCandidate)) return browserCandidate;
 
     return "";
 
@@ -236,7 +239,9 @@ public static class SaVisibleMeetingScan {
 
           TeamsCand = title + "\t" + proc;
 
-        if (MeetCand == null && LooksLikeMeet(title) && IsBrowserExe(proc))
+        // Some managed/corporate Windows setups can fail PID->process resolution for
+        // visible windows; still trust a strong Meet title signal in that case.
+        if (MeetCand == null && LooksLikeMeet(title) && (IsBrowserExe(proc) || string.IsNullOrEmpty(proc) || proc == "msedgewebview2"))
 
           MeetCand = title + "\t" + proc;
 

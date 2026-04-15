@@ -49,7 +49,7 @@ const PS_FOREGROUND = [
   '$h=[SAFG]::GetForegroundWindow();$sb=New-Object System.Text.StringBuilder 512;',
   '[void][SAFG]::GetWindowText($h,$sb,$sb.Capacity);',
   '$pidOut=[uint32]0;[void][SAFG]::GetWindowThreadProcessId($h,[ref]$pidOut);',
-  '$p=\"\";',
+  '$p=\"\";$browserHit=\"\";',
   'if($pidOut){',
   '$cur=[int]$pidOut;$steps=0;',
   'while($cur -gt 0 -and $steps++ -lt 18){',
@@ -57,11 +57,12 @@ const PS_FOREGROUND = [
   'if(-not $wp){break};',
   '$exe=[IO.Path]::GetFileNameWithoutExtension([string]$wp.Name).ToLower();',
   'if($exe -eq \"ms-teams\" -or $exe -eq \"teams\" -or $exe -eq \"msteams\"){$p=$exe;break};',
-  'if(@(\"chrome\",\"msedge\",\"brave\",\"opera\",\"vivaldi\",\"firefox\",\"waterfox\",\"zen\",\"arc\") -contains $exe){$p=$exe;break};',
+  'if(@(\"chrome\",\"msedge\",\"brave\",\"opera\",\"vivaldi\",\"firefox\",\"waterfox\",\"zen\",\"arc\") -contains $exe){if(-not $browserHit){$browserHit=$exe}};',
   '$pp=[int]$wp.ParentProcessId;',
   'if($pp -le 0 -or $pp -eq $cur){break};',
   '$cur=$pp;',
   '};',
+  'if((-not $p) -and $browserHit){$p=$browserHit};',
   '};',
   'Write-Output ($sb.ToString()+"`t"+$p)',
 ].join('')
@@ -204,7 +205,7 @@ function scanFirstVisibleBrowserMeet(cb) {
   execFile(
     'powershell.exe',
     ['-NoProfile', '-NonInteractive', '-ExecutionPolicy', 'Bypass', '-File', ps1],
-    { encoding: 'utf8', timeout: 12000, windowsHide: true },
+    { encoding: 'utf8', timeout: 30000, windowsHide: true },
     (err, stdout) => {
       if (err) return cb(err)
       const raw = String(stdout || '').trim()
@@ -225,11 +226,16 @@ function scanFirstVisibleBrowserMeet(cb) {
  */
 function detectMeetingForegroundOrScan(cb) {
   getForegroundWindowInfo((err, info) => {
+    const fgErr = err || null
     const fg = err || !info ? { title: '', processName: '' } : info
     const fgHit = classifyForegroundMeeting(fg.title, fg.processName)
     if (fgHit) return cb(null, fgHit)
     scanFirstVisibleBrowserMeet((e2, row) => {
-      if (e2 || !row) return cb(null, null)
+      if (e2) return cb(e2)
+      if (!row) {
+        if (fgErr) return cb(fgErr)
+        return cb(null, null)
+      }
       const hit = classifyForegroundMeeting(row.title, row.processName)
       cb(null, hit)
     })
