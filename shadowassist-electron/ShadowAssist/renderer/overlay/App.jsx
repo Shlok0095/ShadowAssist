@@ -325,10 +325,33 @@ const MIC_CAPTURE_PROFILES = {
   },
 }
 
+/**
+ * Windows desktop loopback (Teams / Meet remote audio) is usually much quieter than the local mic
+ * and was getting dropped by the same gates as mic. Separate, more sensitive profile per sensitivity.
+ */
+const SYS_CAPTURE_PROFILES = {
+  standard: {
+    gain: 3.35,
+    chunkMeanMin: 0.38,
+    chunkPeakMin: 1.05,
+    speechActivityRms: 0.58,
+  },
+  boost: {
+    gain: 4.1,
+    chunkMeanMin: 0.32,
+    chunkPeakMin: 0.88,
+    speechActivityRms: 0.5,
+  },
+}
+
 const SPEECH_SILENCE_MS = 600
 
 function resolveMicCaptureProfile(raw) {
   return raw === 'boost' ? MIC_CAPTURE_PROFILES.boost : MIC_CAPTURE_PROFILES.standard
+}
+
+function resolveSysCaptureProfile(raw) {
+  return raw === 'boost' ? SYS_CAPTURE_PROFILES.boost : SYS_CAPTURE_PROFILES.standard
 }
 
 function pathEnergyActive(stats, profile) {
@@ -393,6 +416,7 @@ export default function App() {
   const energySampleRef = useRef(null)
   const chunkEnergyRef = useRef({ active: false, mic: null, sys: null })
   const micCaptureProfileRef = useRef(MIC_CAPTURE_PROFILES.standard)
+  const sysCaptureProfileRef = useRef(SYS_CAPTURE_PROFILES.standard)
   const audioPathsRef = useRef({ hasMic: false, hasSys: false })
   const streamSpecsRef = useRef([])
   /** Last mic transcript activity (for main-process audioRecent). */
@@ -870,6 +894,8 @@ export default function App() {
       const sensRaw = await ipc?.invoke('get-store', 'micSensitivity')
       const captureProfile = resolveMicCaptureProfile(sensRaw)
       micCaptureProfileRef.current = captureProfile
+      const sysProfile = resolveSysCaptureProfile(sensRaw)
+      sysCaptureProfileRef.current = sysProfile
 
       const mic = await navigator.mediaDevices
         .getUserMedia({
@@ -920,7 +946,7 @@ export default function App() {
       }
       if (sys) {
         const sysDest = ctx.createMediaStreamDestination()
-        const tail = buildVoiceCaptureChain(ctx, sys, sysDest, captureProfile)
+        const tail = buildVoiceCaptureChain(ctx, sys, sysDest, sysProfile)
         const a = ctx.createAnalyser()
         a.fftSize = 512
         tail.connect(a)
@@ -945,9 +971,9 @@ export default function App() {
         const ce = chunkEnergyRef.current
         if (!pack || !isListening.current) return
 
-        const bumpSilence = (rms) => {
+        const bumpSilence = (rms, profile) => {
           const t = Date.now()
-          const act = micCaptureProfileRef.current?.speechActivityRms ?? 0.98
+          const act = profile?.speechActivityRms ?? 0.98
           if (rms >= act) lastLoudEnergyAtRef.current = t
           else if (t - lastLoudEnergyAtRef.current > SPEECH_SILENCE_MS) {
             lastSpeechActivityRef.current = t - 1000
@@ -960,7 +986,8 @@ export default function App() {
           if (!node?.analyser) return
           node.analyser.getByteTimeDomainData(node.data)
           const rms = Math.sqrt(node.data.reduce((s, v) => s + (v - 128) ** 2, 0) / node.data.length)
-          bumpSilence(rms)
+          const profile = key === 'sys' ? sysCaptureProfileRef.current : micCaptureProfileRef.current
+          bumpSilence(rms, profile)
           if (!ce.active) return
           branch.sum += rms
           branch.count += 1
@@ -1021,7 +1048,8 @@ export default function App() {
         const blob = new Blob(chunks, { type: mr.mimeType || 'audio/webm' })
         const branch = spec.key === 'mic' ? chunkEnergyRef.current.mic : chunkEnergyRef.current.sys
         const { hasMic, hasSys } = audioPathsRef.current
-        const prof = micCaptureProfileRef.current
+        const prof =
+          spec.key === 'sys' ? sysCaptureProfileRef.current : micCaptureProfileRef.current
         const pathOk =
           spec.key === 'mic'
             ? hasMic && pathEnergyActive(branch, prof)
@@ -1141,7 +1169,17 @@ export default function App() {
       const tChunk = Date.now()
       const silenceBeforeMs =
         lastSpeechTimeRef.current > 0 ? tChunk - lastSpeechTimeRef.current : 0
-      const speaker = assignChunkSpeaker(trimmedChunk, silenceBeforeMs, lastSpeakerRef)
+      /** System loopback = remote meeting audio; mic = you. Do not infer from text/heuristics alone. */
+      let speaker
+      if (audioPathKey === 'mic') {
+        speaker = 'me'
+        lastSpeakerRef.current = 'me'
+      } else if (audioPathKey === 'sys') {
+        speaker = 'other'
+        lastSpeakerRef.current = 'other'
+      } else {
+        speaker = assignChunkSpeaker(trimmedChunk, silenceBeforeMs, lastSpeakerRef)
+      }
       const roleTag = speaker === 'me' ? 'Me' : 'Participant'
 
       lastChunkRef.current = trimmedChunk
