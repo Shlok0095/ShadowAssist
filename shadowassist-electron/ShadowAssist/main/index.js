@@ -1,7 +1,7 @@
 // Copyright (c) 2026 ShadowAssist. All rights reserved.
 // Unauthorized copying or distribution is prohibited.
 
-const { app, BrowserWindow, ipcMain, globalShortcut, Tray, nativeImage, screen, dialog, Menu, clipboard, desktopCapturer, shell, Notification } = require('electron')
+const { app, BrowserWindow, ipcMain, globalShortcut, Tray, nativeImage, screen, dialog, Menu, clipboard, shell, Notification } = require('electron')
 const path = require('path')
 const fs = require('fs')
 const fsPromises = require('fs').promises
@@ -102,6 +102,9 @@ const meetingToastSuppressedEventIds = new Set()
 let meetingForegroundPollTimer = null
 let meetingForegroundTickInFlight = false
 let meetingForegroundTickCount = 0
+/** Active meeting lock by platform so the same ongoing meeting toasts only once. */
+const meetingActiveByPlatform = new Map()
+const MEETING_INACTIVE_CLEAR_MS = 45 * 1000
 let appCoreStarted = false
 
 function createTrayIcon(active = false) {
@@ -233,6 +236,7 @@ function applyContentProtectionAllWindows() {
 
 function clearMeetingToastDedupe() {
   meetingToastSuppressedEventIds.clear()
+  meetingActiveByPlatform.clear()
 }
 
 function closeMeetingToastWindow() {
@@ -367,11 +371,28 @@ function runMeetingForegroundTick() {
   }
   detectMeetingForegroundOrScan((err, hit) => {
     meetingForegroundTickInFlight = false
+    const now = Date.now()
+    for (const [platform, active] of meetingActiveByPlatform.entries()) {
+      if (!active || now - Number(active.lastSeenAt || 0) > MEETING_INACTIVE_CLEAR_MS) {
+        meetingActiveByPlatform.delete(platform)
+      }
+    }
     if (err) {
       console.warn('[meeting-detect] tick error:', err?.message || err)
       return
     }
     if (!hit) return
+    const platformKey = String(hit.platform || 'generic').toLowerCase()
+    const current = meetingActiveByPlatform.get(platformKey)
+    if (current) {
+      current.lastSeenAt = now
+      if (current.eventId !== hit.eventId) current.eventId = hit.eventId
+      return
+    }
+    meetingActiveByPlatform.set(platformKey, {
+      eventId: hit.eventId,
+      lastSeenAt: now,
+    })
     console.log('[meeting-detect] hit', hit)
     showMeetingToastFromMain({
       eventId: hit.eventId,
@@ -1299,7 +1320,10 @@ async function initApp() {
     cb(['media', 'display-capture', 'screen', 'speaker-selection'].includes(permission)),
   )
   session.defaultSession.setDisplayMediaRequestHandler((request, callback) => {
-    desktopCapturer.getSources({ types: ['screen'] }).then(s => callback({ video: s[0], audio: 'loopback' })).catch(() => callback({}))
+    screenCapture
+      .getDisplayMediaLoopbackPayload()
+      .then((payload) => callback(payload && payload.video ? payload : {}))
+      .catch(() => callback({}))
   })
   seedOverlayPositionIfNeeded()
   setupTray()

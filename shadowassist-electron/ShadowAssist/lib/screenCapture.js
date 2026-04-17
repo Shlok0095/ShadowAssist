@@ -387,6 +387,27 @@ async function terminateTesseract() {
   }
 }
 
+/**
+ * Prefer the display under the cursor (meeting window), then primary, else first.
+ * Matches Electron `display_id` to `Display.id` when available.
+ */
+function pickScreenSource(sources) {
+  if (!sources?.length) return null
+  const tryMatch = (d) => {
+    if (!d) return null
+    const idStr = String(d.id)
+    return (
+      sources.find((s) => s.display_id != null && String(s.display_id) === idStr) ||
+      null
+    )
+  }
+  return (
+    tryMatch(screen.getDisplayNearestPoint(screen.getCursorScreenPoint())) ||
+    tryMatch(screen.getPrimaryDisplay()) ||
+    sources[0]
+  )
+}
+
 async function getDesktopSourceId() {
   const sources = await desktopCapturer.getSources({
     types: ['screen'],
@@ -400,14 +421,30 @@ async function getDesktopSourceId() {
     const m = sources.find((s) => s.id === cachedScreenSourceId)
     if (m) return m.id
   }
-  cachedScreenSourceId = sources[0].id
+  const picked = pickScreenSource(sources)
+  cachedScreenSourceId = picked ? picked.id : sources[0].id
   return cachedScreenSourceId
+}
+
+/**
+ * Payload for `setDisplayMediaRequestHandler`: WASAPI loopback on Windows when `audio: 'loopback'`.
+ * Renderer should use `getDisplayMedia({ video: true, audio: true })` so this runs (unlike raw `getUserMedia` desktop).
+ */
+async function getDisplayMediaLoopbackPayload() {
+  const sources = await desktopCapturer.getSources({
+    types: ['screen'],
+    thumbnailSize: { width: 1, height: 1 },
+  })
+  const src = pickScreenSource(sources)
+  if (!src) return {}
+  return { video: src, audio: 'loopback' }
 }
 
 module.exports = {
   captureScreenText,
   captureScreenForVision,
   getDesktopSourceId,
+  getDisplayMediaLoopbackPayload,
   initTesseract,
   terminateTesseract,
 }

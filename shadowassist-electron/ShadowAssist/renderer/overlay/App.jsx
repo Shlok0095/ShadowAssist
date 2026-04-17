@@ -387,6 +387,56 @@ function buildVoiceCaptureChain(ctx, mediaStream, dest, profile) {
   return comp
 }
 
+/**
+ * Windows meeting audio: use `getDisplayMedia` so the main-process handler can supply
+ * `audio: 'loopback'` (WASAPI mix). `getUserMedia` + `chromeMediaSource: 'desktop'` does not
+ * use that path and often misses remote participants (Teams / browser).
+ */
+async function acquireSystemAudioStream() {
+  try {
+    const stream = await navigator.mediaDevices.getDisplayMedia({
+      video: true,
+      audio: true,
+    })
+    await new Promise((r) => setTimeout(r, 120))
+    let audioTracks = stream.getAudioTracks()
+    if (!audioTracks.length) {
+      await new Promise((r) => setTimeout(r, 220))
+      audioTracks = stream.getAudioTracks()
+    }
+    if (!audioTracks.length) {
+      stream.getTracks().forEach((t) => t.stop())
+      return acquireSystemAudioStreamLegacyDesktop()
+    }
+    const vTracks = stream.getVideoTracks()
+    setTimeout(() => {
+      vTracks.forEach((t) => {
+        try {
+          t.stop()
+        } catch {}
+      })
+    }, 280)
+    return stream
+  } catch {
+    return acquireSystemAudioStreamLegacyDesktop()
+  }
+}
+
+async function acquireSystemAudioStreamLegacyDesktop() {
+  try {
+    const sid = await ipc?.invoke('get-desktop-source-id')
+    if (!sid) return null
+    const stream = await navigator.mediaDevices.getUserMedia({
+      audio: { mandatory: { chromeMediaSource: 'desktop', chromeMediaSourceId: sid } },
+      video: { mandatory: { chromeMediaSource: 'desktop', chromeMediaSourceId: sid } },
+    })
+    stream.getVideoTracks().forEach((t) => t.stop())
+    return stream
+  } catch {
+    return null
+  }
+}
+
 export default function App() {
   const [messages, setMessages] = useState([])
   const [isThinking, setIsThinking] = useState(false)
@@ -909,14 +959,7 @@ export default function App() {
         .catch(() => null)
       let sys = null
       try {
-        const sid = await ipc?.invoke('get-desktop-source-id')
-        if (sid) {
-          sys = await navigator.mediaDevices.getUserMedia({
-            audio: { mandatory: { chromeMediaSource: 'desktop', chromeMediaSourceId: sid } },
-            video: { mandatory: { chromeMediaSource: 'desktop', chromeMediaSourceId: sid } },
-          })
-          sys.getVideoTracks().forEach((t) => t.stop())
-        }
+        sys = await acquireSystemAudioStream()
       } catch {}
       if (!mic && !sys) { emit('mic-error', { message: 'No audio' }); return }
 
