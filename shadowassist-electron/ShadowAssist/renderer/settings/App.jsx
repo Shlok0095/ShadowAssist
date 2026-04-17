@@ -149,6 +149,7 @@ export default function Settings() {
   const [audioEnabled, setAudioEnabled] = useState(true)
   const [micListenLanguage, setMicListenLanguage] = useState('en_hi_hinglish')
   const [micSensitivity, setMicSensitivity] = useState('standard')
+  const [sttMode, setSttMode] = useState('local')
   const [assistAutoTrigger, setAssistAutoTrigger] = useState(false)
   const [audioFallbackKey, setAudioFallbackKey] = useState('')
   const [audioFallbackProvider, setAudioFallbackProvider] = useState('openai')
@@ -188,6 +189,7 @@ export default function Settings() {
         const ml = s.micListenLanguage
         setMicListenLanguage(ml === 'en' || ml === 'hi' || ml === 'en_hi_hinglish' ? ml : 'en_hi_hinglish')
         setMicSensitivity(s.micSensitivity === 'boost' ? 'boost' : 'standard')
+        setSttMode(s.sttMode === 'cloud' ? 'cloud' : 'local')
         setAssistAutoTrigger(s.assistAutoTrigger === true)
         setAudioFallbackProvider(s.audioFallbackProvider || 'openai')
         setResumeContext(s.resumeContext || '')
@@ -1098,6 +1100,28 @@ export default function Settings() {
                       <option value="hi" className="bg-void-900">
                         Hindi only (forced)
                       </option>
+                    </select>
+                  </div>
+                  <div className="settings-row-tile flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+                    <div className="min-w-0 flex-1">
+                      <span className="font-medium text-gray-200">Transcription engine</span>
+                      <p className="mt-1 text-xs text-gray-600">
+                        <strong className="text-gray-400">Local (recommended)</strong> — on-device Whisper via ONNX. No API key needed, no rate limits, fully private. Downloads ~145 MB on first use (cached). Works on every system with WebGPU (fast) or CPU fallback.
+                        <br />
+                        <strong className="text-gray-400">Cloud</strong> — uses your Groq/OpenAI key. Faster on first chunk but subject to free-tier rate limits.
+                      </p>
+                    </div>
+                    <select
+                      value={sttMode}
+                      onChange={(e) => {
+                        const v = e.target.value === 'cloud' ? 'cloud' : 'local'
+                        setSttMode(v)
+                        save('sttMode', v)
+                      }}
+                      className="input-shadow w-full shrink-0 px-3 py-2 text-sm sm:w-64"
+                    >
+                      <option value="local" className="bg-void-900">Local (offline, no key needed)</option>
+                      <option value="cloud" className="bg-void-900">Cloud (Groq / OpenAI key)</option>
                     </select>
                   </div>
                   <div className="settings-row-tile flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">

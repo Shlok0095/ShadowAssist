@@ -101,6 +101,12 @@ If unclear, summarize or interpret best effort.`,
   playbooks: { type: 'array', default: [] },
   audioEnabled: { type: 'boolean', default: true },
   /**
+   * 'local'  → on-device Whisper-base via ONNX (no API key, no rate limits; ~145 MB one-time download).
+   * 'cloud'  → Groq / OpenAI Whisper API (requires key; lower CPU overhead once model is loaded).
+   * Default 'local' for zero-config active listening.
+   */
+  sttMode: { type: 'string', default: 'local' },
+  /**
    * Mic STT language hint for Whisper-style APIs.
    * en_hi_hinglish: auto-detect + prompt bias (English, Hindi, Hinglish).
    * en / hi: force ISO language (no Hinglish prompt).

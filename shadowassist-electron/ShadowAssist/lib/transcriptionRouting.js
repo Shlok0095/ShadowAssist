@@ -91,21 +91,50 @@ function fallbackTranscription(get) {
 const MIC_LISTEN_LANG_MODES = new Set(['en', 'hi', 'en_hi_hinglish'])
 
 /**
- * Mixed en/hi/hinglish: no Whisper `prompt` — instructional prompts are often echoed as fake transcript
- * on quiet audio. Omitting `language` keeps auto-detect for code-switching.
+ * Short, natural-sounding Whisper primer strings.
  *
+ * Whisper treats `prompt` as a prior transcript (not an instruction), so the text must look like
+ * realistic speech in the expected language/register.  Keep these short (< 20 words) — longer
+ * instructional prompts are more likely to be echoed back on quiet audio.
+ *
+ * For code-switching (Hinglish) we deliberately omit `language` so Whisper's decoder can handle
+ * mid-sentence script switches.  The primer alone anchors the vocabulary/script strongly enough
+ * to prevent Japanese/Russian false-detections on accented or low-energy audio.
+ */
+const WHISPER_PRIMERS = {
+  en: 'Sure, let me explain. So in the meeting we discussed the updates and next steps.',
+  hi: 'हाँ, मीटिंग में हमने सब कुछ discuss किया। ठीक है, आगे बढ़ते हैं।',
+  en_hi_hinglish:
+    'haan yaar, toh meeting mein kya hua? Let me know the updates. Okay sure.',
+}
+
+/**
+ * Whisper returns the full language name in verbose_json (e.g. "english", "hindi").
+ * We map our modes to the list of acceptable names so we can drop off-language chunks.
+ * Serialised as a plain array so IPC JSON round-trip preserves it.
+ */
+const ALLOWED_WHISPER_LANGUAGES = {
+  en: ['english'],
+  hi: ['hindi'],
+  en_hi_hinglish: ['english', 'hindi'],
+}
+
+/**
  * @param {(key: string) => any} get
  * @param {string} _sttVendor unused (kept for call-site symmetry)
- * @returns {{ language?: string, prompt?: string }}
+ * @returns {{ language?: string, prompt: string, allowedLanguages: string[] }}
  */
 function micListenLanguageFormFields(get, _sttVendor) {
   const raw = get('micListenLanguage')
   const mode = MIC_LISTEN_LANG_MODES.has(raw) ? raw : 'en_hi_hinglish'
 
-  if (mode === 'en') return { language: 'en' }
-  if (mode === 'hi') return { language: 'hi' }
+  const primer = WHISPER_PRIMERS[mode]
+  const allowedLanguages = ALLOWED_WHISPER_LANGUAGES[mode]
 
-  return {}
+  if (mode === 'en') return { language: 'en', prompt: primer, allowedLanguages }
+  if (mode === 'hi') return { language: 'hi', prompt: primer, allowedLanguages }
+
+  return { prompt: primer, allowedLanguages }
 }
 
 function fallbackMicSttVendor(get) {

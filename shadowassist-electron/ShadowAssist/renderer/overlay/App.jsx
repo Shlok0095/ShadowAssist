@@ -13,12 +13,13 @@ import {
   filterWhisperVerboseJson,
 } from '../shared/whisperTranscriptGate'
 import { captureScreenTextLocal, terminateLocalOcr, warmupLocalOcr } from './localOcr'
+import { startLocalStt, stopLocalStt, isLocalSttRunning } from './localStt'
 
 const ipc = createIpcShim()
 const COLLAPSED_H = 38
 const MIN_ASK_GAP_MS = 2000
-/** Longer chunks give Whisper more phonetic context (fewer mid-phrase cuts); ~2s is a good live balance. */
-const AUDIO_CHUNK_MS = 3500
+/** Longer chunks give Whisper more phonetic context (fewer mid-phrase cuts); ~4–5s helps quiet BT / loopback. */
+const AUDIO_CHUNK_MS = 4600
 /** Ms of silence after last STT chunk before speech Assist may fire. */
 const SPEECH_STABILITY_MS = 1800
 /** Clear rolling speech buffer after this long without a new chunk. */
@@ -307,21 +308,21 @@ const HALLUCINATIONS = [
 ]
 
 /** Skip only obviously empty blobs (scales with chunk length + codec overhead). */
-const MIN_RECORDING_BYTES = 2200
+const MIN_RECORDING_BYTES = 2800
 
 /** Per-path RMS gate + gain; `micSensitivity` in settings picks standard vs boost. */
 const MIC_CAPTURE_PROFILES = {
   standard: {
-    gain: 1.55,
-    chunkMeanMin: 0.96,
-    chunkPeakMin: 2.35,
-    speechActivityRms: 0.98,
+    gain: 1.78,
+    chunkMeanMin: 0.86,
+    chunkPeakMin: 2.05,
+    speechActivityRms: 0.91,
   },
   boost: {
-    gain: 2.45,
-    chunkMeanMin: 0.82,
-    chunkPeakMin: 1.9,
-    speechActivityRms: 0.88,
+    gain: 2.72,
+    chunkMeanMin: 0.74,
+    chunkPeakMin: 1.72,
+    speechActivityRms: 0.81,
   },
 }
 
@@ -331,16 +332,16 @@ const MIC_CAPTURE_PROFILES = {
  */
 const SYS_CAPTURE_PROFILES = {
   standard: {
-    gain: 3.35,
-    chunkMeanMin: 0.38,
-    chunkPeakMin: 1.05,
-    speechActivityRms: 0.58,
+    gain: 3.58,
+    chunkMeanMin: 0.34,
+    chunkPeakMin: 1.02,
+    speechActivityRms: 0.55,
   },
   boost: {
-    gain: 4.1,
-    chunkMeanMin: 0.32,
-    chunkPeakMin: 0.88,
-    speechActivityRms: 0.5,
+    gain: 4.38,
+    chunkMeanMin: 0.29,
+    chunkPeakMin: 0.85,
+    speechActivityRms: 0.47,
   },
 }
 
@@ -363,23 +364,36 @@ function pathEnergyActive(stats, profile) {
 /**
  * Path into MediaRecorder: HPF → gain (quiet speech) → compressor (limit peaks) → dest.
  * Analyser taps the same tail as MediaRecorder so energy gating matches what we encode.
+ *
+ * `pathKind`: mic = gentler dynamics + lower HPF (Bluetooth HFP / thin headsets); sys = stronger limiting for loopback.
  */
-function buildVoiceCaptureChain(ctx, mediaStream, dest, profile) {
+function buildVoiceCaptureChain(ctx, mediaStream, dest, profile, pathKind = 'mic') {
   const gainLinear =
     profile && typeof profile.gain === 'number' && profile.gain > 0 ? profile.gain : 1
   const src = ctx.createMediaStreamSource(mediaStream)
   const hp = ctx.createBiquadFilter()
   hp.type = 'highpass'
-  hp.frequency.value = 80
+  hp.frequency.value = pathKind === 'mic' ? 60 : 80
   hp.Q.value = 0.707
   const gainNode = ctx.createGain()
   gainNode.gain.value = gainLinear
   const comp = ctx.createDynamicsCompressor()
-  comp.threshold.value = -22
-  comp.knee.value = 28
-  comp.ratio.value = 3.2
-  comp.attack.value = 0.003
-  comp.release.value = 0.22
+  if (pathKind === 'mic') {
+    // Gentle — BT/HFP mics and device DSP already compress; don't squash consonants further.
+    comp.threshold.value = -30
+    comp.knee.value = 18
+    comp.ratio.value = 2.2
+    comp.attack.value = 0.005
+    comp.release.value = 0.28
+  } else {
+    // Sys loopback: Opus codec already compresses remote audio; use a very light limiter
+    // so consonants (s/t/p/k) that Whisper relies on are preserved.
+    comp.threshold.value = -16
+    comp.knee.value = 36
+    comp.ratio.value = 1.8
+    comp.attack.value = 0.006
+    comp.release.value = 0.32
+  }
   src.connect(hp)
   hp.connect(gainNode)
   gainNode.connect(comp)
@@ -437,6 +451,39 @@ async function acquireSystemAudioStreamLegacyDesktop() {
   }
 }
 
+/**
+ * Meeting STT: prefer AGC on, echo cancellation + noise suppression off first.
+ * Bluetooth HFP / narrowband mics often sound worse when the browser applies EC+NS on top of device DSP.
+ */
+async function acquireMicMeetingStream() {
+  const meeting = {
+    audio: {
+      echoCancellation: false,
+      noiseSuppression: false,
+      autoGainControl: true,
+      channelCount: 1,
+      sampleRate: { ideal: 48000 },
+    },
+  }
+  const fallback = {
+    audio: {
+      echoCancellation: true,
+      noiseSuppression: true,
+      autoGainControl: true,
+      channelCount: 1,
+    },
+  }
+  try {
+    return await navigator.mediaDevices.getUserMedia(meeting)
+  } catch {
+    try {
+      return await navigator.mediaDevices.getUserMedia(fallback)
+    } catch {
+      return null
+    }
+  }
+}
+
 export default function App() {
   const [messages, setMessages] = useState([])
   const [isThinking, setIsThinking] = useState(false)
@@ -450,6 +497,7 @@ export default function App() {
   const [hiding, setHiding] = useState(false)
   const [stealthMode, setStealthMode] = useState(false)
   const [showAudioConsent, setShowAudioConsent] = useState(false)
+  const [sttMode, setSttMode] = useState('local')
 
   const panelRef = useRef(null)
   const audioSessionAcknowledgedRef = useRef(false)
@@ -583,6 +631,10 @@ export default function App() {
     if (!ipc) return
     ipc.invoke('get-store', 'assistAutoTrigger').then((v) => {
       assistAutoTriggerRef.current = v === true
+    })
+    ipc.invoke('get-store', 'sttMode').then((v) => {
+      const mode = v === 'cloud' ? 'cloud' : 'local'
+      setSttMode(mode)
     })
   }, [])
 
@@ -941,28 +993,44 @@ export default function App() {
   async function startMic() {
     if ((await ipc?.invoke('get-store', 'audioEnabled')) === false || isListening.current) return
     try {
+      const currentSttMode = (await ipc?.invoke('get-store', 'sttMode')) === 'cloud' ? 'cloud' : 'local'
+      setSttMode(currentSttMode)
+
       const sensRaw = await ipc?.invoke('get-store', 'micSensitivity')
       const captureProfile = resolveMicCaptureProfile(sensRaw)
       micCaptureProfileRef.current = captureProfile
       const sysProfile = resolveSysCaptureProfile(sensRaw)
       sysCaptureProfileRef.current = sysProfile
 
-      const mic = await navigator.mediaDevices
-        .getUserMedia({
-          audio: {
-            echoCancellation: true,
-            noiseSuppression: true,
-            autoGainControl: true,
-            channelCount: 1,
-          },
-        })
-        .catch(() => null)
+      const mic = await acquireMicMeetingStream()
       let sys = null
       try {
         sys = await acquireSystemAudioStream()
       } catch {}
       if (!mic && !sys) { emit('mic-error', { message: 'No audio' }); return }
 
+      // ── LOCAL mode: Moonshine streaming (built-in VAD, no MediaRecorder, no hallucinations) ──
+      if (currentSttMode === 'local') {
+        isListening.current = true
+        streamRef._mic = mic
+        streamRef._sys = sys
+        startLocalStt(mic, sys, {
+          onMicText: (text) => {
+            if (!isListening.current) return
+            if (HALLUCINATIONS.some((r) => r.test(text))) return
+            processTranscribedText(text, 'mic')
+          },
+          onSysText: (text) => {
+            if (!isListening.current) return
+            if (HALLUCINATIONS.some((r) => r.test(text))) return
+            processTranscribedText(text, 'sys')
+          },
+        })
+        emit('mic-status', { active: true })
+        return
+      }
+
+      // ── CLOUD mode: MediaRecorder chunks → Groq/OpenAI API ─────────────────
       let ctx
       try {
         ctx = new AudioContext({ sampleRate: 48000 })
@@ -980,7 +1048,7 @@ export default function App() {
 
       if (mic) {
         const micDest = ctx.createMediaStreamDestination()
-        const tail = buildVoiceCaptureChain(ctx, mic, micDest, captureProfile)
+        const tail = buildVoiceCaptureChain(ctx, mic, micDest, captureProfile, 'mic')
         const a = ctx.createAnalyser()
         a.fftSize = 512
         tail.connect(a)
@@ -989,7 +1057,7 @@ export default function App() {
       }
       if (sys) {
         const sysDest = ctx.createMediaStreamDestination()
-        const tail = buildVoiceCaptureChain(ctx, sys, sysDest, sysProfile)
+        const tail = buildVoiceCaptureChain(ctx, sys, sysDest, sysProfile, 'sys')
         const a = ctx.createAnalyser()
         a.fftSize = 512
         tail.connect(a)
@@ -1069,8 +1137,8 @@ export default function App() {
     const mime = getMimeType()
     /** Higher Opus bitrate → clearer consonants for Whisper vs browser default (~32–64k). */
     const recOpts = mime
-      ? { mimeType: mime, audioBitsPerSecond: 96000 }
-      : { audioBitsPerSecond: 96000 }
+      ? { mimeType: mime, audioBitsPerSecond: 128000 }
+      : { audioBitsPerSecond: 128000 }
     const recorders = []
     let pendingStops = 0
 
@@ -1121,6 +1189,8 @@ export default function App() {
 
   function stopMic() {
     isListening.current = false
+    // Stop Moonshine transcribers (local mode)
+    stopLocalStt()
     const r = recorderRef.current
     if (Array.isArray(r)) r.forEach((x) => x.state !== 'inactive' && x.stop())
     else r?.state !== 'inactive' && r?.stop()
@@ -1139,8 +1209,57 @@ export default function App() {
     latestTranscriptRef.current = ''
   }
 
+  /**
+   * Shared post-processing after text is obtained from either the local or cloud STT path.
+   * Handles speaker tagging, rolling buffer, live segments, and AI trigger.
+   */
+  function processTranscribedText(text, audioPathKey) {
+    const trimmedChunk = text.trim()
+    const tChunk = Date.now()
+    const silenceBeforeMs = lastSpeechTimeRef.current > 0 ? tChunk - lastSpeechTimeRef.current : 0
+    let speaker
+    if (audioPathKey === 'mic') { speaker = 'me'; lastSpeakerRef.current = 'me' }
+    else if (audioPathKey === 'sys') { speaker = 'other'; lastSpeakerRef.current = 'other' }
+    else { speaker = assignChunkSpeaker(trimmedChunk, silenceBeforeMs, lastSpeakerRef) }
+    const roleTag = speaker === 'me' ? 'Me' : 'Participant'
+
+    lastChunkRef.current = trimmedChunk
+    const stamp = Date.now()
+    lastAudioUpdateRef.current = stamp
+    lastSpeechActivityRef.current = stamp
+
+    const labeled = `${roleTag}: ${trimmedChunk}`
+    ipc?.invoke('session-transcript-append', labeled)
+
+    if (speechTriggerDelayRef.current != null) {
+      clearTimeout(speechTriggerDelayRef.current)
+      speechTriggerDelayRef.current = null
+    }
+
+    const mergedBuff = speechBufferRef.current
+      ? `${speechBufferRef.current} ${trimmedChunk}`
+      : trimmedChunk
+    speechBufferRef.current = trimBufferSmart(mergedBuff)
+    lastSpeechTimeRef.current = Date.now()
+    appendLiveSegment(speaker, trimmedChunk)
+
+    setMicTranscript((prev) => {
+      const combined = (prev + ' ' + trimmedChunk).trim().split(/\s+/).slice(-600).join(' ')
+      micTranscriptRef.current = combined
+      latestTranscriptRef.current = combined
+      emit('transcript-updated', { latest: labeled, full: combined })
+      return combined
+    })
+
+    maybeTriggerAIRef.current?.()
+  }
+
   async function transcribe(blob, mimeType, audioPathKey) {
     try {
+      // Local mode uses Moonshine streaming callbacks — MediaRecorder chunks never reach here.
+      if (sttMode === 'local') return
+
+      // ── CLOUD path (Groq / OpenAI Whisper API) ──────────────────────────────
       const cfg = await ipc?.invoke('get-transcription-config')
       if (!cfg?.url || !cfg.apiKey) return
 
@@ -1171,10 +1290,7 @@ export default function App() {
       let res
       if (useWhisperMeta) {
         res = await post('verbose_json')
-        if (!res.ok) {
-          res = await post('json')
-          useWhisperMeta = false
-        }
+        if (!res.ok) { res = await post('json'); useWhisperMeta = false }
       } else if (cfg.responseKind === 'json') {
         res = await post('json')
       } else {
@@ -1188,19 +1304,21 @@ export default function App() {
         try {
           const j = await res.json()
           if (useWhisperMeta) {
-            const gated = filterWhisperVerboseJson(j)
+            const gated = filterWhisperVerboseJson(j, audioPathKey === 'sys' ? 'sys' : 'mic')
             text = String(gated.text || '').trim()
-            // Drop only clearly garbage utterances (Groq/OpenAI: very negative avg_logprob + segment filters).
-            // Softer than gating on `ok` alone so normal speech is not frozen.
-            const agg = gated.aggregateLogprob
-            if (
-              text &&
-              typeof agg === 'number' &&
-              Number.isFinite(agg) &&
-              agg < AGGREGATE_DROP_HARD_MIN
-            ) {
-              text = ''
+
+            const allowed = Array.isArray(cfg.allowedLanguages) ? cfg.allowedLanguages : null
+            if (text && allowed && gated.detectedLanguage) {
+              const wrongLang = !allowed.includes(gated.detectedLanguage)
+              const agg = gated.aggregateLogprob
+              const confidentDetection =
+                audioPathKey !== 'sys' || (agg != null && Number.isFinite(agg) && agg > -0.55)
+              if (wrongLang && confidentDetection) text = ''
             }
+
+            const hardMin = audioPathKey === 'sys' ? -0.90 : AGGREGATE_DROP_HARD_MIN
+            const agg = gated.aggregateLogprob
+            if (text && typeof agg === 'number' && Number.isFinite(agg) && agg < hardMin) text = ''
           } else {
             text = String(j.text || j.transcription || '').trim()
           }
@@ -1217,48 +1335,7 @@ export default function App() {
       const silenceBeforeMs =
         lastSpeechTimeRef.current > 0 ? tChunk - lastSpeechTimeRef.current : 0
       /** System loopback = remote meeting audio; mic = you. Do not infer from text/heuristics alone. */
-      let speaker
-      if (audioPathKey === 'mic') {
-        speaker = 'me'
-        lastSpeakerRef.current = 'me'
-      } else if (audioPathKey === 'sys') {
-        speaker = 'other'
-        lastSpeakerRef.current = 'other'
-      } else {
-        speaker = assignChunkSpeaker(trimmedChunk, silenceBeforeMs, lastSpeakerRef)
-      }
-      const roleTag = speaker === 'me' ? 'Me' : 'Participant'
-
-      lastChunkRef.current = trimmedChunk
-
-      const stamp = Date.now()
-      lastAudioUpdateRef.current = stamp
-      lastSpeechActivityRef.current = stamp
-
-      const labeled = `${roleTag}: ${trimmedChunk}`
-      ipc?.invoke('session-transcript-append', labeled)
-
-      if (speechTriggerDelayRef.current != null) {
-        clearTimeout(speechTriggerDelayRef.current)
-        speechTriggerDelayRef.current = null
-      }
-
-      const mergedBuff = speechBufferRef.current
-        ? `${speechBufferRef.current} ${trimmedChunk}`
-        : trimmedChunk
-      speechBufferRef.current = trimBufferSmart(mergedBuff)
-      lastSpeechTimeRef.current = Date.now()
-      appendLiveSegment(speaker, trimmedChunk)
-
-      setMicTranscript((prev) => {
-        const combined = (prev + ' ' + trimmedChunk).trim().split(/\s+/).slice(-600).join(' ')
-        micTranscriptRef.current = combined
-        latestTranscriptRef.current = combined
-        emit('transcript-updated', { latest: labeled, full: combined })
-        return combined
-      })
-
-      maybeTriggerAIRef.current?.()
+      processTranscribedText(trimmedChunk, audioPathKey)
     } catch {}
   }
 

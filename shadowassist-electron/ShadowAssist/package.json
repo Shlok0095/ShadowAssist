@@ -1,6 +1,6 @@
 {
   "name": "shadowassist",
-  "version": "1.0.0",
+  "version": "1.0.1",
   "description": "Undetectable AI for live meetings — discreet on-screen meeting assistant",
   "author": "ShadowAssist",
   "license": "UNLICENSED",
@@ -87,6 +87,8 @@
     "@fontsource/jetbrains-mono": "^5.2.5",
     "@fontsource/outfit": "^5.2.5",
     "@fontsource/syne": "^5.2.5",
+    "@huggingface/transformers": "^4.1.0",
+    "@moonshine-ai/moonshine-js": "^0.1.29",
     "electron-store": "^8.1.0",
     "highlight.js": "^11.11.1",
     "openai": "^4.20.0",
