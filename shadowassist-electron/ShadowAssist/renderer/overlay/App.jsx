@@ -1096,7 +1096,11 @@ export default function App() {
         const pathOk =
           spec.key === 'mic'
             ? hasMic && pathEnergyActive(branch, prof)
-            : hasSys && pathEnergyActive(branch, prof)
+            /**
+             * Teams participant audio can be low/compressed and often fails RMS gates.
+             * For system loopback, accept any non-trivial chunk when the stream exists.
+             */
+            : hasSys
         if (blob.size >= MIN_RECORDING_BYTES && pathOk) void transcribe(blob, mr.mimeType, spec.key)
       }
       try {
