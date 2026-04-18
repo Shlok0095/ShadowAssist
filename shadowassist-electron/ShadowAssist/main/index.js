@@ -1361,6 +1361,31 @@ async function initApp() {
 }
 
 app.whenReady().then(() => {
+  // ── Cross-Origin Isolation headers ─────────────────────────────────────────
+  // Moonshine uses onnxruntime-web (WASM) for on-device inference.
+  // ONNX Runtime WASM multi-threading requires SharedArrayBuffer, which Chromium
+  // only exposes when the page is cross-origin isolated.  In the packaged .exe
+  // Electron loads the renderer from file:// with no isolation headers, causing
+  // SharedArrayBuffer to be undefined → ONNX falls back to a broken single-
+  // threaded path → model outputs garbage ("completely different words").
+  //
+  // Fix: inject COOP + COEP headers on every response so Chromium treats all
+  // renderer pages as cross-origin isolated.
+  //
+  // COEP "credentialless" (not "require-corp") is used so that CDN subresources
+  // (Moonshine model weights, Silero VAD WASM from jsDelivr) keep loading
+  // without needing explicit Cross-Origin-Resource-Policy headers on the CDN.
+  const { session } = require('electron')
+  session.defaultSession.webRequest.onHeadersReceived((details, callback) => {
+    callback({
+      responseHeaders: {
+        ...details.responseHeaders,
+        'Cross-Origin-Opener-Policy': ['same-origin'],
+        'Cross-Origin-Embedder-Policy': ['credentialless'],
+      },
+    })
+  })
+
   setupIPC()
   if (!hasValidConsent()) createConsentWindow()
   else continueAfterConsent()

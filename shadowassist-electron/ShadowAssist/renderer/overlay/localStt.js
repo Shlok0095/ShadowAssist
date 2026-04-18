@@ -4,7 +4,7 @@
 // Why Moonshine instead of Whisper-ONNX:
 //   • Built-in VAD — only runs inference when it detects real speech.
 //     Whisper always produces something, even on silence → hallucinations.
-//   • 27 MB model (tiny), ~10x smaller than whisper-base.
+//   • 68 MB model (base), better accent robustness than tiny.
 //   • Accepts a live MediaStream directly — no chunking, no blob POST, no API key.
 //   • English-only (the model doesn't support Hindi, but it also never invents text).
 //
@@ -18,8 +18,16 @@
 
 import { Transcriber } from '@moonshine-ai/moonshine-js'
 
-/** Moonshine tiny — 27 MB, English, very low hallucination rate. */
-const MODEL = 'model/tiny'
+// model/base (~68 MB) instead of model/tiny (~27 MB).
+// Reasons for the upgrade:
+//   1. Significantly better accuracy for non-native accents (Indian English,
+//      retroflex consonants, different prosody) — tiny is trained mostly on
+//      American/British read speech (LibriSpeech).
+//   2. Still has built-in VAD → zero hallucinations on silence.
+//   3. Still fully local — no API key, no rate limits.
+//   4. The COEP/COOP headers in main/index.js enable SharedArrayBuffer, so
+//      ONNX WASM multi-threading works correctly in the packaged app too.
+const MODEL = 'model/base'
 
 let _micT = null
 let _sysT = null
