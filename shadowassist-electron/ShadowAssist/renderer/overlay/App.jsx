@@ -13,7 +13,7 @@ import {
   filterWhisperVerboseJson,
 } from '../shared/whisperTranscriptGate'
 import { captureScreenTextLocal, terminateLocalOcr, warmupLocalOcr } from './localOcr'
-import { startLocalStt, stopLocalStt, isLocalSttRunning } from './localStt'
+import { startLocalStt, stopLocalStt, isLocalSttRunning, preloadLocalStt } from './localStt'
 
 const ipc = createIpcShim()
 const COLLAPSED_H = 38
@@ -498,6 +498,12 @@ export default function App() {
   const [stealthMode, setStealthMode] = useState(false)
   const [showAudioConsent, setShowAudioConsent] = useState(false)
   const [sttMode, setSttMode] = useState('local')
+  /**
+   * False while Moonshine model/base is downloading on first launch (~68 MB).
+   * Becomes true once both mic and sys transcribers report onModelLoaded.
+   * Used to show a clear "downloading model…" banner so the user knows to wait.
+   */
+  const [localSttReady, setLocalSttReady] = useState(false)
 
   const panelRef = useRef(null)
   const audioSessionAcknowledgedRef = useRef(false)
@@ -635,6 +641,17 @@ export default function App() {
     ipc.invoke('get-store', 'sttMode').then((v) => {
       const mode = v === 'cloud' ? 'cloud' : 'local'
       setSttMode(mode)
+      if (mode === 'local') {
+        // Pre-warm Moonshine model/base (~68 MB) immediately at startup.
+        // By the time the user clicks Start Listening the model is cached
+        // and transcription begins with ZERO dropped words at the start.
+        preloadLocalStt({
+          onReady: () => setLocalSttReady(true),
+        })
+      } else {
+        // Cloud mode needs no local model.
+        setLocalSttReady(true)
+      }
     })
   }, [])
 
@@ -1027,6 +1044,11 @@ export default function App() {
           },
         })
         emit('mic-status', { active: true })
+        // If the model is still downloading (first launch), show a clear banner.
+        // Without this the UI says "Listening" but silently drops all speech.
+        if (!localSttReady) {
+          emit('notify', { message: '⏳ Downloading Moonshine model (~68 MB) — listening begins once ready. One-time download.' })
+        }
         return
       }
 
