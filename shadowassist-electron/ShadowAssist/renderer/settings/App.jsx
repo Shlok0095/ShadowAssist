@@ -5,8 +5,11 @@ import React, { useState, useEffect, useMemo, useId, memo } from 'react'
 import { UI_ACCENT_THEMES, applyUiAccentTheme, normalizeUiAccentId } from '../shared/uiAccentThemes'
 import { createIpcShim } from '../shared/ipcShim'
 import AppWindowFrame from '../shared/AppWindowFrame'
+import * as baseSystemPrompt from '../../lib/defaultSystemPrompt.js'
 
 const ipc = createIpcShim()
+const DEFAULT_SYSTEM_PROMPT =
+  baseSystemPrompt.DEFAULT_SYSTEM_PROMPT ?? baseSystemPrompt.default?.DEFAULT_SYSTEM_PROMPT
 
 const RESUME_TEXT_MAX = 20000
 const JD_TEXT_MAX = 12000
@@ -16,17 +19,13 @@ const TOGETHER_WHISPER_MODELS = ['openai/whisper-large-v3', 'openai/whisper-larg
 const MISTRAL_STT_MODELS = ['voxtral-mini-latest', 'voxtral-mini-transcribe-realtime-2602']
 const FIREWORKS_STT_MODELS = ['whisper-v3-turbo', 'whisper-v3']
 
+/** Empty prompt = backend uses built-in `DEFAULT_SYSTEM_PROMPT` (lib/defaultSystemPrompt.js). */
 const PROMPT_PRESETS = [
-  {
-    id: 'observe',
-    label: 'Observe (default)',
-    prompt: `You are an assistant observing screen and audio.
-Respond to ANY visible or spoken content.
-Do not judge usefulness.
-If unclear, summarize or interpret best effort.`,
-  },
+  { id: 'builtin', label: 'ShadowAssist (built-in)', prompt: '' },
   { id: 'meeting', label: 'Meeting', prompt: 'I am in a meeting. Help me understand, contribute, and summarize.' },
   { id: 'sync', label: 'Stand-up / sync', prompt: 'I am in a team stand-up or sync. Keep suggestions brief and action-oriented.' },
+  /** Full base prompt for users who want to edit from the default copy in the textarea. */
+  { id: 'builtin_copy', label: 'Edit from built-in…', prompt: DEFAULT_SYSTEM_PROMPT },
 ]
 
 const save = (k, v) => ipc?.invoke('set-store', k, v)
@@ -761,7 +760,10 @@ export default function Settings() {
 
               <section className="glass-panel p-6">
                 <h3 className="font-display text-sm font-bold uppercase tracking-[0.2em] text-gray-300">Persona stream</h3>
-                <p className="mt-1 text-xs text-gray-500">How the whisper should behave — merged with resume/JD on every ask.</p>
+                <p className="mt-1 text-xs text-gray-500">
+                  How the AI should behave — merged with resume/JD on every ask. Leave empty or choose <strong className="text-gray-400">ShadowAssist (built-in)</strong> to use the{' '}
+                  <span className="font-mono text-mist-400">lib/defaultSystemPrompt.js</span> base prompt. Override here for your own use case.
+                </p>
                 <div className="mt-4 flex flex-wrap gap-2">
                   {PROMPT_PRESETS.map((p) => (
                     <button
@@ -780,7 +782,7 @@ export default function Settings() {
                   onBlur={() => save('systemPrompt', systemPrompt)}
                   rows={8}
                   className="input-shadow mt-4 min-h-[160px] w-full resize-y px-3 py-3 font-mono text-xs leading-relaxed"
-                  placeholder="How should the AI behave in your ear?"
+                  placeholder="Leave empty for the built-in ShadowAssist prompt, or describe your persona."
                 />
                 <p className="mt-2 text-[10px] text-gray-600">Saved when you leave this field.</p>
               </section>

@@ -68,13 +68,8 @@ const schema = {
   customOpenaiModel: { type: 'string', default: 'gpt-4o' },
   audioFallbackKey: { type: 'string', default: '' },
   audioFallbackProvider: { type: 'string', default: 'openai' },
-  systemPrompt: {
-    type: 'string',
-    default: `You are an assistant observing screen and audio.
-Respond to ANY visible or spoken content.
-Do not judge usefulness.
-If unclear, summarize or interpret best effort.`,
-  },
+  /** Empty = use built-in prompt from lib/defaultSystemPrompt.js (ShadowAssist base). */
+  systemPrompt: { type: 'string', default: '' },
   // x/y optional — main seeds top-right when missing or off-screen
   overlayBounds: { type: 'object', default: { width: 400, height: 540 } },
   overlayOpacity: { type: 'number', default: 0.92 },
@@ -165,7 +160,21 @@ function getAll() {
 
 function clear() { store.clear() }
 
+function migrateLegacySystemPrompt() {
+  try {
+    const { LEGACY_STORE_DEFAULT_SYSTEM_PROMPT } = require('./defaultSystemPrompt')
+    const cur = get('systemPrompt')
+    if (typeof cur !== 'string' || !cur.trim()) return
+    if (cur.trim() === LEGACY_STORE_DEFAULT_SYSTEM_PROMPT.trim()) {
+      set('systemPrompt', '')
+    }
+  } catch {
+    // defaultSystemPrompt missing in odd builds — skip
+  }
+}
+
 function runDataMigration() {
+  migrateLegacySystemPrompt()
   const epoch = typeof get('dataEpoch') === 'number' ? get('dataEpoch') : 0
   if (epoch >= DATA_EPOCH) return
   for (const k of ENCRYPTED_KEYS) {
