@@ -929,7 +929,11 @@ export default function App() {
       setSessionOn(active)
       setStatus(active ? 'active' : 'idle')
       if (active) startMic()
-      else stopMic()
+      else {
+        stopMic()
+        // Session ended: return to initial compact panel state.
+        setExpanded(false)
+      }
     }
     const unsub = ipc.on('session-status', onStatus)
     ipc.invoke('session-active').then((a) => {
@@ -963,6 +967,15 @@ export default function App() {
   useEffect(() => {
     if (!ipc) return
     const onPurge = () => {
+      cancelStreamScroll()
+      streamDomAcceptingRef.current = false
+      ipc?.send('shadowassist-stream-ended')
+      streamAccumRef.current = ''
+      clearStreamDom()
+      activeTurnMetaRef.current = null
+      setActiveAskSource(null)
+      setMessages([])
+      setIsThinking(false)
       setMicTranscript('')
       micTranscriptRef.current = ''
       latestTranscriptRef.current = ''
@@ -976,10 +989,13 @@ export default function App() {
       lastGlobalTriggerTimeRef.current = 0
       lastResponseRef.current = ''
       commitLockRef.current = false
+      responseLockRef.current = false
+      // Session ended: collapse panel back to default small state.
+      setExpanded(false)
     }
     const unsub = ipc.on('session-purge', onPurge)
     return () => unsub?.()
-  }, [clearRollingSpeech])
+  }, [clearRollingSpeech, cancelStreamScroll, clearStreamDom])
 
   const setProtectionMode = useCallback(async (wantStealth) => {
     if (!ipc) return

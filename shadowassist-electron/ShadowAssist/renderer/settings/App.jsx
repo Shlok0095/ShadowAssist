@@ -5,11 +5,8 @@ import React, { useState, useEffect, useMemo, useId, memo } from 'react'
 import { UI_ACCENT_THEMES, applyUiAccentTheme, normalizeUiAccentId } from '../shared/uiAccentThemes'
 import { createIpcShim } from '../shared/ipcShim'
 import AppWindowFrame from '../shared/AppWindowFrame'
-import * as baseSystemPrompt from '../../lib/defaultSystemPrompt.js'
 
 const ipc = createIpcShim()
-const DEFAULT_SYSTEM_PROMPT =
-  baseSystemPrompt.DEFAULT_SYSTEM_PROMPT ?? baseSystemPrompt.default?.DEFAULT_SYSTEM_PROMPT
 
 const RESUME_TEXT_MAX = 20000
 const JD_TEXT_MAX = 12000
@@ -24,8 +21,6 @@ const PROMPT_PRESETS = [
   { id: 'builtin', label: 'ShadowAssist (built-in)', prompt: '' },
   { id: 'meeting', label: 'Meeting', prompt: 'I am in a meeting. Help me understand, contribute, and summarize.' },
   { id: 'sync', label: 'Stand-up / sync', prompt: 'I am in a team stand-up or sync. Keep suggestions brief and action-oriented.' },
-  /** Full base prompt for users who want to edit from the default copy in the textarea. */
-  { id: 'builtin_copy', label: 'Edit from built-in…', prompt: DEFAULT_SYSTEM_PROMPT },
 ]
 
 const save = (k, v) => ipc?.invoke('set-store', k, v)
@@ -71,6 +66,86 @@ function useFirstRunQuery() {
       return false
     }
   }, [])
+}
+
+function formatMeetingWhen(iso) {
+  if (!iso) return 'Unknown time'
+  const d = new Date(iso)
+  if (Number.isNaN(d.getTime())) return String(iso)
+  return d.toLocaleString([], {
+    weekday: 'short',
+    day: '2-digit',
+    month: 'short',
+    hour: '2-digit',
+    minute: '2-digit',
+  })
+}
+
+function formatSessionRange(startIso, endIso) {
+  if (!startIso) return 'Unknown session'
+  const s = new Date(startIso)
+  const e = endIso ? new Date(endIso) : null
+  if (Number.isNaN(s.getTime())) return String(startIso)
+  const fmt = (d) =>
+    d.toLocaleTimeString([], {
+      hour: '2-digit',
+      minute: '2-digit',
+    })
+  return `${fmt(s)} - ${e && !Number.isNaN(e.getTime()) ? fmt(e) : 'In progress'}`
+}
+
+function toDateKey(iso) {
+  if (!iso) return ''
+  const d = new Date(iso)
+  if (Number.isNaN(d.getTime())) return ''
+  const y = d.getFullYear()
+  const m = String(d.getMonth() + 1).padStart(2, '0')
+  const day = String(d.getDate()).padStart(2, '0')
+  return `${y}-${m}-${day}`
+}
+
+function formatDateKeyLabel(dateKey) {
+  if (!dateKey) return 'Unknown date'
+  const d = new Date(`${dateKey}T00:00:00`)
+  if (Number.isNaN(d.getTime())) return dateKey
+  return d.toLocaleDateString([], {
+    weekday: 'short',
+    day: '2-digit',
+    month: 'short',
+    year: 'numeric',
+  })
+}
+
+function friendlyCalendarError(message) {
+  const raw = String(message || '')
+  const m = raw.toLowerCase()
+  if (!raw) return ''
+  if (m.includes('test user') || m.includes('access_denied') || m.includes('403')) {
+    return 'Google blocked this email. Ask the app owner to add this email under OAuth consent screen -> Test users, or publish the app to Production.'
+  }
+  if (m.includes('timed out')) {
+    return 'Google sign-in timed out. Keep the browser sign-in tab open and complete approval, then try again.'
+  }
+  if (m.includes('already in progress')) {
+    return 'A Google sign-in is already running. Finish it in browser, or press Cancel connect.'
+  }
+  return raw
+}
+
+function parseSummaryBullets(text) {
+  const lines = String(text || '')
+    .split('\n')
+    .map((x) => x.trim())
+    .filter(Boolean)
+  const bullets = lines
+    .filter((x) => x.startsWith('- '))
+    .map((x) =>
+      x
+        .replace(/^-+\s*/, '')
+        .replace(/[*_`]/g, '')
+        .trim(),
+    )
+  return bullets
 }
 
 const AmbientOrbs = memo(function AmbientOrbs() {
@@ -150,6 +225,20 @@ export default function Settings() {
   const [micSensitivity, setMicSensitivity] = useState('standard')
   const [sttMode, setSttMode] = useState('local')
   const [assistAutoTrigger, setAssistAutoTrigger] = useState(false)
+  const [googleCalendarClientId, setGoogleCalendarClientId] = useState('')
+  const [googleCalendarClientSecret, setGoogleCalendarClientSecret] = useState('')
+  const [googleCalendarConnectedEmail, setGoogleCalendarConnectedEmail] = useState('')
+  const [googleCalendarOAuthReady, setGoogleCalendarOAuthReady] = useState(false)
+  const [googleCalendarUsingEmbeddedOAuth, setGoogleCalendarUsingEmbeddedOAuth] = useState(false)
+  const [calendarConnectBusy, setCalendarConnectBusy] = useState(false)
+  const [calendarEventsLoading, setCalendarEventsLoading] = useState(false)
+  const [calendarErr, setCalendarErr] = useState('')
+  const [calendarMeetings, setCalendarMeetings] = useState([])
+  const [selectedCalendarDate, setSelectedCalendarDate] = useState('')
+  const [calendarRemindersEnabled, setCalendarRemindersEnabled] = useState(true)
+  const [calendarReminderMinutes, setCalendarReminderMinutes] = useState(5)
+  const [listenSummaries, setListenSummaries] = useState([])
+  const [selectedSummaryId, setSelectedSummaryId] = useState('')
   const [audioFallbackKey, setAudioFallbackKey] = useState('')
   const [audioFallbackProvider, setAudioFallbackProvider] = useState('openai')
 
@@ -190,6 +279,15 @@ export default function Settings() {
         setMicSensitivity(s.micSensitivity === 'boost' ? 'boost' : 'standard')
         setSttMode(s.sttMode === 'cloud' ? 'cloud' : 'local')
         setAssistAutoTrigger(s.assistAutoTrigger === true)
+        setGoogleCalendarClientId(s.googleCalendarClientId || '')
+        setGoogleCalendarClientSecret(s.googleCalendarClientSecret ? '••••••••' : '')
+        setGoogleCalendarConnectedEmail(s.googleCalendarConnectedEmail || '')
+        setCalendarRemindersEnabled(s.calendarRemindersEnabled !== false)
+        setCalendarReminderMinutes(
+          Number.isFinite(Number(s.calendarReminderMinutes))
+            ? Math.max(0, Number(s.calendarReminderMinutes))
+            : 5,
+        )
         setAudioFallbackProvider(s.audioFallbackProvider || 'openai')
         setResumeContext(s.resumeContext || '')
         setResumeSourceName(s.resumeSourceName || '')
@@ -241,6 +339,47 @@ export default function Settings() {
     setListModelsErr('')
   }, [provider])
 
+  const refreshCalendarMeetings = async () => {
+    if (!ipc) return
+    setCalendarErr('')
+    setCalendarEventsLoading(true)
+    try {
+      const status = await ipc.invoke('google-calendar:get-status')
+      setGoogleCalendarConnectedEmail(status?.connectedEmail || '')
+      setGoogleCalendarOAuthReady(status?.oauthReady === true)
+      setGoogleCalendarUsingEmbeddedOAuth(status?.usingEmbeddedOAuth === true)
+      if (!status?.connected) {
+        setCalendarMeetings([])
+        return
+      }
+      const res = await ipc.invoke('google-calendar:list-upcoming')
+      if (!res?.ok) throw new Error(res?.error || 'Could not load meetings')
+      const meetings = Array.isArray(res.meetings) ? res.meetings : []
+      setCalendarMeetings(meetings)
+      if (!selectedCalendarDate) {
+        const firstDate = toDateKey(meetings[0]?.start)
+        if (firstDate) setSelectedCalendarDate(firstDate)
+      }
+    } catch (e) {
+      setCalendarErr(e?.message || 'Could not load meetings')
+    } finally {
+      setCalendarEventsLoading(false)
+    }
+  }
+
+  const refreshListenSummaries = async () => {
+    if (!ipc) return
+    try {
+      const rows = await ipc.invoke('listen-session-summaries:get')
+      const list = Array.isArray(rows) ? rows : []
+      setListenSummaries(list)
+      if (!selectedSummaryId && list[0]?.id) setSelectedSummaryId(list[0].id)
+      if (selectedSummaryId && !list.find((x) => x.id === selectedSummaryId)) {
+        setSelectedSummaryId(list[0]?.id || '')
+      }
+    } catch {}
+  }
+
   useEffect(() => {
     if (!ipc) return
     const onUiAccent = (_, id) => {
@@ -250,6 +389,22 @@ export default function Settings() {
     }
     const unsub = ipc.on('ui-accent-update', onUiAccent)
     return () => unsub?.()
+  }, [])
+
+  useEffect(() => {
+    if (!ipc) return
+    const unsub = ipc.on('listen-session-summaries:update', () => {
+      void refreshListenSummaries()
+    })
+    return () => unsub?.()
+  }, [])
+
+  useEffect(() => {
+    void refreshCalendarMeetings()
+  }, [])
+
+  useEffect(() => {
+    void refreshListenSummaries()
   }, [])
 
   const showSetupBanner = isFirstRunWindow && !hasCompletedOnboarding
@@ -352,9 +507,87 @@ export default function Settings() {
     { id: 'profile', label: 'Shadow profile', sub: 'Tone & meeting context' },
     { id: 'display', label: 'Overlay', sub: 'Look & layout' },
     { id: 'session', label: 'Field ops', sub: 'OCR & audio' },
+    { id: 'meetings', label: 'Meetings', sub: 'Calendar sync' },
     { id: 'privacy', label: 'Privacy & Data', sub: 'Undetectable meeting AI' },
     { id: 'about', label: 'Manifest', sub: 'About' },
   ]
+
+  const connectGoogleCalendar = async () => {
+    if (!ipc) return
+    setCalendarErr('')
+    setCalendarConnectBusy(true)
+    try {
+      const id = String(googleCalendarClientId || '').trim()
+      const secret = String(googleCalendarClientSecret || '').trim()
+      if (!googleCalendarOAuthReady && (!id || !secret || secret === '••••••••')) {
+        throw new Error('Enter Google Calendar client ID and client secret first')
+      }
+      if (!googleCalendarOAuthReady) {
+        await save('googleCalendarClientId', id)
+        await save('googleCalendarClientSecret', secret)
+      }
+      const res = await ipc.invoke('google-calendar:connect')
+      setGoogleCalendarConnectedEmail(res?.connectedEmail || '')
+      setGoogleCalendarClientSecret('••••••••')
+      await refreshCalendarMeetings()
+    } catch (e) {
+      setCalendarErr(friendlyCalendarError(e?.message || 'Google Calendar connect failed'))
+    } finally {
+      setCalendarConnectBusy(false)
+    }
+  }
+
+  const selectedSummary = listenSummaries.find((s) => s.id === selectedSummaryId) || null
+  const meetingsByDate = useMemo(() => {
+    const map = new Map()
+    for (const m of calendarMeetings) {
+      const key = toDateKey(m.start) || 'unknown'
+      if (!map.has(key)) map.set(key, [])
+      map.get(key).push(m)
+    }
+    return map
+  }, [calendarMeetings])
+  const availableDateKeys = useMemo(
+    () => [...meetingsByDate.keys()].filter((k) => k !== 'unknown').sort(),
+    [meetingsByDate],
+  )
+  const effectiveDateKey = selectedCalendarDate || availableDateKeys[0] || ''
+  const meetingsForSelectedDate = effectiveDateKey ? meetingsByDate.get(effectiveDateKey) || [] : []
+  const summaryBullets = parseSummaryBullets(selectedSummary?.llmSummary?.text || '')
+
+  const cancelGoogleCalendarConnect = async () => {
+    if (!ipc) return
+    try {
+      await ipc.invoke('google-calendar:cancel-connect')
+    } catch {}
+    setCalendarConnectBusy(false)
+    setCalendarErr('Google sign-in cancelled.')
+  }
+
+  const disconnectGoogleCalendar = async () => {
+    if (!ipc) return
+    setCalendarErr('')
+    setCalendarConnectBusy(true)
+    try {
+      await ipc.invoke('google-calendar:disconnect')
+      setGoogleCalendarConnectedEmail('')
+      setCalendarMeetings([])
+    } catch (e) {
+      setCalendarErr(friendlyCalendarError(e?.message || 'Disconnect failed'))
+    } finally {
+      setCalendarConnectBusy(false)
+    }
+  }
+
+  const clearMeetingSummaries = async () => {
+    if (!ipc) return
+    const ok = window.confirm('Clear all past meeting summaries? This cannot be undone.')
+    if (!ok) return
+    try {
+      await ipc.invoke('listen-session-summaries:clear')
+      await refreshListenSummaries()
+    } catch {}
+  }
 
   const applyOverlayOpacity = async (raw) => {
     const v = Math.min(1, Math.max(0.35, Number(raw)))
@@ -1174,6 +1407,345 @@ export default function Settings() {
                     Shortcut keys are editable under <span className="text-zinc-500">Overlay → Keyboard shortcuts</span>.
                   </p>
                 </div>
+              </section>
+            </div>
+          )}
+
+          {activeTab === 'meetings' && (
+            <div className="mx-auto max-w-3xl animate-fade-in space-y-5">
+              <section className="glass-panel p-8">
+                <div className="flex items-center gap-3">
+                  <img
+                    src="https://ssl.gstatic.com/calendar/images/dynamiclogo_2020q4/calendar_31_2x.png"
+                    alt="Google Calendar"
+                    className="h-[34px] w-[34px] rounded-lg border border-white/15 object-cover shadow-[0_8px_24px_-16px_rgba(0,0,0,0.65)]"
+                  />
+                  <h2 className="font-display text-lg font-bold text-white">Coming Up</h2>
+                </div>
+                <p className="mt-1 text-sm text-gray-500">
+                  Connect Google Calendar to sync accepted upcoming meetings and keep this list updated.
+                </p>
+                <div className="mt-6 space-y-4">
+                  <div className="rounded-xl border border-accent/20 bg-accent/5 p-4">
+                    <p className="text-[11px] font-semibold uppercase tracking-[0.2em] text-accent">
+                      Quick connect
+                    </p>
+                    <ol className="mt-2 list-decimal space-y-1 pl-4 text-xs text-zinc-300">
+                      <li>Click <span className="font-semibold text-white">Connect Google Calendar</span>.</li>
+                      <li>Choose the Google account email you want to sync.</li>
+                      <li>Approve read-only calendar access.</li>
+                    </ol>
+                    <p className="mt-3 text-[11px] text-zinc-500">
+                      If you see a Google 403 / access denied screen, that email must be added in OAuth consent screen <span className="font-mono">Test users</span> by the app owner.
+                    </p>
+                  </div>
+
+                  <div className="flex flex-wrap gap-2">
+                    <button
+                      type="button"
+                      onClick={() => void connectGoogleCalendar()}
+                      disabled={calendarConnectBusy}
+                      className="btn-ghost px-4 py-2.5"
+                    >
+                      {calendarConnectBusy ? 'Connecting…' : 'Connect Google Calendar'}
+                    </button>
+                    {calendarConnectBusy && (
+                      <button
+                        type="button"
+                        onClick={() => void cancelGoogleCalendarConnect()}
+                        className="btn-ghost px-4 py-2.5 text-amber-200"
+                      >
+                        Cancel connect
+                      </button>
+                    )}
+                    <button
+                      type="button"
+                      onClick={() => void disconnectGoogleCalendar()}
+                      disabled={calendarConnectBusy || !googleCalendarConnectedEmail}
+                      className="btn-ghost px-4 py-2.5 text-rose-200"
+                    >
+                      Disconnect
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => void refreshCalendarMeetings()}
+                      disabled={calendarEventsLoading}
+                      className="btn-ghost px-4 py-2.5"
+                    >
+                      {calendarEventsLoading ? 'Refreshing…' : 'Refresh meetings'}
+                    </button>
+                  </div>
+                  <div className="settings-row-tile flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+                    <div className="min-w-0 flex-1">
+                      <span className="font-medium text-gray-200">Start-time reminders</span>
+                      <p className="mt-1 text-xs text-gray-600">
+                        Show a one-time notification before accepted meetings start.
+                      </p>
+                    </div>
+                    <div className="flex w-full shrink-0 items-center gap-2 sm:w-auto">
+                      <input
+                        type="checkbox"
+                        checked={calendarRemindersEnabled}
+                        onChange={(e) => {
+                          const v = e.target.checked
+                          setCalendarRemindersEnabled(v)
+                          save('calendarRemindersEnabled', v)
+                        }}
+                        className="h-5 w-5 rounded border-white/20 accent-accent"
+                      />
+                      <select
+                        value={String(calendarReminderMinutes)}
+                        onChange={(e) => {
+                          const v = Math.max(0, Number(e.target.value || 0))
+                          setCalendarReminderMinutes(v)
+                          save('calendarReminderMinutes', v)
+                        }}
+                        className="input-shadow px-3 py-2 text-xs"
+                        disabled={!calendarRemindersEnabled}
+                      >
+                        <option value="0" className="bg-void-900">At start time</option>
+                        <option value="5" className="bg-void-900">5 min before</option>
+                        <option value="10" className="bg-void-900">10 min before</option>
+                        <option value="15" className="bg-void-900">15 min before</option>
+                      </select>
+                    </div>
+                  </div>
+                  <div className="rounded-xl border border-white/[0.08] bg-black/25 p-4">
+                    <p className="text-xs text-gray-400">
+                      Connected account:{' '}
+                      <span className="font-mono text-zinc-200">{googleCalendarConnectedEmail || 'Not connected'}</span>
+                    </p>
+                    {googleCalendarUsingEmbeddedOAuth && (
+                      <p className="mt-1 text-[11px] text-zinc-500">
+                        OAuth client is configured by ShadowAssist. Only Google sign-in is required.
+                      </p>
+                    )}
+                    {calendarConnectBusy && (
+                      <p className="mt-1 text-[11px] text-amber-200/90">
+                        Waiting for Google approval in your browser. If Google shows a tester-access 403 page, this email is not approved in your OAuth test users yet.
+                      </p>
+                    )}
+                    {!!calendarErr && (
+                      <p className="mt-2 text-xs text-rose-300">{calendarErr}</p>
+                    )}
+                    <p className="mt-2 text-[11px] text-zinc-600">
+                      If sync fails on corporate networks, allow: <span className="font-mono">accounts.google.com</span>, <span className="font-mono">oauth2.googleapis.com</span>, <span className="font-mono">www.googleapis.com</span>, <span className="font-mono">calendar.google.com</span>.
+                    </p>
+                  </div>
+
+                  {!googleCalendarOAuthReady && (
+                    <details className="rounded-xl border border-white/[0.08] bg-black/20 p-4">
+                      <summary className="cursor-pointer text-xs font-semibold uppercase tracking-[0.2em] text-mist-400">
+                        Advanced setup (for app owners)
+                      </summary>
+                      <div className="mt-3 space-y-3">
+                        <div className="space-y-1 text-xs">
+                          <a href="https://console.cloud.google.com/" target="_blank" rel="noopener noreferrer" className="block text-accent hover:underline">1) Open Google Cloud Console</a>
+                          <a href="https://console.cloud.google.com/apis/library/calendar-json.googleapis.com" target="_blank" rel="noopener noreferrer" className="block text-accent hover:underline">2) Enable Google Calendar API</a>
+                          <a href="https://console.cloud.google.com/apis/credentials" target="_blank" rel="noopener noreferrer" className="block text-accent hover:underline">3) Create OAuth client credentials (Desktop app)</a>
+                          <a href="https://console.cloud.google.com/apis/credentials/consent" target="_blank" rel="noopener noreferrer" className="block text-accent hover:underline">4) Add user emails in OAuth consent -&gt; Test users</a>
+                        </div>
+                        <div className="settings-row-tile">
+                          <label className="mb-1 block text-[10px] font-semibold uppercase tracking-[0.2em] text-mist-400">
+                            Google OAuth Client ID
+                          </label>
+                          <input
+                            type="text"
+                            value={googleCalendarClientId}
+                            onChange={(e) => setGoogleCalendarClientId(e.target.value)}
+                            onBlur={() => save('googleCalendarClientId', String(googleCalendarClientId || '').trim())}
+                            placeholder="From Google Cloud OAuth Desktop app"
+                            className="input-shadow w-full px-3 py-2.5 font-mono text-xs"
+                          />
+                        </div>
+                        <div className="settings-row-tile">
+                          <label className="mb-1 block text-[10px] font-semibold uppercase tracking-[0.2em] text-mist-400">
+                            Google OAuth Client Secret
+                          </label>
+                          <input
+                            type="password"
+                            value={googleCalendarClientSecret}
+                            onChange={(e) => setGoogleCalendarClientSecret(e.target.value)}
+                            placeholder="Stored encrypted on this device"
+                            className="input-shadow w-full px-3 py-2.5 font-mono text-xs"
+                          />
+                        </div>
+                      </div>
+                    </details>
+                  )}
+                </div>
+              </section>
+
+              <section className="glass-panel p-8">
+                <div className="flex flex-wrap items-center justify-between gap-3">
+                  <h3 className="font-display text-sm font-bold uppercase tracking-[0.2em] text-gray-300">
+                    Meeting Summary
+                  </h3>
+                  <div className="flex flex-wrap gap-2">
+                    <button
+                      type="button"
+                      onClick={() => void refreshListenSummaries()}
+                      className="btn-ghost px-3 py-1.5 text-xs"
+                    >
+                      Refresh sessions
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => void clearMeetingSummaries()}
+                      className="btn-ghost px-3 py-1.5 text-xs text-rose-200"
+                    >
+                      Clear summaries
+                    </button>
+                  </div>
+                </div>
+                <p className="mt-1 text-xs text-zinc-500">
+                  Summaries are generated from Listen sessions only (Start Listen - Stop Listen).
+                </p>
+
+                {listenSummaries.length > 0 ? (
+                  <div className="mt-4 space-y-4">
+                    <div className="settings-row-tile">
+                      <label className="mb-1 block text-[10px] font-semibold uppercase tracking-[0.2em] text-mist-400">
+                        Session time range
+                      </label>
+                      <select
+                        value={selectedSummaryId}
+                        onChange={(e) => setSelectedSummaryId(e.target.value)}
+                        className="input-shadow w-full px-3 py-2.5 text-sm"
+                      >
+                        {listenSummaries.map((s) => (
+                          <option key={s.id} value={s.id} className="bg-void-900">
+                            {formatSessionRange(s.startedAt, s.endedAt)}
+                          </option>
+                        ))}
+                      </select>
+                    </div>
+
+                    {selectedSummary && (
+                      <div className="space-y-3">
+                        <div className="rounded-xl border border-white/[0.08] bg-black/25 p-4 text-xs text-zinc-400">
+                          <p>
+                            <span className="text-zinc-200">Duration:</span>{' '}
+                            {formatSessionRange(selectedSummary.startedAt, selectedSummary.endedAt)}
+                          </p>
+                          <p className="mt-1">
+                            <span className="text-zinc-200">LLM summary:</span>{' '}
+                            {selectedSummary.llmSummary?.status || 'idle'}
+                          </p>
+                        </div>
+
+                        <details className="rounded-xl border border-white/[0.08] bg-black/20 p-4" open>
+                          <summary className="cursor-pointer text-xs font-semibold uppercase tracking-[0.2em] text-mist-400">
+                            LLM Meeting Summary
+                          </summary>
+                          <div className="mt-3">
+                            {selectedSummary.llmSummary?.status === 'generating' && (
+                              <p className="text-xs text-amber-200">Generating summary in background…</p>
+                            )}
+                            {selectedSummary.llmSummary?.status === 'error' && (
+                              <p className="text-xs text-rose-300">{selectedSummary.llmSummary?.error || 'Summary generation failed'}</p>
+                            )}
+                            {selectedSummary.llmSummary?.status === 'ready' && (
+                              <div className="rounded-lg border border-white/[0.06] bg-black/30 p-3">
+                                <p className="mb-2 text-[11px] text-zinc-500">
+                                  Generated {formatMeetingWhen(selectedSummary.llmSummary?.generatedAt)}
+                                </p>
+                                {summaryBullets.length > 0 ? (
+                                  <ul className="space-y-1.5 text-xs text-zinc-200">
+                                    {summaryBullets.map((b, i) => (
+                                      <li key={`${i}-${b.slice(0, 18)}`} className="rounded-md border border-white/[0.04] bg-white/[0.02] px-2.5 py-1.5">
+                                        {b}
+                                      </li>
+                                    ))}
+                                  </ul>
+                                ) : (
+                                  <p className="whitespace-pre-wrap text-xs text-zinc-300">
+                                    {selectedSummary.llmSummary?.text}
+                                  </p>
+                                )}
+                              </div>
+                            )}
+                            {!selectedSummary.llmSummary || selectedSummary.llmSummary?.status === 'idle' ? (
+                              <p className="text-xs text-zinc-500">
+                                Summary will be generated automatically after Listen is stopped.
+                              </p>
+                            ) : null}
+                          </div>
+                        </details>
+                      </div>
+                    )}
+                  </div>
+                ) : (
+                  <p className="mt-4 text-sm text-zinc-500">
+                    No Listen sessions found yet. Start Listen, interact, then stop to create a summary session.
+                  </p>
+                )}
+              </section>
+
+              <section className="glass-panel p-6">
+                <details>
+                  <summary className="cursor-pointer text-sm font-semibold text-zinc-200">
+                    Calendar meetings ({calendarMeetings.length})
+                  </summary>
+                  <div className="mt-4 space-y-2">
+                    {!calendarMeetings.length && (
+                      <p className="text-sm text-zinc-500">
+                        {googleCalendarConnectedEmail
+                          ? 'No accepted upcoming meetings found.'
+                          : 'Connect Google Calendar to load meetings.'}
+                      </p>
+                    )}
+                    {calendarMeetings.length > 0 && (
+                      <div className="grid grid-cols-1 gap-3 md:grid-cols-[220px_1fr]">
+                        <div className="rounded-xl border border-white/[0.08] bg-black/20 p-3">
+                          <label className="mb-1 block text-[10px] font-semibold uppercase tracking-[0.2em] text-mist-400">
+                            Date
+                          </label>
+                          <select
+                            value={effectiveDateKey}
+                            onChange={(e) => setSelectedCalendarDate(e.target.value)}
+                            className="input-shadow w-full px-2.5 py-2 text-xs"
+                          >
+                            {availableDateKeys.map((k) => (
+                              <option key={k} value={k} className="bg-void-900">
+                                {formatDateKeyLabel(k)}
+                              </option>
+                            ))}
+                          </select>
+                          <p className="mt-2 text-[11px] text-zinc-500">
+                            {meetingsForSelectedDate.length} meeting{meetingsForSelectedDate.length === 1 ? '' : 's'} on selected date
+                          </p>
+                        </div>
+                        <div className="space-y-2">
+                          {meetingsForSelectedDate.map((m) => (
+                            <div key={m.id} className="rounded-xl border border-white/[0.08] bg-black/20 p-3">
+                              <p className="text-sm font-semibold text-white">{m.title}</p>
+                              <p className="mt-1 text-xs text-zinc-400">
+                                {formatMeetingWhen(m.start)} {m.end ? `→ ${formatMeetingWhen(m.end)}` : ''}
+                              </p>
+                              {m.organizer && (
+                                <p className="mt-1 text-xs text-zinc-500">Organizer: {m.organizer}</p>
+                              )}
+                              {m.meetLink && (
+                                <a
+                                  href={m.meetLink}
+                                  target="_blank"
+                                  rel="noopener noreferrer"
+                                  className="mt-1 inline-block text-xs text-accent hover:underline"
+                                >
+                                  Open meeting link
+                                </a>
+                              )}
+                            </div>
+                          ))}
+                          {meetingsForSelectedDate.length === 0 && (
+                            <p className="text-xs text-zinc-500">No meetings on selected date.</p>
+                          )}
+                        </div>
+                      </div>
+                    )}
+                  </div>
+                </details>
               </section>
             </div>
           )}

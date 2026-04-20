@@ -48,7 +48,9 @@ const {
   STT_VENDOR_NOTES,
 } = require('../lib/transcriptionRouting')
 const sessionMemory = require('../lib/sessionMemory')
+const listenSessionSummaries = require('../lib/listenSessionSummaries')
 const { detectMeetingForegroundOrScan, MEETING_POLL_MS } = require('../lib/meetingForegroundWindows')
+const googleCalendar = require('../lib/googleCalendar')
 
 let aiClientModule = null
 function getAiClient() {
@@ -107,6 +109,10 @@ let meetingForegroundTickCount = 0
 const meetingActiveByPlatform = new Map()
 const MEETING_INACTIVE_CLEAR_MS = 45 * 1000
 let appCoreStarted = false
+let calendarReminderTimer = null
+const calendarReminderSentKeys = new Set()
+const CALENDAR_REMINDER_POLL_MS = 30 * 1000
+const sessionSummaryJobs = new Set()
 
 function createTrayIcon(active = false) {
   const size = 16
@@ -122,6 +128,138 @@ function createTrayIcon(active = false) {
     canvas[offset + 2] = color[2]; canvas[offset + 3] = a
   }
   return nativeImage.createFromBuffer(canvas, { width: size, height: size })
+}
+
+function buildSessionSummaryPrompt(session) {
+  const transcript = (session.transcript || []).map((t) => t.text).join('\n')
+  const asks = (session.asks || []).map((a, i) =>
+    `Q${i + 1}: ${a.question || '(implicit from transcript)'}\nA${i + 1}: ${a.response || '(no response)'}`
+  ).join('\n\n')
+  const interactions = (session.overlayInteractions || []).map((x) =>
+    `${x.at}: ${x.action} (${x.source || 'n/a'})`
+  ).join('\n')
+  return [
+    `SESSION RANGE: ${session.startedAt} -> ${session.endedAt || 'in-progress'}`,
+    `\nTRANSCRIPT:\n${transcript || '(empty)'}`,
+    `\nQ&A:\n${asks || '(none)'}`,
+    `\nOVERLAY INTERACTIONS:\n${interactions || '(none)'}`,
+  ].join('\n')
+}
+
+async function summarizeListenSessionInBackground(sessionId) {
+  if (!sessionId || sessionSummaryJobs.has(sessionId)) return
+  sessionSummaryJobs.add(sessionId)
+  listenSessionSummaries.markSummaryGenerating(sessionId)
+  try {
+    const session = listenSessionSummaries.getSummaryById(sessionId)
+    if (!session) throw new Error('Session not found')
+    const provider = store.get('provider') || 'groq'
+    const keyField = providers.getApiKeyField(provider)
+    const apiKey = store.get(keyField)
+    if (!apiKey) throw new Error('No API key configured for summary generation')
+    const getStore = (k) => store.get(k)
+    const model = providers.getModelForProvider(provider, getStore)
+    const messages = [
+      {
+        role: 'system',
+        content: [
+          'You summarize meeting sessions.',
+          'Output MUST be exactly one stylish bullet-point section.',
+          'No headings. No numbered lists. No intro/outro sentence.',
+          'Return 6 to 10 bullets, each one line, each under 22 words.',
+          'Use markdown "-" bullets only.',
+          'Each bullet should start with a short plain label, e.g. "- Decision: ...".',
+          'Do NOT use markdown emphasis characters (*, **, _, __) anywhere.',
+          'Cover only facts that actually appear in the session data.',
+          'If a category has no evidence, OMIT it entirely.',
+          'NEVER output placeholder bullets like "No blockers mentioned" or "No risks mentioned".',
+          'Prefer concrete details over generic statements.',
+          'At least 2 bullets must include specific technical/detail evidence from transcript/Q&A.',
+          'If a fact is uncertain, prefix that bullet with "(uncertain)".',
+          'Do not invent facts not present in input.',
+        ].join('\n'),
+      },
+      {
+        role: 'user',
+        content: buildSessionSummaryPrompt(session),
+      },
+    ]
+    let out = ''
+    for await (const token of getAiClient().streamChat(
+      provider,
+      apiKey,
+      { messages, model, maxTokens: 420 },
+      getStore,
+    )) {
+      out += token
+    }
+    const text = String(out || '').trim()
+    if (!text) throw new Error('LLM returned empty summary')
+    listenSessionSummaries.setSummaryReady(sessionId, text)
+    sendToSettingsWindow('listen-session-summaries:update')
+  } catch (e) {
+    listenSessionSummaries.setSummaryError(sessionId, e?.message || 'Summary generation failed')
+    sendToSettingsWindow('listen-session-summaries:update')
+  } finally {
+    sessionSummaryJobs.delete(sessionId)
+  }
+}
+
+function stopCalendarReminderPoll() {
+  if (calendarReminderTimer) {
+    clearInterval(calendarReminderTimer)
+    calendarReminderTimer = null
+  }
+}
+
+function makeCalendarReminderKey(eventId, reminderMinutes) {
+  return `${String(eventId || '')}::${Number(reminderMinutes || 0)}`
+}
+
+function shouldNotifyForMeetingStart({ startIso, reminderMinutes }) {
+  const s = new Date(String(startIso || '')).getTime()
+  if (!Number.isFinite(s)) return false
+  const now = Date.now()
+  const target = s - Number(reminderMinutes || 0) * 60 * 1000
+  const lag = now - target
+  // Fire when target just passed in this polling window.
+  return lag >= 0 && lag <= CALENDAR_REMINDER_POLL_MS + 5000
+}
+
+async function runCalendarReminderTick() {
+  if (store.get('calendarRemindersEnabled') === false) return
+  const status = googleCalendar.getConnectionStatus((k) => store.get(k))
+  if (!status.connected) return
+  const reminderMinutes = Math.max(0, Number(store.get('calendarReminderMinutes') || 0))
+  try {
+    const out = await googleCalendar.listUpcomingAcceptedMeetings(
+      (k) => store.get(k),
+      (k, v) => store.set(k, v),
+    )
+    const meetings = Array.isArray(out?.meetings) ? out.meetings : []
+    for (const m of meetings) {
+      if (!shouldNotifyForMeetingStart({ startIso: m.start, reminderMinutes })) continue
+      const dedupeKey = makeCalendarReminderKey(m.id, reminderMinutes)
+      if (calendarReminderSentKeys.has(dedupeKey)) continue
+      calendarReminderSentKeys.add(dedupeKey)
+      const title = reminderMinutes > 0
+        ? `Meeting starts in ${reminderMinutes} min`
+        : 'Meeting is starting now'
+      const body = `${String(m.title || 'Upcoming meeting').slice(0, 120)}`
+      sendToOverlay('notify', { message: `📅 ${title}: ${body}` })
+      try {
+        new Notification({ title: 'ShadowAssist', body: `${title}: ${body}` }).show()
+      } catch (_) {}
+    }
+  } catch (_) {}
+}
+
+function startCalendarReminderPoll() {
+  stopCalendarReminderPoll()
+  void runCalendarReminderTick()
+  calendarReminderTimer = setInterval(() => {
+    void runCalendarReminderTick()
+  }, CALENDAR_REMINDER_POLL_MS)
 }
 
 function getDisplayBounds() {
@@ -697,6 +835,7 @@ function startSession() {
   if (sessionActive) return
   sessionActive = true
   sessionMemory.wipe()
+  listenSessionSummaries.startSession()
   updateTrayIcon()
   if (tray?.updateTrayMenu) tray.updateTrayMenu()
   sendToOverlay('session-status', true)
@@ -705,6 +844,7 @@ function startSession() {
 function stopSession() {
   if (!sessionActive) return
   sessionActive = false
+  const stopped = listenSessionSummaries.stopSession()
   sessionMemory.wipe()
   clearMeetingToastDedupe()
   screenOcrText = ''
@@ -712,6 +852,9 @@ function stopSession() {
   updateTrayIcon()
   if (tray?.updateTrayMenu) tray.updateTrayMenu()
   sendToOverlay('session-status', false)
+  // Fresh session should be able to notify upcoming meetings again.
+  if (calendarReminderSentKeys.size > 500) calendarReminderSentKeys.clear()
+  if (stopped?.id) void summarizeListenSessionInBackground(stopped.id)
 }
 
 /** Session lines included when overlay did not pass a buffer (tight = no stale replay). */
@@ -890,6 +1033,12 @@ async function handleAskAI(userQuestion, audioTranscript, _askMeta = {}) {
         })()
       : null
 
+  const askSummaryId = listenSessionSummaries.beginAsk({
+    question: userQ || _askMeta?.typedQuestion || '',
+    askSource: displayAskSource,
+    promptPreview: userTurnText,
+  })
+
   sendToOverlay('ai-start', { askSource: displayAskSource, transcriptEcho })
   llmResponseInFlight = true
 
@@ -933,8 +1082,11 @@ async function handleAskAI(userQuestion, audioTranscript, _askMeta = {}) {
     }
     if (!abortController.signal.aborted) {
       lastResponse = fullText
+      listenSessionSummaries.completeAsk(askSummaryId, fullText)
       // One completed answer = consume mic context; next turn is OCR + new speech only.
       sessionMemory.clearTranscript()
+    } else {
+      listenSessionSummaries.failAsk(askSummaryId, 'Aborted')
     }
   } catch (err) {
     if (timeToFirstTokenStarted && !sawFirstToken) {
@@ -944,6 +1096,7 @@ async function handleAskAI(userQuestion, audioTranscript, _askMeta = {}) {
     }
     if (err.name === 'AbortError' || abortController.signal.aborted) sendToOverlay('ai-aborted')
     else sendToOverlay('ai-error', err.message || 'Request failed')
+    listenSessionSummaries.failAsk(askSummaryId, err?.message || 'Request failed')
   } finally {
     llmResponseInFlight = false
     if (currentAbortController === abortController) currentAbortController = null
@@ -1082,7 +1235,14 @@ function setupIPC() {
   })
   ipcMain.handle('session-transcript-append', (_, segment) => {
     sessionMemory.appendTranscriptSegment(segment)
+    listenSessionSummaries.recordTranscript(segment)
     return true
+  })
+  ipcMain.handle('listen-session-summaries:get', () => listenSessionSummaries.getSummaries())
+  ipcMain.handle('listen-session-summaries:clear', () => {
+    listenSessionSummaries.clearCompletedSummaries()
+    sendToSettingsWindow('listen-session-summaries:update')
+    return { ok: true }
   })
   ipcMain.handle('delete-all-data-relaunch', () => {
     store.clear()
@@ -1116,6 +1276,29 @@ function setupIPC() {
   })
 
   ipcMain.handle('get-store', (_, key) => store.get(key))
+  ipcMain.handle('google-calendar:get-status', () => {
+    return googleCalendar.getConnectionStatus((k) => store.get(k))
+  })
+  ipcMain.handle('google-calendar:connect', async () => {
+    return googleCalendar.completeGoogleOAuthWithLoopback(
+      (k) => store.get(k),
+      (k, v) => store.set(k, v),
+    )
+  })
+  ipcMain.handle('google-calendar:cancel-connect', () => {
+    return googleCalendar.cancelGoogleOAuthInProgress()
+  })
+  ipcMain.handle('google-calendar:disconnect', () => {
+    googleCalendar.disconnectGoogleCalendar((k, v) => store.set(k, v))
+    return { connected: false, connectedEmail: '' }
+  })
+  ipcMain.handle('google-calendar:list-upcoming', async () => {
+    const out = await googleCalendar.listUpcomingAcceptedMeetings(
+      (k) => store.get(k),
+      (k, v) => store.set(k, v),
+    )
+    return { ok: true, ...out }
+  })
   ipcMain.handle('set-store', (_, key, value) => {
     let stored = value
     if (key === 'assistAutoTrigger') {
@@ -1330,6 +1513,7 @@ async function initApp() {
   createOverlayWindow()
   showOverlay()
   startMeetingForegroundPoll()
+  startCalendarReminderPoll()
 }
 
 app.whenReady().then(() => {

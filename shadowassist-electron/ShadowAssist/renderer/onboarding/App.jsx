@@ -5,11 +5,8 @@ import React, { useState, useEffect, useMemo } from 'react'
 import { applyUiAccentTheme, normalizeUiAccentId } from '../shared/uiAccentThemes'
 import { createIpcShim } from '../shared/ipcShim'
 import AppWindowFrame from '../shared/AppWindowFrame'
-import * as baseSystemPrompt from '../../lib/defaultSystemPrompt.js'
 
 const ipc = createIpcShim()
-const DEFAULT_SYSTEM_PROMPT =
-  baseSystemPrompt.DEFAULT_SYSTEM_PROMPT ?? baseSystemPrompt.default?.DEFAULT_SYSTEM_PROMPT
 
 const PROVIDERS = [
   { id: 'groq', label: 'Groq', badge: 'FAST', color: '#22c55e', desc: 'Llama 3.3 70B — low latency', placeholder: 'gsk_...', link: 'https://console.groq.com/keys' },
@@ -21,7 +18,6 @@ const PRESETS = [
   { id: 'builtin', label: 'ShadowAssist (built-in)', prompt: '' },
   { id: 'meeting', label: 'Meeting', prompt: 'I am in a meeting. Help me understand, contribute, and summarize.' },
   { id: 'sync', label: 'Stand-up / sync', prompt: 'I am in a team stand-up or sync. Keep suggestions brief and action-oriented.' },
-  { id: 'builtin_copy', label: 'Edit from built-in…', prompt: DEFAULT_SYSTEM_PROMPT },
 ]
 
 const BYOK_CHECKS = [

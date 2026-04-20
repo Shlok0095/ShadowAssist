@@ -162,6 +162,8 @@ function StatusBar({ status, sessionOn, expanded, onToggleSession, onOpenSetting
 
           <button
             type="button"
+            onMouseDown={(e) => e.stopPropagation()}
+            onMouseUp={(e) => e.stopPropagation()}
             onClick={(e) => { e.stopPropagation(); onOpenSettings() }}
             title="Settings"
             className="cursor-default flex h-7 w-7 items-center justify-center rounded-lg text-zinc-600 transition-all duration-150 hover:bg-white/[0.06] hover:text-zinc-300 active:scale-95"

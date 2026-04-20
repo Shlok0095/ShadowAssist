@@ -24,6 +24,9 @@ const ENCRYPTED_KEYS = [
   'fireworksKey',
   'cerebrasKey',
   'customOpenaiKey',
+  'googleCalendarClientSecret',
+  'googleCalendarAccessToken',
+  'googleCalendarRefreshToken',
 ]
 
 const schema = {
@@ -57,6 +60,17 @@ const schema = {
   perplexityModel: { type: 'string', default: 'sonar' },
   googleKey: { type: 'string', default: '' },
   googleModel: { type: 'string', default: 'gemini-2.0-flash' },
+  /** Google Calendar OAuth (user-provided Google Cloud desktop app credentials). */
+  googleCalendarClientId: { type: 'string', default: '' },
+  googleCalendarClientSecret: { type: 'string', default: '' },
+  googleCalendarAccessToken: { type: 'string', default: '' },
+  googleCalendarRefreshToken: { type: 'string', default: '' },
+  googleCalendarTokenExpiry: { type: 'number', default: 0 },
+  googleCalendarConnectedEmail: { type: 'string', default: '' },
+  /** Calendar reminder notifications (upcoming accepted meetings). */
+  calendarRemindersEnabled: { type: 'boolean', default: true },
+  /** Minutes before start to notify (0 = at start time). */
+  calendarReminderMinutes: { type: 'number', default: 5 },
   fireworksKey: { type: 'string', default: '' },
   fireworksModel: { type: 'string', default: 'accounts/fireworks/models/llama-v3p3-70b-instruct' },
   /** Fireworks Whisper STT (separate audio host, same API key) */
