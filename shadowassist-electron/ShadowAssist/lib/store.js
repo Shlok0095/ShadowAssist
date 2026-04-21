@@ -71,6 +71,8 @@ const schema = {
   calendarRemindersEnabled: { type: 'boolean', default: true },
   /** Minutes before start to notify (0 = at start time). */
   calendarReminderMinutes: { type: 'number', default: 5 },
+  /** Persisted listen session summaries shown in Settings > Meetings. */
+  listenSessionSummaries: { type: 'array', default: [] },
   fireworksKey: { type: 'string', default: '' },
   fireworksModel: { type: 'string', default: 'accounts/fireworks/models/llama-v3p3-70b-instruct' },
   /** Fireworks Whisper STT (separate audio host, same API key) */

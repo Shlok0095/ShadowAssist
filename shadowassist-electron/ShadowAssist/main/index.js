@@ -52,6 +52,11 @@ const listenSessionSummaries = require('../lib/listenSessionSummaries')
 const { detectMeetingForegroundOrScan, MEETING_POLL_MS } = require('../lib/meetingForegroundWindows')
 const googleCalendar = require('../lib/googleCalendar')
 
+listenSessionSummaries.initPersistence({
+  load: () => store.get('listenSessionSummaries'),
+  save: (rows) => store.set('listenSessionSummaries', rows),
+})
+
 let aiClientModule = null
 function getAiClient() {
   if (!aiClientModule) aiClientModule = require('../lib/aiClient')
@@ -146,6 +151,21 @@ function buildSessionSummaryPrompt(session) {
   ].join('\n')
 }
 
+function buildFallbackSessionSummary(session) {
+  const lines = Array.isArray(session?.transcript) ? session.transcript : []
+  const asks = Array.isArray(session?.asks) ? session.asks : []
+  const responses = asks.filter((a) => String(a?.response || '').trim())
+  const uniqueSpeeches = Array.from(new Set(lines.map((t) => String(t?.text || '').trim()).filter(Boolean)))
+  const bullets = []
+  bullets.push(`- Session: ${session?.startedAt || 'unknown'} to ${session?.endedAt || 'unknown'}.`)
+  if (uniqueSpeeches[0]) bullets.push(`- Key point: ${uniqueSpeeches[0].slice(0, 140)}.`)
+  if (uniqueSpeeches[1]) bullets.push(`- Additional context: ${uniqueSpeeches[1].slice(0, 140)}.`)
+  bullets.push(`- Transcript activity: ${lines.length} captured lines.`)
+  bullets.push(`- Q&A activity: ${asks.length} prompts, ${responses.length} answered responses.`)
+  if (responses[0]?.response) bullets.push(`- Example response: ${String(responses[0].response).slice(0, 150)}.`)
+  return bullets.slice(0, 8).join('\n')
+}
+
 async function summarizeListenSessionInBackground(sessionId) {
   if (!sessionId || sessionSummaryJobs.has(sessionId)) return
   sessionSummaryJobs.add(sessionId)
@@ -156,7 +176,11 @@ async function summarizeListenSessionInBackground(sessionId) {
     const provider = store.get('provider') || 'groq'
     const keyField = providers.getApiKeyField(provider)
     const apiKey = store.get(keyField)
-    if (!apiKey) throw new Error('No API key configured for summary generation')
+    if (!apiKey) {
+      listenSessionSummaries.setSummaryReady(sessionId, buildFallbackSessionSummary(session))
+      sendToSettingsWindow('listen-session-summaries:update')
+      return
+    }
     const getStore = (k) => store.get(k)
     const model = providers.getModelForProvider(provider, getStore)
     const messages = [
@@ -198,7 +222,13 @@ async function summarizeListenSessionInBackground(sessionId) {
     listenSessionSummaries.setSummaryReady(sessionId, text)
     sendToSettingsWindow('listen-session-summaries:update')
   } catch (e) {
-    listenSessionSummaries.setSummaryError(sessionId, e?.message || 'Summary generation failed')
+    const session = listenSessionSummaries.getSummaryById(sessionId)
+    const fallback = session ? buildFallbackSessionSummary(session) : ''
+    if (fallback) {
+      listenSessionSummaries.setSummaryReady(sessionId, fallback)
+    } else {
+      listenSessionSummaries.setSummaryError(sessionId, e?.message || 'Summary generation failed')
+    }
     sendToSettingsWindow('listen-session-summaries:update')
   } finally {
     sessionSummaryJobs.delete(sessionId)
