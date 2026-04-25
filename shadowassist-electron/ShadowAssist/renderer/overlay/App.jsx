@@ -1295,7 +1295,11 @@ export default function App() {
   async function transcribe(blob, mimeType, audioPathKey) {
     try {
       // Local mode uses Moonshine streaming callbacks — MediaRecorder chunks never reach here.
-      if (sttMode === 'local') return
+      // Must read sttMode from the store, not React state: setSttMode in startMic is async, so
+      // `sttMode` can still be "local" on the first cloud chunks and this would return early
+      // (no transcription) until a re-render — looked like "Groq / cloud not listening".
+      const mode = (await ipc?.invoke('get-store', 'sttMode')) === 'cloud' ? 'cloud' : 'local'
+      if (mode === 'local') return
 
       // ── CLOUD path (Groq / OpenAI Whisper API) ──────────────────────────────
       const cfg = await ipc?.invoke('get-transcription-config')
