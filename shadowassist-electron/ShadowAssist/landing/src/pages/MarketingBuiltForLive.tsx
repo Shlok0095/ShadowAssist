@@ -15,6 +15,10 @@ const bullets = [
     body: 'Wire Groq, OpenAI, Anthropic, OpenRouter, Gemini, NVIDIA NIM, or any OpenAI-compatible endpoint. Swap latency-optimized vs. reasoning-heavy models per workload without reinstalling.',
   },
   {
+    title: 'Meetings hub: calendar + recaps',
+    body: 'Connect Google Calendar (your OAuth app) to see accepted meetings, optional Windows reminders before start, and a Meeting Summary list fed by Listen sessions—plain bullet recaps stored locally so they survive app restarts, with a text fallback if the LLM is unavailable.',
+  },
+  {
     title: 'Operational discretion',
     body: 'Hotkey-driven visibility, compact chrome, and local-first settings—built for environments where subtlety matters as much as throughput.',
   },

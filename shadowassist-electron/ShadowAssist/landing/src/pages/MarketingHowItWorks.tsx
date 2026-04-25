@@ -17,6 +17,11 @@ const steps = [
     title: 'Invoke the overlay on demand',
     body: 'Map a global hotkey, then pull the panel over slides, IDEs, or the browser. Type prompts by default; enable listening or screen capture only when the workflow warrants it.',
   },
+  {
+    n: '04',
+    title: 'Use Meetings (optional) and session recaps',
+    body: 'In Settings → Meetings you can connect Google Calendar to list accepted meetings and turn on reminder notifications. Each Listen/Stop cycle can produce a bullet-point meeting summary; summaries are kept on your PC. Persona and system prompt can use the built-in base or your own Shadow profile text.',
+  },
 ] as const
 
 const ctaClass =
@@ -29,7 +34,7 @@ export function MarketingHowItWorks() {
         <p className="font-mono text-xs font-medium uppercase tracking-[0.22em] text-zinc-500">Guide</p>
         <h1 className="mt-3 font-display text-3xl font-semibold tracking-[-0.02em] sm:text-4xl">How it works</h1>
         <p className="mt-3 font-mono text-sm leading-relaxed tracking-wide text-zinc-500">
-          From artifact download to first grounded answer—three deliberate steps, no hand-wavy onboarding.
+          From artifact download to first grounded answer—four deliberate steps, no hand-wavy onboarding.
         </p>
 
         <ol className="mt-12 space-y-8">

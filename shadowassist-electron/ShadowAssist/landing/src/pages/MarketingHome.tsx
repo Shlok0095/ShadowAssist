@@ -150,6 +150,27 @@ export function MarketingHome() {
                 Fuse optional audio and viewport signals into one overlay—BYOK, provider-direct TLS, no baked-in keys. The
                 preview cycles voice → model output → structured screen extract → grounded synthesis.
               </p>
+              <p className="mx-auto mt-4 max-w-2xl border-l-2 border-emerald-500/40 pl-4 font-mono text-[0.8125rem] leading-[1.75] tracking-wide text-zinc-300 sm:text-sm lg:mx-0 lg:max-w-[36rem]">
+                <span className="text-emerald-400/90">In the app today:</span> Settings →{' '}
+                <strong className="font-semibold text-zinc-200">Meetings</strong> — optional Google Calendar (accepted
+                invites + reminders), plus <strong className="font-semibold text-zinc-200">Meeting Summary</strong> from
+                each Listen/Stop session, saved on your machine after you close the app.
+              </p>
+              <ul
+                className="mx-auto mt-4 flex max-w-2xl flex-wrap justify-center gap-2 font-mono text-[10px] uppercase tracking-wider text-zinc-500 lg:mx-0 lg:justify-start"
+                aria-label="Feature highlights"
+              >
+                {['Listen / Stop sessions', 'Bullet meeting recaps', 'Calendar + reminders', 'Local summary history', 'Persona in Shadow profile'].map(
+                  (label) => (
+                    <li
+                      key={label}
+                      className="rounded-full border border-zinc-700/80 bg-zinc-900/50 px-3 py-1.5 text-zinc-400"
+                    >
+                      {label}
+                    </li>
+                  )
+                )}
+              </ul>
             </FadeIn>
             <FadeIn delayMs={130} className="relative mt-8 flex flex-col items-center gap-3 sm:mt-10 lg:items-start">
               <div className="pointer-events-none absolute -left-4 top-1/2 h-36 w-64 -translate-y-1/2 rounded-full bg-zinc-500/10 blur-[48px] lg:left-0" aria-hidden />
@@ -181,6 +202,70 @@ export function MarketingHome() {
               aria-hidden
             />
             <HeroLiveMock className="relative ring-1 ring-zinc-700/50" />
+          </FadeIn>
+        </div>
+      </section>
+
+      {/* Shipped product surface — visible add-ons */}
+      <section
+        id="app-features"
+        className="scroll-mt-24 border-t border-[#2a2a2a] bg-gradient-to-b from-zinc-950/40 to-transparent px-4 py-14 sm:px-8 sm:py-16 md:px-10 lg:px-14 xl:px-16"
+      >
+        <div className="mx-auto w-full max-w-[90rem]">
+          <FadeIn>
+            <p className="text-center font-mono text-xs font-medium uppercase tracking-[0.2em] text-emerald-500/80">
+              Shipping now
+            </p>
+            <h2 className="mt-3 text-center font-display text-2xl font-semibold tracking-[-0.02em] text-white sm:text-3xl md:text-[2rem]">
+              What the Windows app includes
+            </h2>
+            <p className="mx-auto mt-3 max-w-3xl text-center font-mono text-sm leading-relaxed tracking-wide text-zinc-500">
+              These are in the current build—not future roadmap copy. Use them from Settings and the overlay after you install.
+            </p>
+          </FadeIn>
+          <div className="mt-10 grid gap-4 sm:grid-cols-2 lg:grid-cols-2 xl:grid-cols-4 xl:gap-5">
+            {[
+              {
+                k: '01',
+                title: 'Meetings tab',
+                body:
+                  'Connect Google Calendar with your own OAuth app credentials. See upcoming accepted meetings the same way they appear after you accept an invite, and optionally get Windows notifications before start time.',
+              },
+              {
+                k: '02',
+                title: 'Meeting Summary list',
+                body:
+                  'Each Listen session (Start → Stop) can produce a concise bullet summary. Pick a session by time range and read the recap—no calendar required for the summary itself; it is driven by Listen data.',
+              },
+              {
+                k: '03',
+                title: 'Recaps that survive restarts',
+                body:
+                  'Session summaries are stored in your local app data so they stay after you quit or reboot. You can clear past summaries from the same panel when you want a clean slate.',
+              },
+              {
+                k: '04',
+                title: 'Prompts & persona',
+                body:
+                  'A built-in default system prompt lives in the app backend for consistent behavior; you can still override with your own text in the Shadow profile when you need a custom voice or format.',
+              },
+            ].map((row, i) => (
+              <FadeIn key={row.k} delayMs={i * 60}>
+                <article className="flex h-full flex-col rounded-2xl border border-[#2a2a2a] bg-[#0f0f0f] p-6 sm:p-7">
+                  <span className="font-mono text-xs font-semibold tabular-nums text-emerald-500/70">{row.k}</span>
+                  <h3 className="mt-2 font-display text-lg font-semibold tracking-[-0.01em] text-white">{row.title}</h3>
+                  <p className="mt-2 flex-1 text-sm leading-relaxed tracking-wide text-zinc-500">{row.body}</p>
+                </article>
+              </FadeIn>
+            ))}
+          </div>
+          <FadeIn delayMs={200} className="mt-10 text-center">
+            <Link
+              to="/docs/getting-started"
+              className="font-mono text-sm text-zinc-500 underline decoration-zinc-600 underline-offset-4 transition-colors hover:text-zinc-200"
+            >
+              Step-by-step: Getting started →
+            </Link>
           </FadeIn>
         </div>
       </section>
