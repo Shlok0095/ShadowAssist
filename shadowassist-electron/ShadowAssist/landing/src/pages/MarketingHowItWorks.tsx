@@ -19,8 +19,8 @@ const steps = [
   },
   {
     n: '04',
-    title: 'Use Meetings (optional) and session recaps',
-    body: 'In Settings → Meetings you can connect Google Calendar to list accepted meetings and turn on reminder notifications. Each Listen/Stop cycle can produce a bullet-point meeting summary; summaries are kept on your PC. Persona and system prompt can use the built-in base or your own Shadow profile text.',
+    title: 'Optional calendar & session recaps',
+    body: 'Wire Google Calendar if you want accepted meetings in one list and light reminders. Ending a listen session can produce a short bullet recap stored locally. Persona: built-in default or your own profile text—same as in the app.',
   },
 ] as const
 

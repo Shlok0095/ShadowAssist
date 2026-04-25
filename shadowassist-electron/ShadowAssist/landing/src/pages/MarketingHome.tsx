@@ -145,27 +145,14 @@ export function MarketingHome() {
                 Fuse optional audio and viewport signals into one overlay—BYOK, provider-direct TLS, no baked-in keys. The
                 preview cycles voice → model output → structured screen extract → grounded synthesis.
               </p>
-              <p className="mx-auto mt-4 max-w-2xl border-l-2 border-emerald-500/40 pl-4 font-mono text-[0.8125rem] leading-[1.75] tracking-wide text-zinc-300 sm:text-sm lg:mx-0 lg:max-w-[36rem]">
-                <span className="text-emerald-400/90">In the app today:</span> Settings →{' '}
-                <strong className="font-semibold text-zinc-200">Meetings</strong> — optional Google Calendar (accepted
-                invites + reminders), plus <strong className="font-semibold text-zinc-200">Meeting Summary</strong> from
-                each Listen/Stop session, saved on your machine after you close the app.
-              </p>
-              <ul
-                className="mx-auto mt-4 flex max-w-2xl flex-wrap justify-center gap-2 font-mono text-[10px] uppercase tracking-wider text-zinc-500 lg:mx-0 lg:justify-start"
-                aria-label="Feature highlights"
+              <div
+                className="mx-auto mt-5 max-w-2xl rounded-xl border border-white/[0.08] bg-white/[0.03] px-4 py-3 text-left font-mono text-[0.7rem] leading-relaxed tracking-wide text-zinc-500 sm:text-xs lg:mx-0"
               >
-                {['Listen / Stop sessions', 'Bullet meeting recaps', 'Calendar + reminders', 'Local summary history', 'Persona in Shadow profile'].map(
-                  (label) => (
-                    <li
-                      key={label}
-                      className="rounded-full border border-zinc-700/80 bg-zinc-900/50 px-3 py-1.5 text-zinc-400"
-                    >
-                      {label}
-                    </li>
-                  )
-                )}
-              </ul>
+                <span className="text-white/70">Floating overlay</span>
+                <span className="text-zinc-600"> · </span>
+                Tray-resident, hotkey-friendly—answers stream in a slim panel with no second monitor or browser tab
+                hand-off.
+              </div>
             </FadeIn>
             <FadeIn delayMs={130} className="relative mt-8 flex flex-col items-center gap-3 sm:mt-10 lg:items-start">
               <div className="pointer-events-none absolute -left-4 top-1/2 h-36 w-64 -translate-y-1/2 rounded-full bg-zinc-500/10 blur-[48px] lg:left-0" aria-hidden />
@@ -208,14 +195,15 @@ export function MarketingHome() {
       >
         <div className="mx-auto w-full max-w-[90rem]">
           <FadeIn>
-            <p className="text-center font-mono text-xs font-medium uppercase tracking-[0.2em] text-emerald-500/80">
-              Shipping now
+            <p className="text-center font-mono text-xs font-medium uppercase tracking-[0.2em] text-zinc-500">
+              In the product
             </p>
             <h2 className="mt-3 text-center font-display text-2xl font-semibold tracking-[-0.02em] text-white sm:text-3xl md:text-[2rem]">
               What the Windows app includes
             </h2>
             <p className="mx-auto mt-3 max-w-3xl text-center font-mono text-sm leading-relaxed tracking-wide text-zinc-500">
-              These are in the current build—not future roadmap copy. Use them from Settings and the overlay after you install.
+              Shipped in the current build—calendar hooks, session recaps, and persona controls sit alongside the overlay and
+              tray, all with the same matte chrome as the rest of the app.
             </p>
           </FadeIn>
           <div className="mt-10 grid gap-4 sm:grid-cols-2 lg:grid-cols-2 xl:grid-cols-4 xl:gap-5">
@@ -246,8 +234,8 @@ export function MarketingHome() {
               },
             ].map((row, i) => (
               <FadeIn key={row.k} delayMs={i * 60}>
-                <article className="flex h-full flex-col rounded-2xl border border-[#2a2a2a] bg-[#0f0f0f] p-6 sm:p-7">
-                  <span className="font-mono text-xs font-semibold tabular-nums text-emerald-500/70">{row.k}</span>
+                <article className="flex h-full flex-col rounded-2xl border border-white/[0.07] bg-[#0c0c0c] p-6 sm:p-7">
+                  <span className="font-mono text-xs font-semibold tabular-nums text-white/35">{row.k}</span>
                   <h3 className="mt-2 font-display text-lg font-semibold tracking-[-0.01em] text-white">{row.title}</h3>
                   <p className="mt-2 flex-1 text-sm leading-relaxed tracking-wide text-zinc-500">{row.body}</p>
                 </article>
@@ -273,7 +261,7 @@ export function MarketingHome() {
               Inference-adjacent, unified
             </h2>
             <p className="mx-auto mt-3 max-w-3xl text-center font-mono text-sm leading-relaxed tracking-wide text-zinc-500">
-              Listening, low-latency answers, screen grounding, session recaps, and a discreet surface—one panel.
+              Listening, low-latency answers, screen grounding, and a compact overlay surface—one panel.
             </p>
           </FadeIn>
           <div className="mt-10 grid grid-cols-2 gap-3 [grid-template-columns:minmax(0,1fr)_minmax(0,1fr)] sm:mx-auto sm:mt-12 sm:max-w-2xl sm:gap-3 lg:max-w-4xl">
