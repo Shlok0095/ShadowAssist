@@ -82,6 +82,16 @@ function IconEye({ className = '' }: { className?: string }) {
   )
 }
 
+function IconCalendar({ className = '' }: { className?: string }) {
+  return (
+    <svg className={className} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" aria-hidden>
+      <rect x="3" y="5" width="18" height="16" rx="2" />
+      <path d="M3 10h18M8 3v4M16 3v4" strokeLinecap="round" />
+      <path d="M8 14h2M12 14h2M16 14h2M8 17h2M12 17h2" strokeLinecap="round" />
+    </svg>
+  )
+}
+
 const bento = [
   {
     icon: IconMic,
@@ -100,6 +110,12 @@ const bento = [
     title: 'Understands Your Screen',
     desc: 'When you allow it, structured text from the viewport informs the model—grounding without pasting screenshots.',
     span: 'lg:col-span-2',
+  },
+  {
+    icon: IconCalendar,
+    title: 'Meetings & recaps',
+    desc: 'Optional Google Calendar connection for accepted meetings and reminders. After each Listen session, generate a plain bullet summary—saved on your machine so it survives restarts.',
+    span: 'lg:col-span-1',
   },
   {
     icon: IconEye,
@@ -177,7 +193,7 @@ export function MarketingHome() {
               Inference-adjacent, unified
             </h2>
             <p className="mx-auto mt-3 max-w-3xl text-center font-mono text-sm leading-relaxed tracking-wide text-zinc-500">
-              Four primitives—listening, latency-bounded answers, viewport grounding, discreet UI—composed in one surface.
+              Listening, low-latency answers, screen grounding, session recaps, and a discreet surface—one panel.
             </p>
           </FadeIn>
           <div className="mt-12 grid auto-rows-fr gap-4 sm:grid-cols-2 sm:gap-5 lg:grid-cols-3 xl:gap-6">

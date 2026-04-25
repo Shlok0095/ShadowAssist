@@ -54,6 +54,16 @@ The panel is designed to avoid obvious “help” cues during screen sharing (fo
 
 If your chosen connection does not support microphone transcription on the same account, settings may ask you to add a **fallback** key from a provider that does—so the mic can still be transcribed while you use another service for answers.
 
+### Meetings, calendar, and recaps (optional)
+
+In **Settings → Meetings** you can:
+
+- **Connect Google Calendar (OAuth)** — after you add Google Cloud desktop-app credentials, ShadowAssist can list **upcoming accepted meetings** (the same kind you see in Calendar after you accept an invite from email).
+- **Reminders** — optional Windows notifications a few minutes before a meeting (or at start time, depending on your setting).
+- **Meeting summary** — when you end a Listen session with **Stop**, ShadowAssist can generate a **short bullet summary** of what was captured in that session (transcript, asks, and overlay activity in the app). The summary is **stored on your computer** in app settings, so it remains available after you close or restart the app. If a full model request cannot run (for example, no API key is configured for your active provider, or the provider call fails), the app falls back to a **simple text recap** built from the captured session so you still get bullets instead of an empty “error” state.
+
+This path does **not** require calendar integration: summaries come from the Listen session only. Calendar is an optional convenience layer for seeing scheduled meetings in one place.
+
 ---
 
 ## Asking for help
@@ -93,6 +103,7 @@ Settings open in a separate window (also reachable from the tray and via shortcu
 - **Profile** — Persona text, resume upload, and role/job notes; saved when you finish editing fields or upload.
 - **Display** — Accent color, panel opacity, answer text size, width and height, and snap positions on the primary monitor.
 - **Session** — Turn screen reading and microphone pipelines on or off, adjust how often the screen is read and how long audio segments are, with a control to restore default timings.
+- **Meetings** — Optional Google Calendar connection (OAuth + your own client ID/secret), meeting reminders, and **Listen session** summaries. Summaries are stored locally on your device.
 - **Shortcuts** — Global shortcuts for toggling the panel, asking, clearing the chat, starting or stopping the session, moving and scrolling the panel, opening settings, and copying the last full reply.
 
 Keys for providers are stored on your machine in encrypted form when your computer supports secure storage.

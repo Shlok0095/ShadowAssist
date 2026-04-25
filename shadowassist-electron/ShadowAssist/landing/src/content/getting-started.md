@@ -25,6 +25,7 @@ Closing the overlay does **not** quit the app. Right-click the tray icon → **Q
 - **Hotkeys** — Defaults are shown in Settings (toggle overlay, ask, clear, etc.).
 - **Listen** — Starts session capture when you enable it; **Stop** ends it.
 - **Settings** — Models, persona, appearance, stealth / content protection, and data reset.
+- **Meetings** (optional) — Connect Google Calendar to list accepted meetings and (optionally) get reminders. After you **Stop** listening, ShadowAssist can generate a **meeting summary** (bullets) from that session; summaries are **saved on this PC** so they are still there after you restart the app. If you have not set up an API key for your chosen model provider, you still get a short **offline-style recap** from the captured session text instead of a full LLM pass.
 
 ## Uninstall
 
