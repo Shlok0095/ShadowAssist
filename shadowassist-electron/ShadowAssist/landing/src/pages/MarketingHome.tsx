@@ -96,32 +96,27 @@ const bento = [
   {
     icon: IconMic,
     title: 'Real-time Listening',
-    desc: 'Optional audio path with explicit toggles—capture the last utterance, not a vague “always on” mic graph.',
-    span: 'lg:col-span-2',
+    desc: 'Explicit toggles; capture the last utterance, not a vague “always on” mic graph.',
   },
   {
     icon: IconBolt,
     title: 'Instant Answers',
-    desc: 'Token stream lands in the overlay; zero context switches when the meeting is moving.',
-    span: 'lg:col-span-1',
+    desc: 'Token stream in the overlay; no context switch when the meeting is moving.',
   },
   {
     icon: IconScreen,
     title: 'Understands Your Screen',
-    desc: 'When you allow it, structured text from the viewport informs the model—grounding without pasting screenshots.',
-    span: 'lg:col-span-2',
+    desc: 'Optional viewport text informs the model—grounding without pasting shots.',
   },
   {
     icon: IconCalendar,
     title: 'Meetings & recaps',
-    desc: 'Optional Google Calendar connection for accepted meetings and reminders. After each Listen session, generate a plain bullet summary—saved on your machine so it survives restarts.',
-    span: 'lg:col-span-1',
+    desc: 'Optional Google Calendar; bullet summaries after Listen/Stop, saved locally across restarts.',
   },
   {
     icon: IconEye,
     title: 'Works Invisibly',
-    desc: 'Hotkey-first chrome, minimal footprint—visible only when you summon it.',
-    span: 'lg:col-span-1',
+    desc: 'Hotkey-first, compact chrome—only visible when you summon it.',
   },
 ] as const
 
@@ -281,17 +276,27 @@ export function MarketingHome() {
               Listening, low-latency answers, screen grounding, session recaps, and a discreet surface—one panel.
             </p>
           </FadeIn>
-          <div className="mt-12 grid auto-rows-fr gap-4 sm:grid-cols-2 sm:gap-5 lg:grid-cols-3 xl:gap-6">
+          <div className="mt-10 grid grid-cols-2 gap-3 [grid-template-columns:minmax(0,1fr)_minmax(0,1fr)] sm:mx-auto sm:mt-12 sm:max-w-2xl sm:gap-3 lg:max-w-4xl">
             {bento.map((card, i) => (
-              <FadeIn key={card.title} delayMs={i * 55} className={card.span}>
+              <FadeIn
+                key={card.title}
+                delayMs={i * 50}
+                className={i === 4 ? 'col-span-2 flex justify-center' : 'min-w-0'}
+              >
                 <article
-                  className={`group flex h-full flex-col rounded-2xl border border-[#2a2a2a] bg-[#121212] p-6 transition-[transform,box-shadow,border-color] duration-300 hover:-translate-y-1 hover:border-zinc-600/60 hover:shadow-[0_24px_64px_-20px_rgba(0,0,0,0.55)] sm:p-7`}
+                  className={
+                    i === 4
+                      ? 'group flex h-full min-h-[10.25rem] w-full max-w-[calc(50%-0.375rem)] flex-col rounded-xl border border-[#2a2a2a] bg-[#121212] p-4 transition-[transform,box-shadow,border-color] duration-300 hover:-translate-y-0.5 hover:border-zinc-600/60 hover:shadow-[0_16px_40px_-16px_rgba(0,0,0,0.55)] sm:min-h-[9.75rem] sm:max-w-[calc((100%-0.75rem)/2)] sm:p-5'
+                      : 'group flex h-full min-h-[10.25rem] w-full min-w-0 flex-col rounded-xl border border-[#2a2a2a] bg-[#121212] p-4 transition-[transform,box-shadow,border-color] duration-300 hover:-translate-y-0.5 hover:border-zinc-600/60 hover:shadow-[0_16px_40px_-16px_rgba(0,0,0,0.55)] sm:min-h-[9.75rem] sm:p-5'
+                  }
                 >
-                  <div className="mb-4 flex h-11 w-11 items-center justify-center rounded-xl border border-[#2a2a2a] bg-[#0a0a0a] text-zinc-400 transition-colors group-hover:border-zinc-600 group-hover:text-zinc-200">
-                    <card.icon className="h-6 w-6" />
+                  <div className="mb-3 flex h-9 w-9 shrink-0 items-center justify-center rounded-lg border border-[#2a2a2a] bg-[#0a0a0a] text-zinc-400 transition-colors group-hover:border-zinc-600 group-hover:text-zinc-200">
+                    <card.icon className="h-4 w-4" />
                   </div>
-                  <h3 className="font-display text-lg font-semibold tracking-[-0.01em] text-white">{card.title}</h3>
-                  <p className="mt-2 text-sm leading-relaxed tracking-wide text-zinc-500">{card.desc}</p>
+                  <h3 className="font-display text-base font-semibold leading-snug tracking-[-0.01em] text-white">{card.title}</h3>
+                  <p className="mt-1.5 text-xs leading-relaxed tracking-wide text-zinc-500 line-clamp-4 sm:text-[0.8125rem]">
+                    {card.desc}
+                  </p>
                 </article>
               </FadeIn>
             ))}
