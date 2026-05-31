@@ -1,22 +1,30 @@
 /**
- * Build-time config (GitHub Actions / local .env).
+ * Build-time config (GitHub Actions / local .env / Vercel).
  * Fallbacks match the primary ShadowAssist repo when env is unset.
  */
 const repoOwner = import.meta.env.VITE_REPO_OWNER ?? 'Shlok0095'
 const repoName = import.meta.env.VITE_REPO_NAME ?? 'ShadowAssist'
 const rollingTag = import.meta.env.VITE_ROLLING_TAG ?? 'latest-stag'
+const siteOrigin = String(import.meta.env.VITE_SITE_ORIGIN ?? '').replace(/\/$/, '')
 
 /**
- * First-party download pathnames reserved for a future app origin or reverse proxy.
- * Today all user-facing `href`s use the resolved GitHub asset URLs below.
+ * First-party download pathnames — Vercel redirects in landing/vercel.json resolve to GitHub assets.
  */
 export const DOWNLOAD_ROUTES = {
-  windowsSetup: '/download/windows',
+  windowsSetup: '/download',
+  windowsSetupBeta: '/download/beta',
   windowsPortable: '/download/windows-portable',
 } as const
 
-function releaseAssetUrl(file: string) {
-  return `https://github.com/${repoOwner}/${repoName}/releases/download/${rollingTag}/${file}`
+function releaseAssetUrl(file: string, tag = rollingTag) {
+  return `https://github.com/${repoOwner}/${repoName}/releases/download/${tag}/${file}`
+}
+
+function vanityDownloadPath(pathname: string) {
+  const override = import.meta.env.VITE_DOWNLOAD_SETUP_URL
+  if (override) return override
+  if (siteOrigin) return `${siteOrigin}${pathname}`
+  return pathname
 }
 
 export const SITE = {
@@ -27,23 +35,29 @@ export const SITE = {
   get repoUrl() {
     return `https://github.com/${this.repoOwner}/${this.repoName}`
   },
-  /** Stable non-prerelease “Latest” release page (may lag rolling stag). */
   get releasesLatestUrl() {
-    return `${this.repoUrl}/releases/latest`
+    return `${this.repoUrl}/releases/tag/latest`
   },
-  /** Rolling stag build — matches CI `latest-stag` release. */
   get releasesRollingUrl() {
     return `${this.repoUrl}/releases/tag/${this.rollingTag}`
   },
-  /** NSIS installer — single source of truth for downloads (no API). */
+  /** Primary installer CTA — beta path on stag, production path on main/latest. */
   get downloadSetupExeUrl() {
+    const path =
+      rollingTag === 'latest-stag' ? DOWNLOAD_ROUTES.windowsSetupBeta : DOWNLOAD_ROUTES.windowsSetup
+    return vanityDownloadPath(path)
+  },
+  /** Staging / beta installer — vanity /download/beta (Vercel → GitHub latest-stag). */
+  get downloadSetupBetaExeUrl() {
+    return vanityDownloadPath(DOWNLOAD_ROUTES.windowsSetupBeta)
+  },
+  /** Direct GitHub fallback (stable stag rolling release). */
+  get downloadSetupExeDirectUrl() {
     return releaseAssetUrl('ShadowAssist-Setup.exe')
   },
-  /** Portable executable — single source of truth for downloads (no API). */
   get downloadPortableExeUrl() {
     return releaseAssetUrl('ShadowAssist.exe')
   },
-  /** SHA256SUMS.txt on the rolling release (CI must attach this asset). */
   get checksumsTxtUrl() {
     return releaseAssetUrl('SHA256SUMS.txt')
   },
@@ -51,6 +65,6 @@ export const SITE = {
     return `https://api.github.com/repos/${this.repoOwner}/${this.repoName}/releases/tags/${this.rollingTag}`
   },
   get apiLatestRelease() {
-    return `https://api.github.com/repos/${this.repoOwner}/${this.repoName}/releases/latest`
+    return `https://api.github.com/repos/${this.repoOwner}/${this.repoName}/releases/tags/latest`
   },
 } as const

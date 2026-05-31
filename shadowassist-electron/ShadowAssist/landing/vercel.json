@@ -1,0 +1,16 @@
+{
+  "buildCommand": "npm run build",
+  "outputDirectory": "dist",
+  "redirects": [
+    {
+      "source": "/download",
+      "destination": "https://github.com/Shlok0095/ShadowAssist/releases/download/latest/ShadowAssist-Setup.exe",
+      "permanent": false
+    },
+    {
+      "source": "/download/beta",
+      "destination": "https://github.com/Shlok0095/ShadowAssist/releases/download/latest-stag/ShadowAssist-Setup.exe",
+      "permanent": false
+    }
+  ]
+}

@@ -1558,6 +1558,71 @@ async function initApp() {
   showOverlay()
   startMeetingForegroundPoll()
   startCalendarReminderPoll()
+  setupAutoUpdater()
+}
+
+function readUpdateReleaseChannel() {
+  try {
+    const channelPath = path.join(process.resourcesPath, 'update-channel.txt')
+    if (fs.existsSync(channelPath)) {
+      const raw = fs.readFileSync(channelPath, 'utf8').trim()
+      if (raw) return raw
+    }
+  } catch (_) {}
+  return 'latest-stag'
+}
+
+function setupAutoUpdater() {
+  if (!app.isPackaged) return
+
+  const { autoUpdater } = require('electron-updater')
+  const channel = readUpdateReleaseChannel()
+  const feedBase = `https://github.com/Shlok0095/ShadowAssist/releases/download/${channel}/`
+
+  autoUpdater.setFeedURL({ provider: 'generic', url: feedBase })
+  autoUpdater.autoDownload = true
+  autoUpdater.autoInstallOnAppQuit = true
+  autoUpdater.allowPrerelease = channel !== 'latest'
+
+  const check = () => {
+    autoUpdater.checkForUpdates().catch((err) => {
+      console.error('[autoUpdater] check failed:', err?.message || err)
+    })
+  }
+
+  setInterval(check, 4 * 60 * 60 * 1000)
+  setTimeout(check, 10000)
+
+  autoUpdater.on('update-available', (info) => {
+    try {
+      new Notification({
+        title: 'ShadowAssist Update',
+        body: `Version ${info.version} is downloading in the background…`,
+      }).show()
+    } catch (e) {
+      console.warn('[autoUpdater] notification failed:', e?.message || e)
+    }
+  })
+
+  autoUpdater.on('update-downloaded', (info) => {
+    dialog
+      .showMessageBox({
+        type: 'info',
+        title: 'Update Ready',
+        message: `ShadowAssist ${info.version} has been downloaded.`,
+        detail: 'Restart now to apply the update, or it will be applied next time you launch.',
+        buttons: ['Restart Now', 'Later'],
+        defaultId: 0,
+      })
+      .then(({ response }) => {
+        if (response === 0) autoUpdater.quitAndInstall(false, true)
+      })
+      .catch((err) => console.error('[autoUpdater] dialog failed:', err?.message || err))
+  })
+
+  autoUpdater.on('error', (err) => {
+    console.error('[autoUpdater] error:', err?.message || err)
+  })
 }
 
 app.whenReady().then(() => {

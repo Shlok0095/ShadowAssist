@@ -1,7 +1,7 @@
-# Pushes to `stag` → rolling prerelease "latest-stag" (real GitHub Release with .exe files).
-# Push tag v*.*.* → normal release with checksums.
-# Website can link to:
-#   https://github.com/<owner>/<repo>/releases/download/latest-stag/ShadowAssist-Setup.exe
+# Pushes to `stag` → rolling prerelease "latest-stag".
+# Pushes to `main` / `master` → rolling release "latest" (production channel).
+# Push tag v*.*.* → versioned release with checksums.
+# Auto-update feed: releases/download/<channel>/latest.yml
 
 name: Release Windows
 
@@ -10,6 +10,8 @@ on:
   push:
     branches:
       - stag
+      - main
+      - master
     tags:
       - 'v*.*.*'
 
@@ -36,18 +38,36 @@ jobs:
           cache: npm
           cache-dependency-path: shadowassist-electron/ShadowAssist/package-lock.json
 
+      - name: Set release tag
+        id: tag
+        shell: bash
+        run: |
+          if [ "${{ github.ref_name }}" = "main" ] || [ "${{ github.ref_name }}" = "master" ]; then
+            echo "TAG=latest" >> "$GITHUB_OUTPUT"
+            echo "PRERELEASE=false" >> "$GITHUB_OUTPUT"
+            echo "CHANNEL=latest" >> "$GITHUB_OUTPUT"
+          else
+            echo "TAG=latest-stag" >> "$GITHUB_OUTPUT"
+            echo "PRERELEASE=true" >> "$GITHUB_OUTPUT"
+            echo "CHANNEL=latest-stag" >> "$GITHUB_OUTPUT"
+          fi
+
       - run: npm ci
 
+      - name: Write auto-update channel file
+        run: node scripts/write-update-channel.cjs ${{ steps.tag.outputs.CHANNEL }}
+
       - name: Build installers (NSIS + portable)
-        run: npm run dist:release
+        run: npm run build:win
         env:
           CSC_IDENTITY_AUTO_DISCOVERY: 'false'
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
       - name: SHA256 checksums
         run: npm run dist:checksums
 
-      - name: Stable installer name for rolling stag release
-        if: github.ref == 'refs/heads/stag'
+      - name: Stable installer name for rolling release
+        if: "!startsWith(github.ref, 'refs/tags/v')"
         shell: pwsh
         run: |
           $pkg = Get-Content package.json -Raw | ConvertFrom-Json
@@ -66,32 +86,35 @@ jobs:
           path: |
             shadowassist-electron/ShadowAssist/dist/ShadowAssist.exe
             shadowassist-electron/ShadowAssist/dist/ShadowAssist-Setup*.exe
+            shadowassist-electron/ShadowAssist/dist/latest.yml
             shadowassist-electron/ShadowAssist/dist/SHA256SUMS.txt
 
-      - name: Rolling GitHub Release (every stag push)
-        if: github.ref == 'refs/heads/stag'
+      - name: Rolling GitHub Release (stag / main)
+        if: "!startsWith(github.ref, 'refs/tags/v')"
         uses: ncipollo/release-action@v1
         with:
           token: ${{ secrets.GITHUB_TOKEN }}
-          tag: latest-stag
+          tag: ${{ steps.tag.outputs.TAG }}
           commit: ${{ github.sha }}
-          name: ShadowAssist — latest stag
+          name: ShadowAssist — ${{ steps.tag.outputs.TAG }}
           body: |
-            Automated build from **stag** @ [`${{ github.sha }}`](${{ github.server_url }}/${{ github.repository }}/commit/${{ github.sha }}).
+            Automated build from **${{ github.ref_name }}** @ [`${{ github.sha }}`](${{ github.server_url }}/${{ github.repository }}/commit/${{ github.sha }}).
 
             | Asset | Use |
             |------|-----|
-            | **ShadowAssist-Setup.exe** | NSIS installer (stable URL for your website) |
+            | **ShadowAssist-Setup.exe** | NSIS one-click installer |
             | **ShadowAssist.exe** | Portable |
+            | **latest.yml** | Auto-update metadata |
 
-            **Installer:** `${{ github.server_url }}/${{ github.repository }}/releases/download/latest-stag/ShadowAssist-Setup.exe`
-          prerelease: true
+            **Installer:** `${{ github.server_url }}/${{ github.repository }}/releases/download/${{ steps.tag.outputs.TAG }}/ShadowAssist-Setup.exe`
+          prerelease: ${{ steps.tag.outputs.PRERELEASE }}
           allowUpdates: true
           replacesArtifacts: true
           artifactErrorsFailBuild: true
           artifacts: |
             shadowassist-electron/ShadowAssist/dist/ShadowAssist-Setup.exe
             shadowassist-electron/ShadowAssist/dist/ShadowAssist.exe
+            shadowassist-electron/ShadowAssist/dist/latest.yml
             shadowassist-electron/ShadowAssist/dist/SHA256SUMS.txt
 
       - name: Versioned GitHub Release (git tag v*.*.*)
@@ -102,6 +125,7 @@ jobs:
           files: |
             shadowassist-electron/ShadowAssist/dist/ShadowAssist.exe
             shadowassist-electron/ShadowAssist/dist/ShadowAssist-Setup-*.exe
+            shadowassist-electron/ShadowAssist/dist/latest.yml
             shadowassist-electron/ShadowAssist/dist/SHA256SUMS.txt
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

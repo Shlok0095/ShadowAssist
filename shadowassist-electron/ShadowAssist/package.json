@@ -14,6 +14,7 @@
     "start:force": "npm run kill-electron && npm run start",
     "dist": "node scripts/make-win-ico.cjs && npm run build && node scripts/run-electron-builder.cjs --win portable",
     "dist:release": "node scripts/make-win-ico.cjs && npm run build && node scripts/run-electron-builder.cjs --win portable nsis",
+    "build:win": "npm run dist:release",
     "dist:dir": "node scripts/make-win-ico.cjs && npm run build && node scripts/run-electron-builder.cjs --win dir",
     "dist:checksums": "node scripts/sha256-dist.cjs",
     "open:portable": "start \"\" \"dist\\ShadowAssist.exe\"",
@@ -22,7 +23,12 @@
   "build": {
     "appId": "com.local.shadowassist.v2",
     "productName": "ShadowAssist",
-    "publish": null,
+    "publish": {
+      "provider": "github",
+      "owner": "Shlok0095",
+      "repo": "ShadowAssist",
+      "releaseType": "release"
+    },
     "forceCodeSigning": false,
     "asarUnpack": [
       "lib/meetingScanMeet.ps1"
@@ -43,6 +49,10 @@
       {
         "from": "legal",
         "to": "legal"
+      },
+      {
+        "from": "build/update-channel.txt",
+        "to": "update-channel.txt"
       }
     ],
     "win": {
@@ -56,19 +66,14 @@
       "artifactName": "ShadowAssist.exe"
     },
     "nsis": {
-      "oneClick": false,
+      "oneClick": true,
       "perMachine": false,
       "allowElevation": true,
-      "allowToChangeInstallationDirectory": true,
-      "license": "legal/terms.txt",
-      "installerIcon": "build/app.ico",
-      "uninstallerIcon": "build/app.ico",
-      "shortcutName": "ShadowAssist",
-      "createDesktopShortcut": false,
-      "include": "scripts/nsis/installer.nsh",
+      "runAfterFinish": true,
+      "createDesktopShortcut": true,
       "createStartMenuShortcut": true,
-      "menuCategory": "ShadowAssist",
-      "runAfterFinish": false,
+      "shortcutName": "ShadowAssist",
+      "include": "scripts/nsis/installer.nsh",
       "artifactName": "ShadowAssist-Setup-${version}.${ext}"
     }
   },
@@ -91,6 +96,7 @@
     "@grpc/proto-loader": "^0.7.15",
     "@moonshine-ai/moonshine-js": "^0.1.29",
     "electron-store": "^8.1.0",
+    "electron-updater": "^6.8.3",
     "highlight.js": "^11.11.1",
     "openai": "^4.20.0",
     "pdf-parse": "^1.1.1",
