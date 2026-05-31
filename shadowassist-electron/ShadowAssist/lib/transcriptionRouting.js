@@ -2,27 +2,11 @@
 // Unauthorized copying or distribution is prohibited.
 
 /**
- * Mic transcription routing.
- * Native = OpenAI-style POST …/v1/audio/transcriptions (multipart) OR Fireworks’ audio hosts (same API key).
- * Others need audioFallbackKey (Groq or OpenAI Whisper) unless you only type (no mic).
+ * Mic transcription routing (cloud only).
+ * Chat LLM uses store `provider`; cloud STT uses `sttProvider` (independent).
  */
 
-/** Provider IDs that use YOUR vendor key for STT — no 3rd-party fallback key */
-const NATIVE_STT_PROVIDER_IDS = ['groq', 'openai', 'together', 'mistral', 'fireworks']
-
-/** Short explanations for settings UI (research-backed; no OpenAI-style /audio/transcriptions on same base) */
-const STT_VENDOR_NOTES = {
-  anthropic: 'Claude API has no Whisper-style /audio/transcriptions on the same key.',
-  deepseek: 'DeepSeek public API is chat/reasoning only — no documented same-key STT endpoint.',
-  moonshot: 'Kimi chat API has no OpenAI-compatible /audio/transcriptions; Kimi-Audio is separate.',
-  nvidia: 'NIM chat models do not include a drop-in Whisper HTTP endpoint on the same key.',
-  xai: 'xAI offers Voice Agent (WebSocket), not a simple multipart /audio/transcriptions for our mic chunks.',
-  openrouter: 'OpenRouter uses chat completions + input_audio for some models — not our Whisper upload flow.',
-  perplexity: 'Perplexity API is chat/search — no same-key Whisper endpoint.',
-  google: 'Gemini transcribes via native Generate Content API, not the OpenAI-compat /audio/transcriptions path.',
-  cerebras: 'Cerebras inference API is text — no bundled STT.',
-  custom: 'Depends on your base URL; if GET /v1/models shows no audio models, use fallback for mic.',
-}
+const NATIVE_STT_PROVIDER_IDS = ['groq', 'openai', 'together', 'mistral', 'fireworks', 'nvidia']
 
 const OPENAI_STYLE_STT = {
   groq: {
@@ -50,6 +34,38 @@ const OPENAI_STYLE_STT = {
   },
 }
 
+const { DEFAULT_FUNCTION_ID: NVIDIA_PARAKEET_FUNCTION_ID } = require('./nvidiaRivaStt')
+
+const STT_MODEL_FIELDS = {
+  groq: 'groqWhisperModel',
+  together: 'togetherWhisperModel',
+  mistral: 'mistralSttModel',
+  fireworks: 'fireworksSttModel',
+  nvidia: 'nvidiaSttModel',
+}
+
+function nvidiaLanguageCode(get) {
+  const raw = get('micListenLanguage')
+  if (raw === 'en') return 'en-US'
+  if (raw === 'hi') return 'hi-IN'
+  return 'multi'
+}
+
+function nvidiaStt(get) {
+  const key = get('nvidiaKey')
+  if (!key) return null
+  const model = get('nvidiaSttModel') || 'parakeet-1.1b-rnnt-multilingual-asr'
+  return {
+    sttKind: 'nvidia_riva',
+    model,
+    apiKey: key,
+    functionId: NVIDIA_PARAKEET_FUNCTION_ID,
+    responseKind: 'text',
+    useWhisperSegmentMeta: false,
+    languageCode: nvidiaLanguageCode(get),
+  }
+}
+
 function fireworksStt(get) {
   const key = get('fireworksKey')
   if (!key) return null
@@ -66,7 +82,8 @@ function fireworksStt(get) {
   }
 }
 
-function fallbackTranscription(get) {
+/** Legacy: dedicated fallback key when chat vendor had no STT */
+function legacyFallbackTranscription(get) {
   const fbKey = get('audioFallbackKey')
   if (!fbKey) return null
   const fbProv = get('audioFallbackProvider') || 'openai'
@@ -90,17 +107,6 @@ function fallbackTranscription(get) {
 
 const MIC_LISTEN_LANG_MODES = new Set(['en', 'hi', 'en_hi_hinglish'])
 
-/**
- * Short, natural-sounding Whisper primer strings.
- *
- * Whisper treats `prompt` as a prior transcript (not an instruction), so the text must look like
- * realistic speech in the expected language/register.  Keep these short (< 20 words) — longer
- * instructional prompts are more likely to be echoed back on quiet audio.
- *
- * For code-switching (Hinglish) we deliberately omit `language` so Whisper's decoder can handle
- * mid-sentence script switches.  The primer alone anchors the vocabulary/script strongly enough
- * to prevent Japanese/Russian false-detections on accented or low-energy audio.
- */
 const WHISPER_PRIMERS = {
   en: 'Sure, let me explain. So in the meeting we discussed the updates and next steps.',
   hi: 'हाँ, मीटिंग में हमने सब कुछ discuss किया। ठीक है, आगे बढ़ते हैं।',
@@ -108,22 +114,12 @@ const WHISPER_PRIMERS = {
     'haan yaar, toh meeting mein kya hua? Let me know the updates. Okay sure.',
 }
 
-/**
- * Whisper returns the full language name in verbose_json (e.g. "english", "hindi").
- * We map our modes to the list of acceptable names so we can drop off-language chunks.
- * Serialised as a plain array so IPC JSON round-trip preserves it.
- */
 const ALLOWED_WHISPER_LANGUAGES = {
   en: ['english'],
   hi: ['hindi'],
   en_hi_hinglish: ['english', 'hindi'],
 }
 
-/**
- * @param {(key: string) => any} get
- * @param {string} _sttVendor unused (kept for call-site symmetry)
- * @returns {{ language?: string, prompt: string, allowedLanguages: string[] }}
- */
 function micListenLanguageFormFields(get, _sttVendor) {
   const raw = get('micListenLanguage')
   const mode = MIC_LISTEN_LANG_MODES.has(raw) ? raw : 'en_hi_hinglish'
@@ -137,24 +133,45 @@ function micListenLanguageFormFields(get, _sttVendor) {
   return { prompt: primer, allowedLanguages }
 }
 
-function fallbackMicSttVendor(get) {
-  return get('audioFallbackProvider') === 'groq' ? 'groq' : 'openai'
+/**
+ * @param {(key: string) => any} get
+ * @returns {string}
+ */
+function getEffectiveSttProvider(get) {
+  const explicit = get('sttProvider')
+  if (explicit && NATIVE_STT_PROVIDER_IDS.includes(explicit)) return explicit
+  const chat = get('provider') || 'groq'
+  if (NATIVE_STT_PROVIDER_IDS.includes(chat)) return chat
+  if (get('audioFallbackKey')) {
+    const fb = get('audioFallbackProvider') || 'openai'
+    return fb === 'groq' ? 'groq' : 'openai'
+  }
+  return 'groq'
 }
 
 /**
+ * @param {string} sttProvider
  * @param {(key: string) => any} get
  * @returns {{ cfg: object | null, sttVendor: string | null }}
  */
-function resolveSttConfigAndVendor(get) {
-  const provider = get('provider') || 'groq'
-
-  if (provider === 'fireworks') {
+function resolveSttConfigForProvider(sttProvider, get) {
+  if (sttProvider === 'fireworks') {
     const cfg = fireworksStt(get)
     if (cfg) return { cfg, sttVendor: 'fireworks' }
-    return { cfg: fallbackTranscription(get), sttVendor: fallbackMicSttVendor(get) }
+    const leg = legacyFallbackTranscription(get)
+    if (leg) return { cfg: leg, sttVendor: get('audioFallbackProvider') === 'groq' ? 'groq' : 'openai' }
+    return { cfg: null, sttVendor: null }
   }
 
-  const native = OPENAI_STYLE_STT[provider]
+  if (sttProvider === 'nvidia') {
+    const cfg = nvidiaStt(get)
+    if (cfg) return { cfg, sttVendor: 'nvidia' }
+    const leg = legacyFallbackTranscription(get)
+    if (leg) return { cfg: leg, sttVendor: get('audioFallbackProvider') === 'groq' ? 'groq' : 'openai' }
+    return { cfg: null, sttVendor: null }
+  }
+
+  const native = OPENAI_STYLE_STT[sttProvider]
   if (native) {
     const apiKey = get(native.keyField)
     if (apiKey) {
@@ -165,20 +182,34 @@ function resolveSttConfigAndVendor(get) {
           url: `${base}/audio/transcriptions`,
           model,
           apiKey,
-          responseKind: provider === 'mistral' ? 'json' : 'text',
-          useWhisperSegmentMeta: provider !== 'mistral',
+          responseKind: sttProvider === 'mistral' ? 'json' : 'text',
+          useWhisperSegmentMeta: sttProvider !== 'mistral',
         },
-        sttVendor: provider,
+        sttVendor: sttProvider,
       }
     }
   }
-  return { cfg: fallbackTranscription(get), sttVendor: fallbackMicSttVendor(get) }
+
+  const leg = legacyFallbackTranscription(get)
+  if (leg) {
+    return {
+      cfg: leg,
+      sttVendor: get('audioFallbackProvider') === 'groq' ? 'groq' : 'openai',
+    }
+  }
+  return { cfg: null, sttVendor: null }
 }
 
 /**
  * @param {(key: string) => any} get
- * @returns {{ url: string, model: string, apiKey: string, responseKind: 'text'|'json', useWhisperSegmentMeta?: boolean, language?: string, prompt?: string } | null}
+ * @returns {{ cfg: object | null, sttVendor: string | null }}
  */
+function resolveSttConfigAndVendor(get) {
+  if (get('sttMode') !== 'cloud') return { cfg: null, sttVendor: null }
+  const sttProvider = getEffectiveSttProvider(get)
+  return resolveSttConfigForProvider(sttProvider, get)
+}
+
 function getTranscriptionRequestConfig(get) {
   const { cfg, sttVendor } = resolveSttConfigAndVendor(get)
   if (!cfg || !sttVendor) return cfg
@@ -186,14 +217,16 @@ function getTranscriptionRequestConfig(get) {
   return { ...cfg, ...lang }
 }
 
-function needsThirdPartyMicKey(provider) {
-  return !NATIVE_STT_PROVIDER_IDS.includes(provider)
+function needsSttKey(sttProvider) {
+  return NATIVE_STT_PROVIDER_IDS.includes(sttProvider)
 }
 
 module.exports = {
   getTranscriptionRequestConfig,
+  getEffectiveSttProvider,
+  resolveSttConfigForProvider,
   NATIVE_STT_PROVIDER_IDS,
-  STT_VENDOR_NOTES,
-  needsThirdPartyMicKey,
+  STT_MODEL_FIELDS,
+  needsSttKey,
   OPENAI_STYLE_STT,
 }

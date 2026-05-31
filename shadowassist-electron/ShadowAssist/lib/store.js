@@ -30,7 +30,10 @@ const ENCRYPTED_KEYS = [
 ]
 
 const schema = {
+  /** Chat / Ask AI provider */
   provider: { type: 'string', default: 'groq' },
+  /** Cloud mic STT provider (independent of chat) */
+  sttProvider: { type: 'string', default: 'groq' },
   apiKey: { type: 'string', default: '' },
   selectedModel: { type: 'string', default: 'gpt-4o' },
   groqKey: { type: 'string', default: '' },
@@ -38,6 +41,8 @@ const schema = {
   groqWhisperModel: { type: 'string', default: 'whisper-large-v3-turbo' },
   nvidiaKey: { type: 'string', default: '' },
   nvidiaModel: { type: 'string', default: 'meta/llama-3.3-70b-instruct' },
+  /** NVIDIA Parakeet STT (same nvapi key as chat; gRPC on grpc.nvcf.nvidia.com) */
+  nvidiaSttModel: { type: 'string', default: 'parakeet-1.1b-rnnt-multilingual-asr' },
   anthropicKey: { type: 'string', default: '' },
   anthropicModel: { type: 'string', default: 'claude-3-5-sonnet-20241022' },
   deepseekKey: { type: 'string', default: '' },
@@ -112,8 +117,8 @@ const schema = {
   playbooks: { type: 'array', default: [] },
   audioEnabled: { type: 'boolean', default: true },
   /**
-   * 'local'  → on-device Whisper-base via ONNX (no API key, no rate limits; ~145 MB one-time download).
-   * 'cloud'  → Groq / OpenAI Whisper API (requires key; lower CPU overhead once model is loaded).
+   * 'local'  → Moonshine on-device STT (~68 MB, English-leaning, streaming + VAD). Multilingual: use Cloud.
+   * 'cloud'  → Groq / OpenAI Whisper API (requires key).
    * Default 'local' for zero-config active listening.
    */
   sttMode: { type: 'string', default: 'local' },
@@ -176,6 +181,27 @@ function getAll() {
 
 function clear() { store.clear() }
 
+function migrateSttProviderFromLegacy() {
+  try {
+    const cur = store.get('sttProvider')
+    if (cur && typeof cur === 'string' && cur.trim()) return
+    const { NATIVE_STT_PROVIDER_IDS } = require('./transcriptionRouting')
+    const chat = get('provider') || 'groq'
+    if (NATIVE_STT_PROVIDER_IDS.includes(chat)) {
+      set('sttProvider', chat)
+      return
+    }
+    if (get('audioFallbackKey')) {
+      const fb = get('audioFallbackProvider') || 'openai'
+      set('sttProvider', fb === 'groq' ? 'groq' : 'openai')
+      return
+    }
+    set('sttProvider', 'groq')
+  } catch {
+    set('sttProvider', 'groq')
+  }
+}
+
 function migrateLegacySystemPrompt() {
   try {
     const { LEGACY_STORE_DEFAULT_SYSTEM_PROMPT } = require('./defaultSystemPrompt')
@@ -191,6 +217,7 @@ function migrateLegacySystemPrompt() {
 
 function runDataMigration() {
   migrateLegacySystemPrompt()
+  migrateSttProviderFromLegacy()
   const epoch = typeof get('dataEpoch') === 'number' ? get('dataEpoch') : 0
   if (epoch >= DATA_EPOCH) return
   for (const k of ENCRYPTED_KEYS) {

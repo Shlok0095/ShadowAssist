@@ -45,11 +45,11 @@ const providers = require('../lib/providers')
 const {
   getTranscriptionRequestConfig,
   NATIVE_STT_PROVIDER_IDS,
-  STT_VENDOR_NOTES,
 } = require('../lib/transcriptionRouting')
+const { transcribeLinearPcm } = require('../lib/nvidiaRivaStt')
 const sessionMemory = require('../lib/sessionMemory')
 const listenSessionSummaries = require('../lib/listenSessionSummaries')
-const { detectMeetingForegroundOrScan, MEETING_POLL_MS } = require('../lib/meetingForegroundWindows')
+const { detectMeetingForegroundOrScan } = require('../lib/meetingForegroundWindows')
 const googleCalendar = require('../lib/googleCalendar')
 
 listenSessionSummaries.initPersistence({
@@ -107,9 +107,8 @@ let onboardingWindow = null
 let meetingToastWindow = null
 /** Once shown or dismissed, same `eventId` is not shown again until `clearMeetingToastDedupe()` (e.g. stop session). */
 const meetingToastSuppressedEventIds = new Set()
-let meetingForegroundPollTimer = null
 let meetingForegroundTickInFlight = false
-let meetingForegroundTickCount = 0
+let meetingForegroundCheckedThisLaunch = false
 /** Active meeting lock by platform so the same ongoing meeting toasts only once. */
 const meetingActiveByPlatform = new Map()
 const MEETING_INACTIVE_CLEAR_MS = 45 * 1000
@@ -524,20 +523,13 @@ function showMeetingToastFromMain(payload) {
 }
 
 function stopMeetingForegroundPoll() {
-  if (meetingForegroundPollTimer) {
-    clearInterval(meetingForegroundPollTimer)
-    meetingForegroundPollTimer = null
-  }
+  // One-shot detection mode: no recurring poll timer.
 }
 
 function runMeetingForegroundTick() {
   if (process.platform !== 'win32') return
   if (meetingForegroundTickInFlight) return
   meetingForegroundTickInFlight = true
-  meetingForegroundTickCount += 1
-  if (meetingForegroundTickCount % 8 === 0) {
-    console.log('[meeting-detect] polling alive')
-  }
   detectMeetingForegroundOrScan((err, hit) => {
     meetingForegroundTickInFlight = false
     const now = Date.now()
@@ -572,10 +564,10 @@ function runMeetingForegroundTick() {
 }
 
 function startMeetingForegroundPoll() {
-  stopMeetingForegroundPoll()
   if (process.platform !== 'win32') return
+  if (meetingForegroundCheckedThisLaunch) return
+  meetingForegroundCheckedThisLaunch = true
   runMeetingForegroundTick()
-  meetingForegroundPollTimer = setInterval(runMeetingForegroundTick, MEETING_POLL_MS)
 }
 
 /**
@@ -1358,11 +1350,31 @@ function setupIPC() {
     return getAiClient().testConnection(provider, key, (k) => store.get(k))
   })
   ipcMain.handle('get-provider-metadata', () => require('../lib/providers').getProviderMetadataForUI())
+  ipcMain.handle('get-stt-provider-metadata', () => require('../lib/providers').getSttProviderMetadataForUI())
   ipcMain.handle('get-transcription-config', () => getTranscriptionRequestConfig((k) => store.get(k)))
+  ipcMain.handle('nvidia-transcribe-pcm', async (_, payload) => {
+    try {
+      const key = store.get('nvidiaKey')
+      if (!key || !payload?.pcm) return { text: '' }
+      const cfg = getTranscriptionRequestConfig((k) => store.get(k))
+      if (cfg?.sttKind !== 'nvidia_riva') return { text: '' }
+      const buf = Buffer.from(payload.pcm)
+      const text = await transcribeLinearPcm({
+        apiKey: key,
+        functionId: cfg.functionId,
+        pcm: buf,
+        sampleRateHertz: payload.sampleRate || 16000,
+        languageCode: payload.languageCode || cfg.languageCode || 'multi',
+      })
+      return { text: text || '' }
+    } catch (e) {
+      console.error('[nvidia-transcribe-pcm]', e?.message || e)
+      return { text: '' }
+    }
+  })
   ipcMain.handle('list-remote-models', async (_, provider) => getListRemoteModels()(provider, (k) => store.get(k)))
   ipcMain.handle('get-stt-policy', () => ({
     nativeSttProviderIds: NATIVE_STT_PROVIDER_IDS,
-    vendorNotes: STT_VENDOR_NOTES,
   }))
   ipcMain.handle('get-chat-model-catalog', () => require('../lib/chatModelCatalog.json'))
   ipcMain.handle('ask-ai-with-transcript', (_, q, t, meta) => {

@@ -15,6 +15,7 @@ const GROQ_WHISPER = ['whisper-large-v3-turbo', 'whisper-large-v3']
 const TOGETHER_WHISPER_MODELS = ['openai/whisper-large-v3', 'openai/whisper-large-v3-turbo']
 const MISTRAL_STT_MODELS = ['voxtral-mini-latest', 'voxtral-mini-transcribe-realtime-2602']
 const FIREWORKS_STT_MODELS = ['whisper-v3-turbo', 'whisper-v3']
+const NVIDIA_STT_MODELS = ['parakeet-1.1b-rnnt-multilingual-asr']
 
 /** Empty prompt = backend uses built-in `DEFAULT_SYSTEM_PROMPT` (lib/defaultSystemPrompt.js). */
 const PROMPT_PRESETS = [
@@ -212,11 +213,14 @@ export default function Settings() {
   const [providerMeta, setProviderMeta] = useState([])
   const [snap, setSnap] = useState(null)
   const [provider, setProvider] = useState('groq')
-  const [secretInput, setSecretInput] = useState('')
+  const [sttProvider, setSttProvider] = useState('groq')
+  const [secretByProvider, setSecretByProvider] = useState({})
+  const [expandedChatProvider, setExpandedChatProvider] = useState('groq')
+  const [sttSecretInput, setSttSecretInput] = useState('')
   const [keySetMap, setKeySetMap] = useState({})
   const [systemPrompt, setSystemPrompt] = useState('')
-  const [testResult, setTestResult] = useState(null)
-  const [testing, setTesting] = useState(false)
+  const [testByProvider, setTestByProvider] = useState({})
+  const [testingProvider, setTestingProvider] = useState(null)
   const [activeTab, setActiveTab] = useState('api')
   const [hasCompletedOnboarding, setHasCompletedOnboarding] = useState(true)
   const [ocrEnabled, setOcrEnabled] = useState(true)
@@ -239,9 +243,6 @@ export default function Settings() {
   const [calendarReminderMinutes, setCalendarReminderMinutes] = useState(5)
   const [listenSummaries, setListenSummaries] = useState([])
   const [selectedSummaryId, setSelectedSummaryId] = useState('')
-  const [audioFallbackKey, setAudioFallbackKey] = useState('')
-  const [audioFallbackProvider, setAudioFallbackProvider] = useState('openai')
-
   const [resumeContext, setResumeContext] = useState('')
   const [resumeSourceName, setResumeSourceName] = useState('')
   const [jdContext, setJdContext] = useState('')
@@ -250,9 +251,9 @@ export default function Settings() {
 
   const [modelCatalog, setModelCatalog] = useState({})
   const [sttPolicy, setSttPolicy] = useState(null)
-  const [remoteChatModels, setRemoteChatModels] = useState(null)
-  const [listModelsLoading, setListModelsLoading] = useState(false)
-  const [listModelsErr, setListModelsErr] = useState('')
+  const [remoteModelsByProvider, setRemoteModelsByProvider] = useState({})
+  const [listModelsLoadingId, setListModelsLoadingId] = useState(null)
+  const [listModelsErrByProvider, setListModelsErrByProvider] = useState({})
 
   const [overlayOpacityUi, setOverlayOpacityUi] = useState(0.92)
   const [overlayFontUi, setOverlayFontUi] = useState('medium')
@@ -261,7 +262,14 @@ export default function Settings() {
   const [uiAccentThemeId, setUiAccentThemeId] = useState('neon')
   const [hotkeysMap, setHotkeysMap] = useState(() => ({ ...DEFAULT_HOTKEYS_MAP }))
 
-  const currentMeta = useMemo(() => providerMeta.find((p) => p.id === provider), [providerMeta, provider])
+  const sttCapableMeta = useMemo(() => {
+    const ids = sttPolicy?.nativeSttProviderIds || ['groq', 'openai', 'together', 'mistral', 'fireworks', 'nvidia']
+    return providerMeta.filter((p) => ids.includes(p.id))
+  }, [providerMeta, sttPolicy])
+  const currentSttMeta = useMemo(
+    () => sttCapableMeta.find((p) => p.id === sttProvider) || sttCapableMeta[0],
+    [sttCapableMeta, sttProvider],
+  )
 
   useEffect(() => {
     if (!ipc) return
@@ -269,7 +277,10 @@ export default function Settings() {
       .then(([s, meta, hk]) => {
         setSnap(s)
         setProviderMeta(meta || [])
-        setProvider(s.provider || 'groq')
+        const chatProv = s.provider || 'groq'
+        setProvider(chatProv)
+        setExpandedChatProvider(chatProv)
+        setSttProvider(s.sttProvider || s.provider || 'groq')
         setSystemPrompt(s.systemPrompt || '')
         setHasCompletedOnboarding(!!s.hasCompletedOnboarding)
         setOcrEnabled(s.ocrEnabled !== false)
@@ -288,7 +299,6 @@ export default function Settings() {
             ? Math.max(0, Number(s.calendarReminderMinutes))
             : 5,
         )
-        setAudioFallbackProvider(s.audioFallbackProvider || 'openai')
         setResumeContext(s.resumeContext || '')
         setResumeSourceName(s.resumeSourceName || '')
         setJdContext(s.jdContext || '')
@@ -333,11 +343,6 @@ export default function Settings() {
       })
       .catch(console.error)
   }, [])
-
-  useEffect(() => {
-    setRemoteChatModels(null)
-    setListModelsErr('')
-  }, [provider])
 
   const refreshCalendarMeetings = async () => {
     if (!ipc) return
@@ -409,36 +414,73 @@ export default function Settings() {
 
   const showSetupBanner = isFirstRunWindow && !hasCompletedOnboarding
 
-  const saveKey = (storeKey, val) => {
+  const saveKey = (storeKey, val, providerId) => {
     if (!val?.trim()) return
     save(storeKey, val.trim())
-    setSecretInput('')
+    if (providerId) {
+      setSecretByProvider((m) => {
+        const next = { ...m }
+        delete next[providerId]
+        return next
+      })
+    }
+    setSttSecretInput('')
     setKeySetMap((k) => ({ ...k, [storeKey]: true }))
+  }
+
+  const chatOptionsFor = (pId) => {
+    const meta = providerMeta.find((p) => p.id === pId)
+    const mf = meta?.modelField
+    const base = modelCatalog[pId] || []
+    const fromApi = remoteModelsByProvider[pId]?.length ? remoteModelsByProvider[pId] : []
+    const set = new Set([...fromApi, ...base])
+    const m = mf && snap ? String(snap[mf] ?? '').trim() : ''
+    if (m) set.add(m)
+    return [...set].sort((a, b) => a.localeCompare(b))
+  }
+
+  const openChatProvider = (pId) => {
+    const nextOpen = expandedChatProvider === pId ? null : pId
+    setExpandedChatProvider(nextOpen)
+    if (nextOpen) {
+      setProvider(pId)
+      save('provider', pId)
+      setTestByProvider((t) => {
+        const n = { ...t }
+        delete n[pId]
+        return n
+      })
+    }
   }
 
   const patchSnap = (key, value) => {
     setSnap((s) => (s ? { ...s, [key]: value } : s))
   }
 
-  const getKeyForTest = async () => {
-    const field = currentMeta?.keyField
+  const getKeyForProvider = async (pId) => {
+    const meta = providerMeta.find((p) => p.id === pId)
+    const field = meta?.keyField
     if (!field) return ''
-    const local = secretInput.trim()
+    const local = (secretByProvider[pId] || '').trim()
     const stored = await ipc?.invoke('get-store', field)
     return local || stored
   }
 
-  const testApi = async () => {
-    const key = await getKeyForTest()
+  const testApiFor = async (pId) => {
+    const key = await getKeyForProvider(pId)
     if (!key) {
-      setTestResult({ success: false, error: 'Enter or save API key first' })
+      setTestByProvider((t) => ({ ...t, [pId]: { success: false, error: 'Enter or save API key first' } }))
       return
     }
-    setTesting(true)
-    setTestResult(null)
-    const r = await ipc.invoke('test-api', provider, key)
-    setTestResult(r)
-    setTesting(false)
+    setTestingProvider(pId)
+    setTestByProvider((t) => {
+      const n = { ...t }
+      delete n[pId]
+      return n
+    })
+    const r = await ipc.invoke('test-api', pId, key)
+    setTestByProvider((t) => ({ ...t, [pId]: r }))
+    setTestingProvider(null)
   }
 
   const launchFromSetup = async () => {
@@ -479,18 +521,23 @@ export default function Settings() {
     }
   }
 
-  const syncRemoteModels = async () => {
+  const syncRemoteModelsFor = async (pId) => {
     if (!ipc) return
-    setListModelsLoading(true)
-    setListModelsErr('')
+    setListModelsLoadingId(pId)
+    setListModelsErrByProvider((e) => ({ ...e, [pId]: '' }))
     try {
-      const res = await ipc.invoke('list-remote-models', provider)
-      if (res.ok && res.models?.length) setRemoteChatModels(res.models)
-      setListModelsErr(res.error || (res.ok ? '' : 'No models returned'))
-    } catch (e) {
-      setListModelsErr(e.message || 'Sync failed')
+      const res = await ipc.invoke('list-remote-models', pId)
+      if (res.ok && res.models?.length) {
+        setRemoteModelsByProvider((m) => ({ ...m, [pId]: res.models }))
+      }
+      setListModelsErrByProvider((e) => ({
+        ...e,
+        [pId]: res.error || (res.ok ? '' : 'No models returned'),
+      }))
+    } catch (err) {
+      setListModelsErrByProvider((e) => ({ ...e, [pId]: err.message || 'Sync failed' }))
     } finally {
-      setListModelsLoading(false)
+      setListModelsLoadingId(null)
     }
   }
 
@@ -667,20 +714,8 @@ export default function Settings() {
 
   const OVERLAY_POSITION_PRESETS = ['Top-Right', 'Top-Left', 'Bottom-Right', 'Bottom-Left', 'Center-Right']
 
-  const nativeSttIds = sttPolicy?.nativeSttProviderIds || ['groq', 'openai', 'together', 'mistral', 'fireworks']
-  const needsAudioFallback = !nativeSttIds.includes(provider)
-  const keyField = currentMeta?.keyField
-  const modelField = currentMeta?.modelField
-  const modelValue = snap && modelField ? (snap[modelField] ?? currentMeta?.defaultModel ?? '') : ''
-
-  const mergedChatOptions = useMemo(() => {
-    const base = modelCatalog[provider] || []
-    const fromApi = remoteChatModels?.length ? remoteChatModels : []
-    const set = new Set([...fromApi, ...base])
-    const m = (modelValue || '').trim()
-    if (m) set.add(m)
-    return [...set].sort((a, b) => a.localeCompare(b))
-  }, [provider, modelCatalog, remoteChatModels, modelValue])
+  const sttKeyField = currentSttMeta?.keyField
+  const sttKeySaved = sttKeyField ? !!keySetMap[sttKeyField] : false
 
   return (
     <AppWindowFrame>
@@ -729,246 +764,203 @@ export default function Settings() {
             <div className="mx-auto max-w-[1600px] space-y-6 animate-fade-in">
               <div className="grid grid-cols-1 gap-5 xl:grid-cols-12">
                 <section className="glass-panel animate-border-pulse xl:col-span-12 p-5">
-                  <div className="mb-4 flex flex-wrap items-center justify-between gap-2">
-                    <h2 className="font-display text-sm font-bold uppercase tracking-[0.2em] text-gray-300">01 — Provider lattice</h2>
-                    <span className="font-mono text-[10px] text-gray-600">OPENAI-COMPAT + ANTHROPIC</span>
-                  </div>
-                  <p className="mb-3 text-xs text-gray-500">
-                    OpenAI-compatible: same SDK shape (base URL + key + model). Anthropic uses native Claude API.{' '}
-                    <span className="text-gray-400">
-                      <strong className="text-gray-300">No 3rd-party mic key</strong> when chat provider is{' '}
-                      <strong className="text-gray-300">Groq</strong>, <strong className="text-gray-300">OpenAI</strong>, <strong className="text-gray-300">Together</strong> (Whisper),{' '}
-                      <strong className="text-gray-300">Mistral</strong> (Voxtral), or <strong className="text-gray-300">Fireworks</strong> (Whisper on audio*.api.fireworks.ai — same API key). Everyone else needs the fallback OpenAI/Groq key for mic chunks.
-                    </span>
-                  </p>
-                  <div className="settings-scroll max-h-[220px] overflow-y-auto pr-0.5">
-                    <div className="flex flex-wrap gap-2">
-                      {providerMeta.map((p) => (
-                        <button
-                          key={p.id}
-                          type="button"
-                          onClick={() => {
-                            setProvider(p.id)
-                            save('provider', p.id)
-                            setTestResult(null)
-                            setSecretInput('')
-                          }}
-                          className="min-w-[130px] max-w-[200px] flex-1 rounded-xl border px-3 py-3 text-left transition-all duration-300"
-                          style={{
-                            background:
-                              provider === p.id
-                                ? `linear-gradient(145deg, ${p.color}22, rgba(0,0,0,0.42))`
-                                : 'linear-gradient(165deg, rgba(255,255,255,0.07) 0%, rgba(0,0,0,0.48) 100%)',
-                            borderColor: provider === p.id ? `${p.color}70` : 'rgba(255,255,255,0.1)',
-                            boxShadow:
-                              provider === p.id
-                                ? `0 0 26px -8px ${p.color}55, inset 0 1px 0 ${p.color}22`
-                                : 'inset 0 1px 0 rgba(255,255,255,0.05), 0 10px 28px -18px rgba(0,0,0,0.55)',
-                          }}
-                        >
-                          <div className="flex items-center justify-between gap-1">
-                            <span className="font-display text-xs font-bold leading-tight text-white">{p.label}</span>
-                            <span className="shrink-0 rounded px-1.5 py-0.5 font-mono text-[8px] font-bold uppercase" style={{ background: `${p.color}28`, color: p.color }}>
-                              {p.badge}
-                            </span>
-                          </div>
-                          <p className="mt-1 line-clamp-2 text-[10px] leading-snug text-gray-500">{p.desc}</p>
-                        </button>
-                      ))}
-                    </div>
-                  </div>
-                </section>
-
-                <section className="glass-panel xl:col-span-12 p-5">
-                  <div className="mb-4 flex flex-wrap items-center justify-between gap-2">
-                    <h2 className="font-display text-sm font-bold uppercase tracking-[0.2em] text-gray-300">02 — Credentials & model</h2>
-                    {currentMeta?.docs && (
-                      <a href={currentMeta.docs} target="_blank" rel="noreferrer" className="text-xs font-medium hover:underline" style={{ color: currentMeta.color }}>
-                        Get API key →
-                      </a>
-                    )}
+                  <div className="mb-4">
+                    <h2 className="font-display text-sm font-bold uppercase tracking-[0.2em] text-gray-300">01 — Chat provider</h2>
                   </div>
 
-                  {!snap || !currentMeta ? (
+                  {!snap || !providerMeta.length ? (
                     <p className="text-sm text-gray-500">Loading providers…</p>
                   ) : (
-                    <div className="space-y-4">
-                      {currentMeta.kind === 'anthropic' && (
-                        <p className="rounded-lg border border-amber-500/20 bg-amber-500/5 px-3 py-2 text-xs text-amber-200/90">
-                          Claude uses the Anthropic Messages API (not OpenAI). Paste an Anthropic API key; model id must match your account (e.g. claude-3-5-sonnet-20241022).
-                        </p>
-                      )}
+                    <div className="settings-scroll max-h-[min(72vh,720px)] overflow-y-auto pr-0.5">
+                      <div className="flex flex-col gap-1.5">
+                        {providerMeta.map((p) => {
+                          const open = expandedChatProvider === p.id
+                          const active = provider === p.id
+                          const kf = p.keyField
+                          const mf = p.modelField
+                          const keySaved = kf ? !!keySetMap[kf] : false
+                          const chatOpts = chatOptionsFor(p.id)
+                          const pModel = mf && snap ? (snap[mf] ?? p.defaultModel ?? '') : ''
+                          const pTest = testByProvider[p.id]
+                          const pListErr = listModelsErrByProvider[p.id]
+                          const pRemote = remoteModelsByProvider[p.id]
+                          const pTesting = testingProvider === p.id
+                          const pListLoading = listModelsLoadingId === p.id
 
-                      {currentMeta.usesCustomBase && (
-                        <div>
-                          <label className="mb-1 block text-[10px] font-semibold uppercase tracking-[0.2em] text-mist-400">OpenAI-compatible base URL</label>
-                          <input
-                            type="url"
-                            value={snap.customOpenaiBaseUrl || ''}
-                            onChange={(e) => patchSnap('customOpenaiBaseUrl', e.target.value)}
-                            onBlur={(e) => save('customOpenaiBaseUrl', e.target.value.trim())}
-                            className="input-shadow w-full px-3 py-2.5 font-mono text-xs"
-                            placeholder="https://api.openai.com/v1  or  Azure …/openai/deployments/…"
-                          />
-                          <p className="mt-1 text-[10px] text-gray-600">
-                            Trailing slash optional. For Azure / LiteLLM / local vLLM, paste the root that ends with <code className="text-gray-400">/v1</code> (or your proxy’s chat path).
-                          </p>
-                        </div>
-                      )}
-
-                      <div className="flex flex-wrap gap-2">
-                        <input
-                          type="password"
-                          value={secretInput}
-                          onChange={(e) => setSecretInput(e.target.value)}
-                          placeholder={keyField && keySetMap[keyField] ? '••••••••' : 'Paste API key'}
-                          className="input-shadow min-w-[200px] flex-1 px-3 py-2.5"
-                        />
-                        <button type="button" onClick={testApi} disabled={testing} className="btn-ghost px-4 py-2.5 text-accent">
-                          {testing ? '…' : 'Ping'}
-                        </button>
-                        <button type="button" onClick={() => keyField && saveKey(keyField, secretInput)} className="btn-ghost px-4 py-2.5">
-                          Commit
-                        </button>
-                      </div>
-
-                      {modelField && mergedChatOptions.length > 0 && (
-                        <div className="space-y-2">
-                          <div className="flex flex-wrap items-end gap-2">
-                            <div className="min-w-[min(100%,320px)] flex-1">
-                              <ModelSelect
-                                label={`Chat model (${mergedChatOptions.length} ids — app catalog${remoteChatModels?.length ? ' + API' : ''})`}
-                                value={modelValue || currentMeta?.defaultModel || mergedChatOptions[0]}
-                                models={mergedChatOptions}
-                                listbox={mergedChatOptions.length > 14}
-                                onChange={(v) => {
-                                  patchSnap(modelField, v)
-                                  save(modelField, v)
-                                }}
-                              />
-                            </div>
-                            <button
-                              type="button"
-                              onClick={syncRemoteModels}
-                              disabled={listModelsLoading}
-                              className="btn-ghost whitespace-nowrap px-4 py-2.5 text-xs"
-                            >
-                              {listModelsLoading ? 'Syncing…' : 'Refresh from API'}
-                            </button>
-                          </div>
-                          {listModelsErr ? <p className="text-xs text-amber-400">{listModelsErr}</p> : null}
-                          <p className="text-[10px] text-gray-600">
-                            Bundled lists are curated from each vendor’s docs. <strong className="text-gray-400">Refresh from API</strong> calls GET /v1/models (OpenAI-compatible), public OpenRouter, or Anthropic /v1/models — save your key first where required.
-                          </p>
-                        </div>
-                      )}
-
-                      {modelField && mergedChatOptions.length === 0 && (
-                        <ModelInput
-                          label="Model ID (catalog loading…)"
-                          value={modelValue}
-                          onChange={(v) => patchSnap(modelField, v)}
-                          onCommit={(v) => save(modelField, v)}
-                          suggestions={currentMeta?.defaultModel ? [currentMeta.defaultModel] : []}
-                          hint="If this stays empty, restart settings — or type an id from the vendor console."
-                        />
-                      )}
-
-                      {provider === 'groq' && (
-                        <ModelSelect
-                          label="Whisper (speech-to-text, same Groq key)"
-                          value={snap.groqWhisperModel || 'whisper-large-v3-turbo'}
-                          models={GROQ_WHISPER}
-                          onChange={(v) => {
-                            patchSnap('groqWhisperModel', v)
-                            save('groqWhisperModel', v)
-                          }}
-                        />
-                      )}
-
-                      {provider === 'together' && (
-                        <ModelSelect
-                          label="Speech-to-text (Together Whisper — same API key)"
-                          value={snap.togetherWhisperModel || 'openai/whisper-large-v3'}
-                          models={TOGETHER_WHISPER_MODELS}
-                          onChange={(v) => {
-                            patchSnap('togetherWhisperModel', v)
-                            save('togetherWhisperModel', v)
-                          }}
-                        />
-                      )}
-
-                      {provider === 'mistral' && (
-                        <ModelSelect
-                          label="Speech-to-text (Mistral Voxtral — same API key)"
-                          value={snap.mistralSttModel || 'voxtral-mini-latest'}
-                          models={MISTRAL_STT_MODELS}
-                          onChange={(v) => {
-                            patchSnap('mistralSttModel', v)
-                            save('mistralSttModel', v)
-                          }}
-                        />
-                      )}
-
-                      {provider === 'fireworks' && (
-                        <ModelSelect
-                          label="Speech-to-text (Fireworks Whisper — same API key, separate audio host)"
-                          value={snap.fireworksSttModel || 'whisper-v3-turbo'}
-                          models={FIREWORKS_STT_MODELS}
-                          onChange={(v) => {
-                            patchSnap('fireworksSttModel', v)
-                            save('fireworksSttModel', v)
-                          }}
-                        />
-                      )}
-
-                      {needsAudioFallback && sttPolicy?.vendorNotes?.[provider] && (
-                        <p className="rounded-lg border border-white/[0.06] bg-black/30 px-3 py-2 text-[10px] leading-relaxed text-gray-500">
-                          <span className="font-semibold text-gray-400">Why mic needs a fallback key: </span>
-                          {sttPolicy.vendorNotes[provider]}
-                        </p>
-                      )}
-
-                      {needsAudioFallback && (
-                        <div className="rounded-xl border border-white/10 bg-black/30 p-4">
-                          <label className="mb-2 block text-[10px] font-semibold uppercase tracking-widest text-mist-400">Mic transcription fallback</label>
-                          <p className="mb-2 text-xs text-gray-500">
-                            This vendor doesn’t expose OpenAI-style STT on the same key — add an OpenAI or Groq key for mic transcription (Whisper).
-                          </p>
-                          <input
-                            type="password"
-                            value={audioFallbackKey}
-                            onChange={(e) => setAudioFallbackKey(e.target.value)}
-                            placeholder="sk-... or gsk_..."
-                            className="input-shadow mb-2 w-full px-3 py-2"
-                          />
-                          <div className="flex flex-wrap gap-2">
-                            <button type="button" onClick={() => audioFallbackKey.trim() && save('audioFallbackKey', audioFallbackKey.trim())} className="btn-ghost px-3 py-2 text-xs">
-                              Save fallback key
-                            </button>
-                            <select
-                              value={audioFallbackProvider}
-                              onChange={(e) => {
-                                setAudioFallbackProvider(e.target.value)
-                                save('audioFallbackProvider', e.target.value)
+                          return (
+                            <div
+                              key={p.id}
+                              className="overflow-hidden rounded-xl border transition-all duration-300"
+                              style={{
+                                borderColor: active ? `${p.color}70` : 'rgba(255,255,255,0.1)',
+                                boxShadow: active ? `0 0 20px -10px ${p.color}44` : 'none',
                               }}
-                              className="input-shadow px-3 py-2 text-xs"
                             >
-                              <option value="openai" className="bg-void-900">OpenAI</option>
-                              <option value="groq" className="bg-void-900">Groq</option>
-                            </select>
-                          </div>
-                        </div>
-                      )}
+                              <button
+                                type="button"
+                                onClick={() => openChatProvider(p.id)}
+                                className="flex w-full items-center gap-2 px-3 py-2.5 text-left transition-colors"
+                                style={{
+                                  background: open
+                                    ? `linear-gradient(145deg, ${p.color}18, rgba(0,0,0,0.35))`
+                                    : 'linear-gradient(165deg, rgba(255,255,255,0.05) 0%, rgba(0,0,0,0.4) 100%)',
+                                }}
+                              >
+                                <span
+                                  className="shrink-0 font-mono text-[10px] text-gray-500 transition-transform duration-200"
+                                  style={{ transform: open ? 'rotate(90deg)' : 'rotate(0deg)' }}
+                                  aria-hidden
+                                >
+                                  ▶
+                                </span>
+                                <span className="min-w-0 flex-1 font-display text-xs font-bold text-white">{p.label}</span>
+                                {keySaved ? (
+                                  <span className="shrink-0 font-mono text-[9px] text-accent">Key ✓</span>
+                                ) : null}
+                                <span
+                                  className="shrink-0 rounded px-1.5 py-0.5 font-mono text-[8px] font-bold uppercase"
+                                  style={{ background: `${p.color}28`, color: p.color }}
+                                >
+                                  {p.badge}
+                                </span>
+                              </button>
 
-                      {testResult && (
-                        <p className={`font-mono text-xs ${testResult.success ? 'text-accent' : 'text-rose-400'}`}>
-                          {testResult.success ? '◆ Uplink verified' : testResult.error}
-                        </p>
-                      )}
-                      <button type="button" onClick={testApi} disabled={testing} className="btn-glow py-3 px-8">
-                        {testing ? 'Handshaking…' : 'Full connection test'}
-                      </button>
+                              {open && (
+                                <div className="space-y-4 border-t border-white/[0.06] bg-black/25 px-3 py-4">
+                                  <div className="flex flex-wrap items-center justify-between gap-2">
+                                    <span className="font-display text-[10px] font-bold uppercase tracking-[0.2em] text-gray-400">
+                                      02 — Chat key & model
+                                    </span>
+                                    {p.docs ? (
+                                      <a
+                                        href={p.docs}
+                                        target="_blank"
+                                        rel="noreferrer"
+                                        className="text-xs font-medium hover:underline"
+                                        style={{ color: p.color }}
+                                      >
+                                        Get API key →
+                                      </a>
+                                    ) : null}
+                                  </div>
+
+                                  {p.kind === 'anthropic' && (
+                                    <p className="rounded-lg border border-amber-500/20 bg-amber-500/5 px-3 py-2 text-xs text-amber-200/90">
+                                      Claude uses the Anthropic Messages API (not OpenAI). Paste an Anthropic API key; model id must match your account (e.g. claude-3-5-sonnet-20241022).
+                                    </p>
+                                  )}
+
+                                  {p.usesCustomBase && (
+                                    <div>
+                                      <label className="mb-1 block text-[10px] font-semibold uppercase tracking-[0.2em] text-mist-400">
+                                        OpenAI-compatible base URL
+                                      </label>
+                                      <input
+                                        type="url"
+                                        value={snap.customOpenaiBaseUrl || ''}
+                                        onChange={(e) => patchSnap('customOpenaiBaseUrl', e.target.value)}
+                                        onBlur={(e) => save('customOpenaiBaseUrl', e.target.value.trim())}
+                                        className="input-shadow w-full px-3 py-2.5 font-mono text-xs"
+                                        placeholder="https://api.openai.com/v1"
+                                      />
+                                    </div>
+                                  )}
+
+                                  <div className="flex flex-wrap gap-2">
+                                    <input
+                                      type="password"
+                                      value={secretByProvider[p.id] ?? ''}
+                                      onChange={(e) =>
+                                        setSecretByProvider((m) => ({ ...m, [p.id]: e.target.value }))
+                                      }
+                                      placeholder={keySaved ? '••••••••' : 'Paste API key'}
+                                      className="input-shadow min-w-[200px] flex-1 px-3 py-2.5"
+                                    />
+                                    <button
+                                      type="button"
+                                      onClick={() => testApiFor(p.id)}
+                                      disabled={pTesting}
+                                      className="btn-ghost px-4 py-2.5 text-accent"
+                                    >
+                                      {pTesting ? '…' : 'Ping'}
+                                    </button>
+                                    <button
+                                      type="button"
+                                      onClick={() =>
+                                        kf && saveKey(kf, secretByProvider[p.id] || '', p.id)
+                                      }
+                                      className="btn-ghost px-4 py-2.5"
+                                    >
+                                      Commit
+                                    </button>
+                                  </div>
+
+                                  {mf && chatOpts.length > 0 && (
+                                    <div className="space-y-2">
+                                      <div className="flex flex-wrap items-end gap-2">
+                                        <div className="min-w-[min(100%,320px)] flex-1">
+                                          <ModelSelect
+                                            label={`Chat model (${chatOpts.length} ids — app catalog${pRemote?.length ? ' + API' : ''})`}
+                                            value={pModel || p.defaultModel || chatOpts[0]}
+                                            models={chatOpts}
+                                            listbox={chatOpts.length > 14}
+                                            onChange={(v) => {
+                                              patchSnap(mf, v)
+                                              save(mf, v)
+                                            }}
+                                          />
+                                        </div>
+                                        <button
+                                          type="button"
+                                          onClick={() => syncRemoteModelsFor(p.id)}
+                                          disabled={pListLoading}
+                                          className="btn-ghost whitespace-nowrap px-4 py-2.5 text-xs"
+                                        >
+                                          {pListLoading ? 'Syncing…' : 'Refresh from API'}
+                                        </button>
+                                      </div>
+                                      {pListErr ? <p className="text-xs text-amber-400">{pListErr}</p> : null}
+                                      <p className="text-[10px] text-gray-600">
+                                        Bundled lists are curated from each vendor’s docs.{' '}
+                                        <strong className="text-gray-400">Refresh from API</strong> calls GET /v1/models
+                                        (OpenAI-compatible), public OpenRouter, or Anthropic /v1/models — save your key
+                                        first where required.
+                                      </p>
+                                    </div>
+                                  )}
+
+                                  {mf && chatOpts.length === 0 && (
+                                    <ModelInput
+                                      label="Model ID (catalog loading…)"
+                                      value={pModel}
+                                      onChange={(v) => patchSnap(mf, v)}
+                                      onCommit={(v) => save(mf, v)}
+                                      suggestions={p.defaultModel ? [p.defaultModel] : []}
+                                      hint="If this stays empty, restart settings — or type an id from the vendor console."
+                                    />
+                                  )}
+
+                                  {pTest && (
+                                    <p
+                                      className={`font-mono text-xs ${pTest.success ? 'text-accent' : 'text-rose-400'}`}
+                                    >
+                                      {pTest.success ? '◆ Uplink verified' : pTest.error}
+                                    </p>
+                                  )}
+                                  <button
+                                    type="button"
+                                    onClick={() => testApiFor(p.id)}
+                                    disabled={pTesting}
+                                    className="btn-glow py-3 px-8"
+                                  >
+                                    {pTesting ? 'Handshaking…' : 'Full connection test'}
+                                  </button>
+                                </div>
+                              )}
+                            </div>
+                          )
+                        })}
+                      </div>
                     </div>
                   )}
                 </section>
@@ -1273,7 +1265,6 @@ export default function Settings() {
             <div className="mx-auto max-w-3xl animate-fade-in">
               <section className="glass-panel p-8">
                 <h2 className="font-display text-lg font-bold text-white">Field operations</h2>
-                <p className="mt-1 text-sm text-gray-500">Capture pipelines for the overlay session.</p>
                 <div className="mt-8 space-y-6">
                   <label className="settings-row-tile flex cursor-pointer items-center justify-between gap-4">
                     <div>
@@ -1337,15 +1328,8 @@ export default function Settings() {
                       </option>
                     </select>
                   </div>
-                  <div className="settings-row-tile flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
-                    <div className="min-w-0 flex-1">
-                      <span className="font-medium text-gray-200">Transcription engine</span>
-                      <p className="mt-1 text-xs text-gray-600">
-                        <strong className="text-gray-400">Local (recommended)</strong> — on-device Whisper via ONNX. No API key needed, no rate limits, fully private. Downloads ~145 MB on first use (cached). Works on every system with WebGPU (fast) or CPU fallback.
-                        <br />
-                        <strong className="text-gray-400">Cloud</strong> — uses your Groq/OpenAI key. Faster on first chunk but subject to free-tier rate limits.
-                      </p>
-                    </div>
+                  <div className="settings-row-tile flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+                    <span className="font-medium text-gray-200">Transcription</span>
                     <select
                       value={sttMode}
                       onChange={(e) => {
@@ -1353,12 +1337,140 @@ export default function Settings() {
                         setSttMode(v)
                         save('sttMode', v)
                       }}
-                      className="input-shadow w-full shrink-0 px-3 py-2 text-sm sm:w-64"
+                      className="input-shadow w-full shrink-0 px-3 py-2 text-sm sm:w-48"
                     >
-                      <option value="local" className="bg-void-900">Local (offline, no key needed)</option>
-                      <option value="cloud" className="bg-void-900">Cloud (Groq / OpenAI key)</option>
+                      <option value="local" className="bg-void-900">Local</option>
+                      <option value="cloud" className="bg-void-900">Cloud</option>
                     </select>
                   </div>
+
+                  {sttMode === 'cloud' && snap && (
+                    <>
+                      <div className="settings-row-tile">
+                        <div className="mb-2 flex items-center justify-between gap-2">
+                          <span className="font-medium text-gray-200">Cloud STT provider</span>
+                          <span className={`font-mono text-[10px] ${sttKeySaved ? 'text-accent' : 'text-amber-400'}`}>
+                            {sttKeySaved ? 'Key ✓' : 'Key —'}
+                          </span>
+                        </div>
+                        <div className="flex flex-col gap-1.5">
+                          {sttCapableMeta.map((p) => (
+                            <button
+                              key={p.id}
+                              type="button"
+                              onClick={() => {
+                                setSttProvider(p.id)
+                                save('sttProvider', p.id)
+                              }}
+                              className="w-full rounded-xl border px-3 py-2.5 text-left transition-all duration-300"
+                              style={{
+                                background:
+                                  sttProvider === p.id
+                                    ? `linear-gradient(145deg, ${p.color}22, rgba(0,0,0,0.42))`
+                                    : 'linear-gradient(165deg, rgba(255,255,255,0.07) 0%, rgba(0,0,0,0.48) 100%)',
+                                borderColor: sttProvider === p.id ? `${p.color}70` : 'rgba(255,255,255,0.1)',
+                              }}
+                            >
+                              <div className="flex items-center justify-between gap-2">
+                                <span className="font-display text-xs font-bold text-white">{p.label}</span>
+                                <span
+                                  className="shrink-0 rounded px-1.5 py-0.5 font-mono text-[8px] font-bold uppercase"
+                                  style={{ background: `${p.color}28`, color: p.color }}
+                                >
+                                  {p.badge}
+                                </span>
+                              </div>
+                            </button>
+                          ))}
+                        </div>
+                        {sttKeyField && (
+                          <div className="mt-3 flex flex-wrap gap-2">
+                            <input
+                              type="password"
+                              value={sttSecretInput}
+                              onChange={(e) => setSttSecretInput(e.target.value)}
+                              placeholder={sttKeySaved ? '••••••••' : `${currentSttMeta?.label || 'STT'} API key`}
+                              className="input-shadow min-w-[200px] flex-1 px-3 py-2 text-sm"
+                            />
+                            <button
+                              type="button"
+                              onClick={() => {
+                                if (sttKeyField && sttSecretInput.trim()) {
+                                  saveKey(sttKeyField, sttSecretInput)
+                                  setSttSecretInput('')
+                                }
+                              }}
+                              className="btn-ghost px-4 py-2 text-xs"
+                            >
+                              Commit key
+                            </button>
+                          </div>
+                        )}
+                      </div>
+
+                      {sttProvider === 'groq' && (
+                        <ModelSelect
+                          label="STT model"
+                          value={snap.groqWhisperModel || 'whisper-large-v3-turbo'}
+                          models={GROQ_WHISPER}
+                          onChange={(v) => {
+                            patchSnap('groqWhisperModel', v)
+                            save('groqWhisperModel', v)
+                          }}
+                        />
+                      )}
+                      {sttProvider === 'together' && (
+                        <ModelSelect
+                          label="STT model"
+                          value={snap.togetherWhisperModel || 'openai/whisper-large-v3'}
+                          models={TOGETHER_WHISPER_MODELS}
+                          onChange={(v) => {
+                            patchSnap('togetherWhisperModel', v)
+                            save('togetherWhisperModel', v)
+                          }}
+                        />
+                      )}
+                      {sttProvider === 'mistral' && (
+                        <ModelSelect
+                          label="STT model"
+                          value={snap.mistralSttModel || 'voxtral-mini-latest'}
+                          models={MISTRAL_STT_MODELS}
+                          onChange={(v) => {
+                            patchSnap('mistralSttModel', v)
+                            save('mistralSttModel', v)
+                          }}
+                        />
+                      )}
+                      {sttProvider === 'fireworks' && (
+                        <ModelSelect
+                          label="STT model"
+                          value={snap.fireworksSttModel || 'whisper-v3-turbo'}
+                          models={FIREWORKS_STT_MODELS}
+                          onChange={(v) => {
+                            patchSnap('fireworksSttModel', v)
+                            save('fireworksSttModel', v)
+                          }}
+                        />
+                      )}
+                      {sttProvider === 'nvidia' && (
+                        <ModelSelect
+                          label="STT model"
+                          value={snap.nvidiaSttModel || 'parakeet-1.1b-rnnt-multilingual-asr'}
+                          models={NVIDIA_STT_MODELS}
+                          onChange={(v) => {
+                            patchSnap('nvidiaSttModel', v)
+                            save('nvidiaSttModel', v)
+                          }}
+                        />
+                      )}
+                      {sttProvider === 'openai' && (
+                        <div className="settings-row-tile">
+                          <span className="text-[10px] font-semibold uppercase tracking-widest text-mist-400">STT model</span>
+                          <p className="mt-1 font-mono text-sm text-gray-300">whisper-1</p>
+                        </div>
+                      )}
+                    </>
+                  )}
                   <div className="settings-row-tile flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
                     <div className="min-w-0 flex-1">
                       <span className="font-medium text-gray-200">Mic sensitivity</span>

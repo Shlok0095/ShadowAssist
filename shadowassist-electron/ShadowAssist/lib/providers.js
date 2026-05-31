@@ -248,6 +248,12 @@ function getProviderMetadataForUI() {
   })
 }
 
+const STT_CAPABLE_IDS = ['groq', 'openai', 'together', 'mistral', 'fireworks', 'nvidia']
+
+function getSttProviderMetadataForUI() {
+  return getProviderMetadataForUI().filter((p) => STT_CAPABLE_IDS.includes(p.id))
+}
+
 module.exports = {
   REGISTRY,
   ORDER,
@@ -262,4 +268,6 @@ module.exports = {
   supportsVision,
   usesBuiltInWhisper,
   getProviderMetadataForUI,
+  getSttProviderMetadataForUI,
+  STT_CAPABLE_IDS,
 }

@@ -13,7 +13,7 @@ import {
   filterWhisperVerboseJson,
 } from '../shared/whisperTranscriptGate'
 import { captureScreenTextLocal, terminateLocalOcr, warmupLocalOcr } from './localOcr'
-import { startLocalStt, stopLocalStt, isLocalSttRunning, preloadLocalStt } from './localStt'
+import { startLocalStt, stopLocalStt, preloadLocalStt } from './localStt'
 
 const ipc = createIpcShim()
 const COLLAPSED_H = 38
@@ -282,7 +282,36 @@ function IncognitoGlyph() {
 }
 
 function getMimeType() {
-  return ['audio/webm;codecs=opus', 'audio/webm', 'audio/ogg;codecs=opus'].find((m) => MediaRecorder.isTypeSupported(m)) || ''
+  return ['audio/webm;codecs=opus', 'audio/webm', 'audio/ogg;codecs=opus', 'audio/ogg'].find((m) => MediaRecorder.isTypeSupported(m)) || ''
+}
+
+/** Decode MediaRecorder blob → 16 kHz mono LINEAR_PCM for NVIDIA Riva (WAV/OGG/OPUS only on NVCF). */
+async function blobToLinear16Mono(blob, targetRate = 16000) {
+  const ab = await blob.arrayBuffer()
+  const ctx = new AudioContext()
+  try {
+    const decoded = await ctx.decodeAudioData(ab.slice(0))
+    const length = Math.max(1, Math.ceil(decoded.duration * targetRate))
+    const offline = new OfflineAudioContext(1, length, targetRate)
+    const src = offline.createBufferSource()
+    src.buffer = decoded
+    src.connect(offline.destination)
+    src.start(0)
+    const rendered = await offline.startRendering()
+    const floats = rendered.getChannelData(0)
+    const pcm = new Int16Array(floats.length)
+    for (let i = 0; i < floats.length; i++) {
+      const s = Math.max(-1, Math.min(1, floats[i]))
+      pcm[i] = s < 0 ? s * 0x8000 : s * 0x7fff
+    }
+    return pcm.buffer
+  } finally {
+    try {
+      await ctx.close()
+    } catch {
+      /* ignore */
+    }
+  }
 }
 function emit(event, detail) {
   window.dispatchEvent(new CustomEvent(event, { detail }))
@@ -557,6 +586,9 @@ export default function App() {
   const lastOcrTriggerRef = useRef('')
   const lastScreenTriggerTimeRef = useRef(0)
   const lastGlobalTriggerTimeRef = useRef(0)
+  /** Session IPC must call latest start/stop — not first-render closures. */
+  const startMicRef = useRef(() => {})
+  const stopMicRef = useRef(() => {})
   const bypassCaptureOnceRef = useRef(false)
   const isThinkingRef = useRef(false)
   /** True while main `ask-ai-with-transcript` handler is in flight (released when invoke settles). */
@@ -638,20 +670,14 @@ export default function App() {
     ipc.invoke('get-store', 'assistAutoTrigger').then((v) => {
       assistAutoTriggerRef.current = v === true
     })
-    ipc.invoke('get-store', 'sttMode').then((v) => {
-      const mode = v === 'cloud' ? 'cloud' : 'local'
+    ipc.invoke('get-store', 'sttMode').then((stt) => {
+      const mode = stt === 'cloud' ? 'cloud' : 'local'
       setSttMode(mode)
-      if (mode === 'local') {
-        // Pre-warm Moonshine model/base (~68 MB) immediately at startup.
-        // By the time the user clicks Start Listening the model is cached
-        // and transcription begins with ZERO dropped words at the start.
-        preloadLocalStt({
-          onReady: () => setLocalSttReady(true),
-        })
-      } else {
-        // Cloud mode needs no local model.
+      if (mode !== 'local') {
         setLocalSttReady(true)
+        return
       }
+      preloadLocalStt({ onReady: () => setLocalSttReady(true) })
     })
   }, [])
 
@@ -928,9 +954,9 @@ export default function App() {
       sessionOnRef.current = active
       setSessionOn(active)
       setStatus(active ? 'active' : 'idle')
-      if (active) startMic()
+      if (active) startMicRef.current()
       else {
-        stopMic()
+        stopMicRef.current()
         // Session ended: return to initial compact panel state.
         setExpanded(false)
       }
@@ -1028,7 +1054,6 @@ export default function App() {
     try {
       const currentSttMode = (await ipc?.invoke('get-store', 'sttMode')) === 'cloud' ? 'cloud' : 'local'
       setSttMode(currentSttMode)
-
       const sensRaw = await ipc?.invoke('get-store', 'micSensitivity')
       const captureProfile = resolveMicCaptureProfile(sensRaw)
       micCaptureProfileRef.current = captureProfile
@@ -1042,7 +1067,7 @@ export default function App() {
       } catch {}
       if (!mic && !sys) { emit('mic-error', { message: 'No audio' }); return }
 
-      // ── LOCAL mode: Moonshine streaming (built-in VAD, no MediaRecorder, no hallucinations) ──
+      // ── LOCAL: Moonshine streaming (built-in VAD, no MediaRecorder) ──────────
       if (currentSttMode === 'local') {
         isListening.current = true
         streamRef._mic = mic
@@ -1060,15 +1085,15 @@ export default function App() {
           },
         })
         emit('mic-status', { active: true })
-        // If the model is still downloading (first launch), show a clear banner.
-        // Without this the UI says "Listening" but silently drops all speech.
         if (!localSttReady) {
-          emit('notify', { message: '⏳ Downloading Moonshine model (~68 MB) — listening begins once ready. One-time download.' })
+          emit('notify', {
+            message: '⏳ Downloading Moonshine model (~68 MB) — listening begins once ready. One-time download.',
+          })
         }
         return
       }
 
-      // ── CLOUD mode: MediaRecorder chunks → Groq/OpenAI API ─────────────────
+      // ── CLOUD: MediaRecorder chunks → Groq / OpenAI API ──────────────────────
       let ctx
       try {
         ctx = new AudioContext({ sampleRate: 48000 })
@@ -1212,7 +1237,9 @@ export default function App() {
       try {
         mr.start()
         recorders.push(mr)
-      } catch {}
+      } catch (e) {
+        console.error('[MediaRecorder] start failed', spec.key, e?.message || e)
+      }
     })
 
     recorderRef.current = recorders.length === 1 ? recorders[0] : recorders
@@ -1292,6 +1319,9 @@ export default function App() {
     maybeTriggerAIRef.current?.()
   }
 
+  startMicRef.current = startMic
+  stopMicRef.current = stopMic
+
   async function transcribe(blob, mimeType, audioPathKey) {
     try {
       // Local mode uses Moonshine streaming callbacks — MediaRecorder chunks never reach here.
@@ -1301,9 +1331,25 @@ export default function App() {
       const mode = (await ipc?.invoke('get-store', 'sttMode')) === 'cloud' ? 'cloud' : 'local'
       if (mode === 'local') return
 
-      // ── CLOUD path (Groq / OpenAI Whisper API) ──────────────────────────────
+      // ── CLOUD path (Groq / OpenAI Whisper, NVIDIA Parakeet, …) ─────────────
       const cfg = await ipc?.invoke('get-transcription-config')
-      if (!cfg?.url || !cfg.apiKey) return
+      if (!cfg?.apiKey) return
+
+      if (cfg.sttKind === 'nvidia_riva') {
+        const pcm = await blobToLinear16Mono(blob)
+        const { text: nvidiaText } =
+          (await ipc?.invoke('nvidia-transcribe-pcm', {
+            pcm,
+            sampleRate: 16000,
+            languageCode: cfg.languageCode || 'multi',
+          })) || {}
+        const text = String(nvidiaText || '').trim()
+        if (!text || text.length < 3 || HALLUCINATIONS.some((r) => r.test(text))) return
+        processTranscribedText(text, audioPathKey)
+        return
+      }
+
+      if (!cfg.url) return
 
       const ext = (mimeType || '').includes('ogg') ? 'ogg' : 'webm'
       const post = (format) => {
