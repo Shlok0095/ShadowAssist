@@ -1,51 +1,11 @@
-import { useEffect, useRef, useState, type ReactNode } from 'react'
 import { Link } from 'react-router-dom'
+import { motion, useReducedMotion } from 'framer-motion'
 import { HeroLiveMock } from '@/components/home/HeroLiveMock'
+import { FeatureMarquee } from '@/components/marketing/FeatureMarquee'
+import { GlowCta } from '@/components/marketing/GlowCta'
+import { ScrollReveal } from '@/components/marketing/ScrollReveal'
 import { SITE } from '@/config/site'
-
-const downloadRel = 'noopener noreferrer' as const
-
-/** Charcoal CTA — no underline (see `marketing-cta` in index.css) */
-const CTA =
-  'marketing-cta inline-flex items-center justify-center rounded-2xl border border-[#3f3f46] bg-[#1f1f1f] px-8 py-4 font-display text-base font-semibold tracking-wide text-zinc-50 shadow-[0_0_0_1px_rgba(255,255,255,0.04),0_12px_40px_-12px_rgba(0,0,0,0.65)] transition-[transform,box-shadow,background-color,border-color] duration-300 hover:scale-[1.03] hover:border-[#52525b] hover:bg-[#2a2a2a] hover:shadow-[0_0_0_1px_rgba(255,255,255,0.07),0_20px_56px_-16px_rgba(0,0,0,0.75)] active:scale-[0.99] focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-zinc-500'
-
-function FadeIn({
-  children,
-  className = '',
-  delayMs = 0,
-}: {
-  children: ReactNode
-  className?: string
-  delayMs?: number
-}) {
-  const ref = useRef<HTMLDivElement>(null)
-  const [on, setOn] = useState(false)
-
-  useEffect(() => {
-    const el = ref.current
-    if (!el) return
-    const io = new IntersectionObserver(
-      ([e]) => {
-        if (e?.isIntersecting) setOn(true)
-      },
-      { rootMargin: '-5% 0px -5% 0px', threshold: 0.08 }
-    )
-    io.observe(el)
-    return () => io.disconnect()
-  }, [])
-
-  return (
-    <div
-      ref={ref}
-      style={{ transitionDelay: on ? `${delayMs}ms` : '0ms' }}
-      className={`transform-gpu transition-all duration-700 ease-out motion-reduce:transition-none motion-reduce:opacity-100 motion-reduce:translate-y-0 ${
-        on ? 'translate-y-0 opacity-100' : 'translate-y-4 opacity-0'
-      } ${className}`}
-    >
-      {children}
-    </div>
-  )
-}
+import { useRollingReleaseMeta } from '@/hooks/useRollingReleaseMeta'
 
 function IconMic({ className = '' }: { className?: string }) {
   return (
@@ -120,218 +80,235 @@ const bento = [
   },
 ] as const
 
-export function MarketingHome() {
-  return (
-    <div className="min-w-0 bg-[#0a0a0a] font-sans text-white antialiased">
-      {/* Hero */}
-      <section className="relative overflow-hidden px-4 pb-16 pt-10 sm:px-8 sm:pb-20 sm:pt-14 md:px-10 md:pt-16 lg:px-14 xl:px-16">
-        <div className="pointer-events-none absolute inset-0" aria-hidden>
-          <div className="absolute left-1/2 top-[18%] h-[min(92vw,520px)] w-[min(92vw,520px)] -translate-x-1/2 rounded-full bg-white/[0.04] blur-[100px] motion-safe:animate-[pulse_7s_ease-in-out_infinite]" />
-          <div className="absolute bottom-[8%] right-[-5%] h-[min(50vw,420px)] w-[min(50vw,420px)] rounded-full bg-zinc-600/10 blur-[100px]" />
-        </div>
+const shipped = [
+  {
+    k: '01',
+    title: 'Meetings tab',
+    body:
+      'Connect Google Calendar with your own OAuth app credentials. See upcoming accepted meetings and optionally get Windows notifications before start time.',
+  },
+  {
+    k: '02',
+    title: 'Meeting Summary list',
+    body:
+      'Each Listen session (Start → Stop) can produce a concise bullet summary. Pick a session by time range and read the recap—driven by Listen data.',
+  },
+  {
+    k: '03',
+    title: 'Recaps that survive restarts',
+    body:
+      'Session summaries are stored in your local app data so they stay after you quit or reboot. Clear past summaries from the same panel when you want.',
+  },
+  {
+    k: '04',
+    title: 'Prompts & persona',
+    body:
+      'A built-in default system prompt lives in the app backend; override with your own text in the Shadow profile when you need a custom voice.',
+  },
+] as const
 
-        <div className="relative z-[1] mx-auto grid w-full max-w-[90rem] gap-12 lg:grid-cols-2 lg:items-start lg:gap-x-16 lg:gap-y-12 lg:content-start xl:gap-x-24">
-          <div className="min-w-0 text-center lg:max-w-none lg:text-left lg:pt-1 lg:sticky lg:top-28 lg:z-[1] lg:self-start">
-            <FadeIn>
-              <p className="mb-4 font-mono text-[10px] font-medium uppercase tracking-[0.28em] text-zinc-500 sm:text-xs sm:tracking-[0.22em]">
+export function MarketingHome() {
+  const releaseMeta = useRollingReleaseMeta()
+  const reduceMotion = useReducedMotion()
+
+  return (
+    <div className="relative min-w-0 font-sans text-white antialiased">
+      {/* Hero */}
+      <section className="relative overflow-hidden px-4 pb-10 pt-12 sm:px-8 sm:pb-14 sm:pt-16 md:px-10 lg:px-14 xl:px-16">
+        <div className="relative z-[1] mx-auto grid w-full max-w-[90rem] gap-14 lg:grid-cols-[1.05fr_0.95fr] lg:items-center lg:gap-x-16 xl:gap-x-20">
+          <div className="min-w-0 text-center lg:text-left">
+            <ScrollReveal>
+              <div className="mb-5 inline-flex items-center gap-2 rounded-full border border-cyan-500/20 bg-cyan-500/[0.06] px-4 py-1.5 font-mono text-[10px] uppercase tracking-[0.28em] text-cyan-300/90 sm:text-[11px]">
+                <span className="h-1.5 w-1.5 rounded-full bg-cyan-400 shadow-[0_0_12px_2px_rgba(34,211,238,0.55)] motion-safe:animate-pulse" />
                 Native intelligence layer
-              </p>
-              <h1 className="font-display text-[1.7rem] font-semibold leading-[1.08] tracking-[-0.02em] text-white sm:text-4xl md:text-5xl lg:text-[2.85rem] xl:text-[3.1rem]">
-                Context-aware AI that keeps pace with the room.
-              </h1>
-            </FadeIn>
-            <FadeIn delayMs={70} className="mt-5 sm:mt-6">
-              <p className="mx-auto max-w-2xl font-mono text-[0.8125rem] leading-[1.75] tracking-wide text-zinc-400 sm:text-sm lg:mx-0 lg:max-w-[36rem] xl:max-w-[40rem]">
-                Fuse optional audio and viewport signals into one overlay—BYOK, provider-direct TLS, no baked-in keys. The
-                preview cycles voice → model output → structured screen extract → grounded synthesis.
-              </p>
-              <div
-                className="mx-auto mt-5 max-w-2xl rounded-xl border border-white/[0.08] bg-white/[0.03] px-4 py-3 text-left font-mono text-[0.7rem] leading-relaxed tracking-wide text-zinc-500 sm:text-xs lg:mx-0"
-              >
-                <span className="text-white/70">Floating overlay</span>
-                <span className="text-zinc-600"> · </span>
-                Tray-resident, hotkey-friendly—answers stream in a slim panel with no second monitor or browser tab
-                hand-off.
               </div>
-            </FadeIn>
-            <FadeIn delayMs={130} className="relative mt-8 flex flex-col items-center gap-3 sm:mt-10 lg:items-start">
-              <div className="pointer-events-none absolute -left-4 top-1/2 h-36 w-64 -translate-y-1/2 rounded-full bg-zinc-500/10 blur-[48px] lg:left-0" aria-hidden />
-              <a href={SITE.downloadSetupExeUrl} target="_blank" rel={downloadRel} className={`relative z-[1] ${CTA} w-full max-w-sm sm:w-auto`}>
+              <h1 className="font-display text-[1.85rem] font-bold leading-[1.06] tracking-[-0.03em] sm:text-4xl md:text-5xl lg:text-[3.15rem] xl:text-[3.45rem]">
+                <span className="block text-white">Context-aware AI</span>
+                <span className="futura-gradient-text mt-1 block">built for live rooms.</span>
+              </h1>
+            </ScrollReveal>
+
+            <ScrollReveal delay={0.08} className="mt-6">
+              <p className="mx-auto max-w-2xl font-mono text-[0.8125rem] leading-[1.8] tracking-wide text-zinc-400 sm:text-sm lg:mx-0 lg:max-w-[38rem]">
+                Fuse optional audio and viewport signals into one overlay—BYOK, provider-direct TLS, no baked-in keys.
+                Answers stream in a slim panel while the meeting keeps moving.
+              </p>
+              <div className="futura-glass-chip mx-auto mt-5 max-w-2xl px-4 py-3 text-left font-mono text-[0.7rem] leading-relaxed tracking-wide text-zinc-500 sm:text-xs lg:mx-0">
+                <span className="text-cyan-300/90">Floating overlay</span>
+                <span className="text-zinc-600"> · </span>
+                Tray-resident, hotkey-friendly—no second monitor or browser tab hand-off.
+              </div>
+            </ScrollReveal>
+
+            <ScrollReveal delay={0.14} className="mt-9 flex flex-col items-center gap-4 lg:items-start">
+              <GlowCta href={SITE.downloadSetupExeUrl} size="lg" className="w-full max-w-sm sm:w-auto">
                 Download for Windows
-              </a>
+                <svg className="h-4 w-4 transition-transform duration-300 group-hover:translate-x-0.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" aria-hidden>
+                  <path d="M5 12h14M13 6l6 6-6 6" strokeLinecap="round" strokeLinejoin="round" />
+                </svg>
+              </GlowCta>
               <p className="font-mono text-xs tracking-wide text-zinc-600">macOS · roadmap</p>
               <p className="font-mono text-[11px] tracking-wide text-zinc-600">
-                <Link
-                  to="/how-it-works"
-                  className="text-zinc-500 transition-colors hover:text-zinc-300"
-                >
+                <Link to="/how-it-works" className="text-zinc-500 transition-colors hover:text-cyan-300/90">
                   How it works
                 </Link>
                 <span className="mx-2 text-zinc-700">·</span>
-                <Link to="/built-for-live-work" className="text-zinc-500 transition-colors hover:text-zinc-300">
+                <Link to="/built-for-live-work" className="text-zinc-500 transition-colors hover:text-cyan-300/90">
                   Built for live work
                 </Link>
               </p>
-            </FadeIn>
+            </ScrollReveal>
           </div>
 
-          <FadeIn
-            delayMs={90}
-            className="relative min-w-0 w-full shrink-0 lg:h-[29rem] lg:justify-self-end lg:min-h-[29rem] xl:max-w-[36rem] xl:justify-self-end"
-          >
-            <div
-              className="pointer-events-none absolute -inset-4 rounded-[1.5rem] bg-gradient-to-br from-white/[0.06] via-transparent to-zinc-600/10 opacity-90 blur-2xl motion-safe:animate-pulse sm:-inset-6"
-              aria-hidden
-            />
-            <HeroLiveMock className="relative ring-1 ring-zinc-700/50" />
-          </FadeIn>
+          <ScrollReveal delay={0.1} className="relative min-w-0 w-full lg:justify-self-end">
+            <div className="futura-mock-frame relative">
+              <div className="futura-mock-frame__halo" aria-hidden />
+              {!reduceMotion ? (
+                <motion.div
+                  className="absolute -inset-px rounded-[1.35rem] opacity-60"
+                  style={{
+                    background:
+                      'conic-gradient(from 180deg, rgba(34,211,238,0.35), rgba(139,92,246,0.25), rgba(59,130,246,0.3), rgba(34,211,238,0.35))',
+                  }}
+                  animate={{ rotate: 360 }}
+                  transition={{ duration: 18, repeat: Infinity, ease: 'linear' }}
+                  aria-hidden
+                />
+              ) : null}
+              <HeroLiveMock className="relative z-[1] ring-1 ring-white/10" />
+            </div>
+          </ScrollReveal>
         </div>
       </section>
 
-      {/* Shipped product surface — visible add-ons */}
+      <FeatureMarquee />
+
+      {/* Shipped */}
       <section
         id="app-features"
-        className="scroll-mt-24 border-t border-[#2a2a2a] bg-gradient-to-b from-zinc-950/40 to-transparent px-4 py-14 sm:px-8 sm:py-16 md:px-10 lg:px-14 xl:px-16"
+        className="scroll-mt-24 border-t border-white/[0.06] px-4 py-16 sm:px-8 md:px-10 lg:px-14 xl:px-16"
       >
         <div className="mx-auto w-full max-w-[90rem]">
-          <FadeIn>
-            <p className="text-center font-mono text-xs font-medium uppercase tracking-[0.2em] text-zinc-500">
+          <ScrollReveal>
+            <p className="text-center font-mono text-xs font-medium uppercase tracking-[0.24em] text-cyan-400/70">
               In the product
             </p>
-            <h2 className="mt-3 text-center font-display text-2xl font-semibold tracking-[-0.02em] text-white sm:text-3xl md:text-[2rem]">
+            <h2 className="mt-3 text-center font-display text-2xl font-bold tracking-[-0.02em] text-white sm:text-3xl md:text-[2.15rem]">
               What the Windows app includes
             </h2>
             <p className="mx-auto mt-3 max-w-3xl text-center font-mono text-sm leading-relaxed tracking-wide text-zinc-500">
-              Shipped in the current build—calendar hooks, session recaps, and persona controls sit alongside the overlay and
-              tray, all with the same matte chrome as the rest of the app.
+              Calendar hooks, session recaps, and persona controls sit alongside the overlay and tray—same matte chrome
+              throughout.
             </p>
-          </FadeIn>
-          <div className="mt-10 grid gap-4 sm:grid-cols-2 lg:grid-cols-2 xl:grid-cols-4 xl:gap-5">
-            {[
-              {
-                k: '01',
-                title: 'Meetings tab',
-                body:
-                  'Connect Google Calendar with your own OAuth app credentials. See upcoming accepted meetings the same way they appear after you accept an invite, and optionally get Windows notifications before start time.',
-              },
-              {
-                k: '02',
-                title: 'Meeting Summary list',
-                body:
-                  'Each Listen session (Start → Stop) can produce a concise bullet summary. Pick a session by time range and read the recap—no calendar required for the summary itself; it is driven by Listen data.',
-              },
-              {
-                k: '03',
-                title: 'Recaps that survive restarts',
-                body:
-                  'Session summaries are stored in your local app data so they stay after you quit or reboot. You can clear past summaries from the same panel when you want a clean slate.',
-              },
-              {
-                k: '04',
-                title: 'Prompts & persona',
-                body:
-                  'A built-in default system prompt lives in the app backend for consistent behavior; you can still override with your own text in the Shadow profile when you need a custom voice or format.',
-              },
-            ].map((row, i) => (
-              <FadeIn key={row.k} delayMs={i * 60}>
-                <article className="flex h-full flex-col rounded-2xl border border-white/[0.07] bg-[#0c0c0c] p-6 sm:p-7">
-                  <span className="font-mono text-xs font-semibold tabular-nums text-white/35">{row.k}</span>
+          </ScrollReveal>
+
+          <div className="mt-12 grid gap-4 sm:grid-cols-2 xl:grid-cols-4 xl:gap-5">
+            {shipped.map((row, i) => (
+              <ScrollReveal key={row.k} delay={i * 0.06}>
+                <article className="futura-card group flex h-full flex-col p-6 sm:p-7">
+                  <span className="font-mono text-xs font-semibold tabular-nums text-cyan-400/50">{row.k}</span>
                   <h3 className="mt-2 font-display text-lg font-semibold tracking-[-0.01em] text-white">{row.title}</h3>
-                  <p className="mt-2 flex-1 text-sm leading-relaxed tracking-wide text-zinc-500">{row.body}</p>
+                  <p className="mt-2 flex-1 text-sm leading-relaxed tracking-wide text-zinc-500 transition-colors group-hover:text-zinc-400">
+                    {row.body}
+                  </p>
                 </article>
-              </FadeIn>
+              </ScrollReveal>
             ))}
           </div>
-          <FadeIn delayMs={200} className="mt-10 text-center">
+
+          <ScrollReveal delay={0.2} className="mt-10 text-center">
             <Link
               to="/docs/getting-started"
-              className="font-mono text-sm text-zinc-500 underline decoration-zinc-600 underline-offset-4 transition-colors hover:text-zinc-200"
+              className="font-mono text-sm text-zinc-500 underline decoration-cyan-500/30 underline-offset-4 transition-colors hover:text-cyan-300/90"
             >
               Step-by-step: Getting started →
             </Link>
-          </FadeIn>
+          </ScrollReveal>
         </div>
       </section>
 
       {/* Bento */}
-      <section id="features" className="scroll-mt-24 border-t border-[#2a2a2a] px-4 py-14 sm:px-8 sm:py-16 md:px-10 lg:px-14 xl:px-16">
+      <section id="features" className="scroll-mt-24 border-t border-white/[0.06] px-4 py-16 sm:px-8 md:px-10 lg:px-14 xl:px-16">
         <div className="mx-auto w-full max-w-[90rem]">
-          <FadeIn>
-            <h2 className="text-center font-display text-xl font-semibold tracking-[-0.02em] text-white sm:text-2xl md:text-[1.75rem]">
-              Inference-adjacent, unified
+          <ScrollReveal>
+            <h2 className="text-center font-display text-xl font-bold tracking-[-0.02em] text-white sm:text-2xl md:text-[1.85rem]">
+              Inference-adjacent, <span className="futura-gradient-text">unified</span>
             </h2>
             <p className="mx-auto mt-3 max-w-3xl text-center font-mono text-sm leading-relaxed tracking-wide text-zinc-500">
               Listening, low-latency answers, screen grounding, and a compact overlay surface—one panel.
             </p>
-          </FadeIn>
-          <div className="mt-10 grid grid-cols-2 gap-3 [grid-template-columns:minmax(0,1fr)_minmax(0,1fr)] sm:mx-auto sm:mt-12 sm:max-w-2xl sm:gap-3 lg:max-w-4xl">
+          </ScrollReveal>
+
+          <div className="mt-12 grid grid-cols-2 gap-3 sm:mx-auto sm:max-w-2xl lg:max-w-4xl">
             {bento.map((card, i) => (
-              <FadeIn
+              <ScrollReveal
                 key={card.title}
-                delayMs={i * 50}
+                delay={i * 0.05}
                 className={i === 4 ? 'col-span-2 flex justify-center' : 'min-w-0'}
               >
                 <article
                   className={
                     i === 4
-                      ? 'group flex h-full min-h-[10.25rem] w-full max-w-[calc(50%-0.375rem)] flex-col rounded-xl border border-[#2a2a2a] bg-[#121212] p-4 transition-[transform,box-shadow,border-color] duration-300 hover:-translate-y-0.5 hover:border-zinc-600/60 hover:shadow-[0_16px_40px_-16px_rgba(0,0,0,0.55)] sm:min-h-[9.75rem] sm:max-w-[calc((100%-0.75rem)/2)] sm:p-5'
-                      : 'group flex h-full min-h-[10.25rem] w-full min-w-0 flex-col rounded-xl border border-[#2a2a2a] bg-[#121212] p-4 transition-[transform,box-shadow,border-color] duration-300 hover:-translate-y-0.5 hover:border-zinc-600/60 hover:shadow-[0_16px_40px_-16px_rgba(0,0,0,0.55)] sm:min-h-[9.75rem] sm:p-5'
+                      ? 'futura-card group flex h-full min-h-[10.25rem] w-full max-w-[calc(50%-0.375rem)] flex-col p-4 sm:min-h-[9.75rem] sm:max-w-[calc((100%-0.75rem)/2)] sm:p-5'
+                      : 'futura-card group flex h-full min-h-[10.25rem] w-full min-w-0 flex-col p-4 sm:min-h-[9.75rem] sm:p-5'
                   }
                 >
-                  <div className="mb-3 flex h-9 w-9 shrink-0 items-center justify-center rounded-lg border border-[#2a2a2a] bg-[#0a0a0a] text-zinc-400 transition-colors group-hover:border-zinc-600 group-hover:text-zinc-200">
+                  <div className="mb-3 flex h-9 w-9 shrink-0 items-center justify-center rounded-lg border border-cyan-500/15 bg-cyan-500/[0.06] text-cyan-300/80 transition-colors group-hover:border-cyan-400/30 group-hover:text-cyan-200">
                     <card.icon className="h-4 w-4" />
                   </div>
-                  <h3 className="font-display text-base font-semibold leading-snug tracking-[-0.01em] text-white">{card.title}</h3>
+                  <h3 className="font-display text-base font-semibold leading-snug tracking-[-0.01em] text-white">
+                    {card.title}
+                  </h3>
                   <p className="mt-1.5 text-xs leading-relaxed tracking-wide text-zinc-500 line-clamp-4 sm:text-[0.8125rem]">
                     {card.desc}
                   </p>
                 </article>
-              </FadeIn>
+              </ScrollReveal>
             ))}
           </div>
         </div>
       </section>
 
       {/* Download */}
-      <section id="download" className="scroll-mt-24 border-t border-[#2a2a2a] px-4 py-16 sm:px-8 sm:py-20 md:px-10 lg:px-14 xl:px-16">
+      <section id="download" className="scroll-mt-24 border-t border-white/[0.06] px-4 py-20 sm:px-8 md:px-10 lg:px-14 xl:px-16">
         <div className="mx-auto w-full max-w-3xl text-center">
-          <FadeIn>
-            <h2 className="font-display text-2xl font-semibold tracking-[-0.02em] text-white sm:text-3xl md:text-[2rem]">
-              Download for Windows
+          <ScrollReveal>
+            <h2 className="font-display text-2xl font-bold tracking-[-0.02em] text-white sm:text-3xl md:text-[2.1rem]">
+              Ready when the room is
             </h2>
             <p className="mt-3 font-mono text-sm tracking-wide text-zinc-500">
               NSIS installer · no account gate · credentials stay local after first launch.
             </p>
-          </FadeIn>
-          <FadeIn delayMs={90} className="relative mx-auto mt-10 max-w-md">
-            <div
-              className="pointer-events-none absolute left-1/2 top-1/2 h-52 w-full max-w-lg -translate-x-1/2 -translate-y-1/2 rounded-full bg-zinc-600/15 blur-[56px]"
-              aria-hidden
-            />
-            <a
-              href={SITE.downloadSetupExeUrl}
-              target="_blank"
-              rel={downloadRel}
-              className={`relative z-[1] block w-full ${CTA} py-[1.125rem] text-lg`}
-            >
+            {releaseMeta.kind === 'ok' ? (
+              <p className="mt-2 font-mono text-[11px] tracking-wide text-zinc-600">
+                Latest build{' '}
+                <span className="text-cyan-400/80">{releaseMeta.tag.replace(/^v/i, '')}</span>
+                {releaseMeta.updatedLabel ? ` · ${releaseMeta.updatedLabel}` : null}
+              </p>
+            ) : null}
+          </ScrollReveal>
+
+          <ScrollReveal delay={0.1} className="relative mx-auto mt-10 max-w-md">
+            <div className="futura-download-glow pointer-events-none absolute inset-0" aria-hidden />
+            <GlowCta href={SITE.downloadSetupExeUrl} size="lg" className="relative z-[1] w-full">
               Download for Windows
-            </a>
+            </GlowCta>
             <p className="mt-4 font-mono text-xs tracking-wide text-zinc-600">macOS client · on the roadmap</p>
-          </FadeIn>
+          </ScrollReveal>
         </div>
       </section>
 
-      <footer className="border-t border-[#2a2a2a] px-4 py-8 sm:px-8 md:px-10 lg:px-14 xl:px-16">
+      <footer className="border-t border-white/[0.06] px-4 py-8 sm:px-8 md:px-10 lg:px-14 xl:px-16">
         <div className="mx-auto flex w-full max-w-[90rem] flex-col items-center justify-between gap-4 sm:flex-row">
           <span className="font-display text-sm font-semibold tracking-tight text-zinc-400">{SITE.name}</span>
           <div className="flex flex-wrap justify-center gap-x-5 gap-y-2 font-mono text-xs tracking-wide">
-            <Link to="/legal/privacy" className="text-zinc-500 no-underline transition-colors hover:text-zinc-200">
+            <Link to="/legal/privacy" className="text-zinc-500 no-underline transition-colors hover:text-cyan-300/90">
               Privacy
             </Link>
-            <Link to="/legal/terms" className="text-zinc-500 no-underline transition-colors hover:text-zinc-200">
+            <Link to="/legal/terms" className="text-zinc-500 no-underline transition-colors hover:text-cyan-300/90">
               Terms
             </Link>
-            <Link to="/docs" className="text-zinc-500 no-underline transition-colors hover:text-zinc-200">
+            <Link to="/docs" className="text-zinc-500 no-underline transition-colors hover:text-cyan-300/90">
               Docs
             </Link>
           </div>

@@ -2150,4 +2150,262 @@ body.marketing-dark .marketing-blob--violet {
     animation: none;
     opacity: 0;
   }
+
+  .futura-bg__scan,
+  .futura-bg__ring,
+  .futura-marquee__track,
+  .futura-gradient-text,
+  .futura-cta__glow {
+    animation: none !important;
+  }
+}
+
+/* ─── Futuristic marketing layer (animated-website inspired) ─── */
+body.marketing-dark {
+  --futura-cyan: #22d3ee;
+  --futura-violet: #a78bfa;
+  --futura-blue: #60a5fa;
+}
+
+.futura-bg__mesh {
+  position: absolute;
+  inset: 0;
+  background:
+    radial-gradient(ellipse 90% 60% at 50% -25%, rgba(34, 211, 238, 0.14), transparent 55%),
+    radial-gradient(ellipse 55% 45% at 100% 15%, rgba(139, 92, 246, 0.12), transparent 50%),
+    radial-gradient(ellipse 50% 40% at 0% 80%, rgba(59, 130, 246, 0.1), transparent 48%);
+}
+
+.futura-bg__grid {
+  position: absolute;
+  inset: 0;
+  background-image:
+    linear-gradient(rgba(34, 211, 238, 0.04) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(34, 211, 238, 0.04) 1px, transparent 1px);
+  background-size: 64px 64px;
+  mask-image: radial-gradient(ellipse 90% 70% at 50% 20%, black 10%, transparent 72%);
+  transform: perspective(900px) rotateX(58deg) scale(1.35);
+  transform-origin: 50% 0%;
+  opacity: 0.35;
+}
+
+.futura-bg__orb {
+  position: absolute;
+  border-radius: 50%;
+  filter: blur(90px);
+  opacity: 0.22;
+  animation: float-blob 28s ease-in-out infinite;
+}
+
+.futura-bg__orb--a {
+  width: 420px;
+  height: 420px;
+  top: -8%;
+  left: -6%;
+  background: rgba(34, 211, 238, 0.35);
+}
+
+.futura-bg__orb--b {
+  width: 380px;
+  height: 380px;
+  top: 35%;
+  right: -8%;
+  background: rgba(139, 92, 246, 0.28);
+  animation-delay: -8s;
+}
+
+.futura-bg__orb--c {
+  width: 320px;
+  height: 320px;
+  bottom: 5%;
+  left: 28%;
+  background: rgba(59, 130, 246, 0.22);
+  animation-delay: -16s;
+}
+
+.futura-bg__scan {
+  position: absolute;
+  inset: 0;
+  overflow: hidden;
+  opacity: 0.5;
+}
+
+.futura-bg__scan::after {
+  content: '';
+  position: absolute;
+  top: -20%;
+  bottom: -20%;
+  left: -30%;
+  width: 40%;
+  background: linear-gradient(
+    105deg,
+    transparent 0%,
+    transparent 42%,
+    rgba(34, 211, 238, 0.08) 50%,
+    transparent 58%,
+    transparent 100%
+  );
+  animation: hero-scan-line 14s ease-in-out infinite;
+}
+
+.futura-bg__ring {
+  position: absolute;
+  top: 12%;
+  right: 8%;
+  width: min(42vw, 420px);
+  height: min(42vw, 420px);
+  border: 1px solid rgba(34, 211, 238, 0.08);
+  border-radius: 50%;
+  opacity: 0.45;
+  animation: futura-ring-spin 48s linear infinite;
+}
+
+.futura-bg__ring::before {
+  content: '';
+  position: absolute;
+  inset: 18%;
+  border: 1px dashed rgba(167, 139, 250, 0.12);
+  border-radius: 50%;
+}
+
+@keyframes futura-ring-spin {
+  from {
+    transform: rotate(0deg);
+  }
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+.futura-gradient-text {
+  background: linear-gradient(120deg, #60a5fa 0%, #a78bfa 38%, #22d3ee 72%, #60a5fa 100%);
+  background-size: 200% auto;
+  -webkit-background-clip: text;
+  background-clip: text;
+  color: transparent;
+  animation: gradient-shift 8s ease-in-out infinite;
+}
+
+.futura-glass-chip {
+  border-radius: 0.875rem;
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  background: linear-gradient(135deg, rgba(255, 255, 255, 0.04), rgba(255, 255, 255, 0.01));
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.05);
+}
+
+.futura-card {
+  border-radius: 1rem;
+  border: 1px solid rgba(255, 255, 255, 0.07);
+  background: linear-gradient(165deg, rgba(255, 255, 255, 0.04) 0%, rgba(255, 255, 255, 0.01) 100%);
+  box-shadow:
+    0 0 0 1px rgba(0, 0, 0, 0.35),
+    0 20px 50px -24px rgba(0, 0, 0, 0.65);
+  transition:
+    transform 0.35s ease,
+    border-color 0.35s ease,
+    box-shadow 0.35s ease;
+}
+
+.futura-card:hover {
+  transform: translateY(-3px);
+  border-color: rgba(34, 211, 238, 0.18);
+  box-shadow:
+    0 0 0 1px rgba(34, 211, 238, 0.08),
+    0 24px 60px -20px rgba(34, 211, 238, 0.12);
+}
+
+.futura-mock-frame {
+  position: relative;
+  padding: 2px;
+  border-radius: 1.35rem;
+}
+
+.futura-mock-frame__halo {
+  position: absolute;
+  inset: -12%;
+  border-radius: 2rem;
+  background: radial-gradient(circle, rgba(34, 211, 238, 0.12), transparent 62%);
+  filter: blur(24px);
+}
+
+.futura-cta {
+  background: linear-gradient(180deg, rgba(15, 23, 42, 0.95), rgba(3, 7, 18, 0.98));
+  box-shadow:
+    0 0 0 1px rgba(255, 255, 255, 0.06),
+    0 16px 48px -16px rgba(34, 211, 238, 0.25);
+}
+
+.futura-cta__ring {
+  padding: 1px;
+  background: linear-gradient(135deg, rgba(34, 211, 238, 0.55), rgba(139, 92, 246, 0.45), rgba(59, 130, 246, 0.5));
+  mask:
+    linear-gradient(#fff 0 0) content-box,
+    linear-gradient(#fff 0 0);
+  mask-composite: exclude;
+  -webkit-mask-composite: xor;
+  opacity: 0.85;
+}
+
+.futura-cta__glow {
+  background: radial-gradient(circle at 50% 0%, rgba(34, 211, 238, 0.22), transparent 55%);
+  animation: glow-flicker 4s ease-in-out infinite;
+}
+
+.futura-cta:hover .futura-cta__ring {
+  opacity: 1;
+}
+
+body.marketing-dark a.futura-cta,
+body.marketing-dark a.futura-cta:hover {
+  color: #fafafa !important;
+  text-decoration: none !important;
+}
+
+.futura-download-glow {
+  background: radial-gradient(circle, rgba(34, 211, 238, 0.16), transparent 65%);
+  filter: blur(28px);
+}
+
+.futura-marquee__track {
+  animation: marquee-scroll 38s linear infinite;
+}
+
+.futura-marquee__fade-l,
+.futura-marquee__fade-r {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  width: 4rem;
+  z-index: 1;
+}
+
+.futura-marquee__fade-l {
+  left: 0;
+  background: linear-gradient(90deg, #050508, transparent);
+}
+
+.futura-marquee__fade-r {
+  right: 0;
+  background: linear-gradient(270deg, #050508, transparent);
+}
+
+body.marketing-dark .marketing-blob--cyan {
+  background: rgba(34, 211, 238, 0.35);
+  opacity: 0.12;
+}
+
+body.marketing-dark .marketing-blob--blue {
+  background: rgba(59, 130, 246, 0.35);
+}
+
+body.marketing-dark .marketing-blob--violet {
+  background: rgba(139, 92, 246, 0.32);
+}
+
+body.marketing-dark {
+  --bg: #050508;
+  background-color: var(--bg);
+  background-image:
+    radial-gradient(ellipse 85% 55% at 50% -18%, rgba(34, 211, 238, 0.06), transparent 58%),
+    radial-gradient(ellipse 45% 40% at 100% 0%, rgba(139, 92, 246, 0.05), transparent 48%);
 }

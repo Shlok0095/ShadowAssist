@@ -1,6 +1,7 @@
 import { useEffect } from 'react'
 import { Outlet, useLocation } from 'react-router-dom'
 import Lenis from 'lenis'
+import { FuturisticBackground } from '@/components/marketing/FuturisticBackground'
 import { Footer } from '@/components/Footer'
 import { Header } from '@/components/Header'
 import { cn } from '@/components/ui/cn'
@@ -38,6 +39,7 @@ export function Shell() {
       <div className="glow glow-b" aria-hidden />
       {isMarketingSurface ? (
         <>
+          <FuturisticBackground />
           <div className="marketing-grain" aria-hidden />
           <div className="marketing-blob marketing-blob--blue" aria-hidden />
           <div className="marketing-blob marketing-blob--violet" aria-hidden />

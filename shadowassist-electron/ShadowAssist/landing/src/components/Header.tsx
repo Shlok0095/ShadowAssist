@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from 'react'
 import { NavLink, useLocation } from 'react-router-dom'
 import { cn } from '@/components/ui/cn'
+import { GlowCta } from '@/components/marketing/GlowCta'
 import { SITE } from '@/config/site'
 import brandLogo from '../../../logo.png'
 
@@ -9,11 +10,9 @@ function downloadSectionHref() {
   return `${base}#download`
 }
 
-const ctaDesktop =
-  'marketing-cta inline-flex min-h-9 items-center justify-center rounded-xl border border-[#3f3f46] bg-[#1f1f1f] px-4 font-display text-sm font-semibold tracking-wide text-zinc-50 shadow-[0_0_0_1px_rgba(255,255,255,0.04),0_8px_28px_-8px_rgba(0,0,0,0.55)] transition-[transform,box-shadow,background-color,border-color] duration-300 hover:scale-[1.03] hover:border-[#52525b] hover:bg-[#2a2a2a] active:scale-[0.99]'
+const ctaDesktop = 'hidden lg:inline-flex'
 
-const ctaMobile =
-  'marketing-cta inline-flex min-h-9 min-w-[5.5rem] items-center justify-center rounded-xl border border-[#3f3f46] bg-[#1f1f1f] px-3 font-display text-xs font-semibold tracking-wide text-zinc-50 shadow-[0_0_24px_-8px_rgba(0,0,0,0.5)] transition-[transform,box-shadow,background-color] duration-300 hover:scale-[1.03] hover:bg-[#2a2a2a] active:scale-[0.99]'
+const ctaMobile = 'inline-flex lg:hidden'
 
 export function Header() {
   const { pathname } = useLocation()
@@ -74,7 +73,7 @@ export function Header() {
     <header
       className={cn(
         'sticky top-0 z-20 flex w-full max-w-none flex-wrap items-center justify-between gap-3 border-b px-4 py-3 backdrop-blur-xl sm:px-8 md:px-10 md:py-4 lg:px-14 xl:px-16',
-        isMarketing ? 'border-[#2a2a2a]/80 bg-[#0a0a0a]/80' : 'border-zinc-200/80 bg-white/85'
+        isMarketing ? 'border-white/[0.06] bg-[#050508]/72' : 'border-zinc-200/80 bg-white/85'
       )}
     >
       <NavLink
@@ -117,17 +116,17 @@ export function Header() {
           </>
         ) : null}
         {navLinkMarketing('/docs', 'Docs')}
-        <a href={SITE.downloadSetupExeUrl} target="_blank" rel="noopener noreferrer" className={ctaDesktop}>
-          <span className="hidden lg:inline">Download for Windows</span>
-          <span className="lg:hidden">Download</span>
-        </a>
+        <GlowCta href={SITE.downloadSetupExeUrl} className="min-h-9 px-4 py-2 text-sm">
+          <span className={ctaDesktop}>Download for Windows</span>
+          <span className={ctaMobile}>Download</span>
+        </GlowCta>
       </nav>
 
       {/* Mobile */}
       <div className="flex items-center gap-2 md:hidden" ref={wrapRef}>
-        <a href={SITE.downloadSetupExeUrl} target="_blank" rel="noopener noreferrer" className={ctaMobile}>
+        <GlowCta href={SITE.downloadSetupExeUrl} className="min-h-9 min-w-[5.5rem] px-3 py-2 text-xs md:hidden">
           Download
-        </a>
+        </GlowCta>
         <div className="relative">
           <button
             type="button"
@@ -186,16 +185,13 @@ export function Header() {
                 >
                   Download <span className={cn('font-medium', menuSecondaryClass)}>(on page)</span>
                 </a>
-                <a
+                <GlowCta
                   href={SITE.downloadSetupExeUrl}
-                  target="_blank"
-                  rel="noopener noreferrer"
-                  className="marketing-cta mt-1 block rounded-xl border border-[#3f3f46] bg-[#1f1f1f] px-4 py-3 text-center font-display text-sm font-semibold tracking-wide text-zinc-50 shadow-[0_0_28px_-8px_rgba(0,0,0,0.55)] transition-[transform,background-color] hover:scale-[1.02] hover:bg-[#2a2a2a]"
-                  role="menuitem"
+                  className="mt-1 block w-full py-3 text-center text-sm"
                   onClick={() => setMenuOpen(false)}
                 >
                   Download for Windows
-                </a>
+                </GlowCta>
               </div>
             </>
           ) : null}

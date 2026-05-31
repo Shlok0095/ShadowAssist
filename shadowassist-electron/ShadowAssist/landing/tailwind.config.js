@@ -78,6 +78,14 @@ export default {
           '0%, 100%': { opacity: '0.04' },
           '50%': { opacity: '0.09' },
         },
+        'marquee-scroll': {
+          '0%': { transform: 'translateX(0)' },
+          '100%': { transform: 'translateX(-50%)' },
+        },
+        'gradient-shift': {
+          '0%, 100%': { backgroundPosition: '0% 50%' },
+          '50%': { backgroundPosition: '100% 50%' },
+        },
       },
       animation: {
         'signal-ring': 'signal-ring 2.4s ease-out infinite',
@@ -91,6 +99,8 @@ export default {
         'hero-float-mock': 'hero-float-mock 10s ease-in-out -1.4s infinite',
         'hero-radial-breathe': 'hero-radial-breathe 18s ease-in-out infinite',
         'hero-hue-veil': 'hero-hue-veil 24s ease-in-out infinite',
+        'marquee-scroll': 'marquee-scroll 38s linear infinite',
+        'gradient-shift': 'gradient-shift 8s ease-in-out infinite',
       },
       transitionDuration: {
         180: '180ms',

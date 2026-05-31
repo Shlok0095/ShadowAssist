@@ -49,7 +49,7 @@ const {
 const { transcribeLinearPcm } = require('../lib/nvidiaRivaStt')
 const sessionMemory = require('../lib/sessionMemory')
 const listenSessionSummaries = require('../lib/listenSessionSummaries')
-const { detectMeetingForegroundOrScan } = require('../lib/meetingForegroundWindows')
+const { detectMeetingForegroundOrScan, MEETING_POLL_MS } = require('../lib/meetingForegroundWindows')
 const googleCalendar = require('../lib/googleCalendar')
 
 listenSessionSummaries.initPersistence({
@@ -105,13 +105,13 @@ let consentWindow = null
 let onboardingWindow = null
 /** Top-right meeting chip — excluded from stealth content-protection list. */
 let meetingToastWindow = null
-/** Once shown or dismissed, same `eventId` is not shown again until `clearMeetingToastDedupe()` (e.g. stop session). */
+/** Once shown or dismissed, same `eventId` is not shown again for this app launch. */
 const meetingToastSuppressedEventIds = new Set()
 let meetingForegroundTickInFlight = false
-let meetingForegroundCheckedThisLaunch = false
-/** Active meeting lock by platform so the same ongoing meeting toasts only once. */
+let meetingForegroundTimer = null
+/** Tracks last-seen time per platform (for logging / future use). */
 const meetingActiveByPlatform = new Map()
-const MEETING_INACTIVE_CLEAR_MS = 45 * 1000
+const MEETING_INACTIVE_CLEAR_MS = 5 * 60 * 1000
 let appCoreStarted = false
 let calendarReminderTimer = null
 const calendarReminderSentKeys = new Set()
@@ -523,7 +523,10 @@ function showMeetingToastFromMain(payload) {
 }
 
 function stopMeetingForegroundPoll() {
-  // One-shot detection mode: no recurring poll timer.
+  if (meetingForegroundTimer) {
+    clearInterval(meetingForegroundTimer)
+    meetingForegroundTimer = null
+  }
 }
 
 function runMeetingForegroundTick() {
@@ -544,19 +547,18 @@ function runMeetingForegroundTick() {
     }
     if (!hit) return
     const platformKey = String(hit.platform || 'generic').toLowerCase()
-    const current = meetingActiveByPlatform.get(platformKey)
-    if (current) {
-      current.lastSeenAt = now
-      if (current.eventId !== hit.eventId) current.eventId = hit.eventId
-      return
+    const eventId = String(hit.eventId || '').trim()
+    if (!eventId) return
+    const existing = meetingActiveByPlatform.get(platformKey)
+    if (existing) {
+      existing.lastSeenAt = now
+    } else {
+      meetingActiveByPlatform.set(platformKey, { eventId, lastSeenAt: now })
     }
-    meetingActiveByPlatform.set(platformKey, {
-      eventId: hit.eventId,
-      lastSeenAt: now,
-    })
+    if (meetingToastSuppressedEventIds.has(eventId)) return
     console.log('[meeting-detect] hit', hit)
     showMeetingToastFromMain({
-      eventId: hit.eventId,
+      eventId,
       headline: hit.headline,
       platform: hit.platform,
     })
@@ -565,9 +567,9 @@ function runMeetingForegroundTick() {
 
 function startMeetingForegroundPoll() {
   if (process.platform !== 'win32') return
-  if (meetingForegroundCheckedThisLaunch) return
-  meetingForegroundCheckedThisLaunch = true
+  stopMeetingForegroundPoll()
   runMeetingForegroundTick()
+  meetingForegroundTimer = setInterval(runMeetingForegroundTick, MEETING_POLL_MS)
 }
 
 /**
@@ -861,6 +863,7 @@ function startSession() {
   updateTrayIcon()
   if (tray?.updateTrayMenu) tray.updateTrayMenu()
   sendToOverlay('session-status', true)
+  runMeetingForegroundTick()
 }
 
 function stopSession() {
@@ -868,7 +871,6 @@ function stopSession() {
   sessionActive = false
   const stopped = listenSessionSummaries.stopSession()
   sessionMemory.wipe()
-  clearMeetingToastDedupe()
   screenOcrText = ''
   sendToOverlay('session-purge')
   updateTrayIcon()

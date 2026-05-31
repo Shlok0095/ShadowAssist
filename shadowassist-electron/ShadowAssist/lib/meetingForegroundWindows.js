@@ -29,6 +29,12 @@ const BROWSER_PROCS = new Set([
   'arc',
 ])
 
+/** Installed PWAs (Google Meet desktop app uses chrome_proxy.exe / msedge_proxy.exe). */
+const PWA_PROXY_PROCS = new Set(['chrome_proxy', 'msedge_proxy'])
+
+/** Processes that can host Google Meet (browser tab or installed PWA). */
+const MEET_HOST_PROCS = new Set([...BROWSER_PROCS, ...PWA_PROXY_PROCS])
+
 /** New Teams desktop often hosts UI under msedgewebview2.exe — title still says Microsoft Teams. */
 const TEAMS_DESKTOP_PROCS = new Set(['ms-teams', 'teams', 'msteams'])
 
@@ -57,7 +63,7 @@ const PS_FOREGROUND = [
   'if(-not $wp){break};',
   '$exe=[IO.Path]::GetFileNameWithoutExtension([string]$wp.Name).ToLower();',
   'if($exe -eq \"ms-teams\" -or $exe -eq \"teams\" -or $exe -eq \"msteams\"){$p=$exe;break};',
-  'if(@(\"chrome\",\"msedge\",\"brave\",\"opera\",\"vivaldi\",\"firefox\",\"waterfox\",\"zen\",\"arc\") -contains $exe){if(-not $browserHit){$browserHit=$exe}};',
+  'if(@(\"chrome\",\"chrome_proxy\",\"msedge\",\"msedge_proxy\",\"brave\",\"opera\",\"vivaldi\",\"firefox\",\"waterfox\",\"zen\",\"arc\") -contains $exe){if(-not $browserHit){$browserHit=$exe}};',
   '$pp=[int]$wp.ParentProcessId;',
   'if($pp -le 0 -or $pp -eq $cur){break};',
   '$cur=$pp;',
@@ -132,11 +138,10 @@ function classifyForegroundMeeting(title, processName) {
     return { platform: 'webex', headline: 'Webex meeting detected', eventId: id }
   }
 
-  // Google Meet in a browser tab (Chrome title is often "Meet - xxx-yyyy-zzz" or includes Meet code)
-  // Empty processName: still classify if title clearly looks like Meet (PS PID path failed edge case)
-  if (looksLikeGoogleMeetWindowTitle(t) && (BROWSER_PROCS.has(p) || p === '')) {
-    const code = extractMeetCode(t)
-    const id = code ? `meet-${code}` : `meet-${simpleId(t)}`
+  // Google Meet in a browser tab or installed PWA (chrome_proxy.exe).
+  // Empty processName: still classify if title clearly looks like Meet (PS PID path failed edge case).
+  if (looksLikeGoogleMeetWindowTitle(t, p) && (MEET_HOST_PROCS.has(p) || p === '' || p === 'msedgewebview2')) {
+    const id = stableMeetEventId(t, p)
     return { platform: 'meet', headline: 'Google Meet detected', eventId: id }
   }
 
@@ -148,16 +153,42 @@ function extractMeetCode(title) {
   return m ? m[1].toLowerCase() : ''
 }
 
-function looksLikeGoogleMeetWindowTitle(t) {
+function looksLikeGoogleMeetWindowTitle(t, processName = '') {
   const s = String(t)
   const trim = s.trim()
+  const p = String(processName || '').toLowerCase().replace(/\.exe$/, '')
+  if (!trim) return false
   if (/meet\.google/i.test(s)) return true
-  if (/^meet\s*[-–—]\s*/i.test(trim)) return true
-  if (/google meet/i.test(s)) return true
+  if (/^meet\s*[-–—|]\s*/i.test(trim)) return true
+  if (/\bgoogle meet\b/i.test(s)) return true
+  if (/\|\s*Google Meet\s*$/i.test(trim)) return true
+  if (/\s[-–—|]\s*Google Meet\s*$/i.test(trim)) return true
   if (/\b[a-z]{3}-[a-z]{4}-[a-z]{3}\b/i.test(s) && /\bmeet\b/i.test(s)) return true
   // Chrome sometimes uses ONLY the meeting code as the tab title (e.g. "oao-nxsu-sfy")
   if (/^\s*[a-z]{3}-[a-z]{4}-[a-z]{3}\s*$/i.test(trim)) return true
+  // Installed Meet PWA: "Google Meet - In call" or bare "Google Meet"
+  if (PWA_PROXY_PROCS.has(p)) {
+    if (/^google meet(\s*[-–—|]|$)/i.test(trim)) return true
+    if (/^in call\b/i.test(trim)) return true
+  }
   return false
+}
+
+/** Stable id when Meet tab/PWA title flickers (timers, "In call", room name). */
+function stableMeetEventId(title, processName) {
+  const code = extractMeetCode(title)
+  if (code) return `meet-${code}`
+  const norm = String(title || '')
+    .replace(/\s*[-–—|]\s*Google Chrome\s*$/i, '')
+    .replace(/\s*[-–—|]\s*Microsoft\s+Edge\s*$/i, '')
+    .replace(/\s*[-–—|]\s*Google Meet\s*$/i, '')
+    .replace(/\|\s*Google Meet\s*$/i, '')
+    .replace(/^google meet\s*[-–—|]\s*/i, '')
+    .replace(/^meet\s*[-–—|]\s*/i, '')
+    .replace(/^in call\s*[-–—|]\s*/i, '')
+    .trim()
+    .slice(0, 120)
+  return `meet-${simpleId(`${norm}\0${processName}`)}`
 }
 
 function looksLikeTeamsWindowTitle(t) {
