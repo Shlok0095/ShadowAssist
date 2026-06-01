@@ -159,24 +159,44 @@ const AmbientOrbs = memo(function AmbientOrbs() {
 })
 
 const ModelSelect = memo(function ModelSelect({ label, value, models, onChange, listbox }) {
-  const safeVal = models.includes(value) ? value : models[0] || ''
-  const n = models.length
+  const [filter, setFilter] = useState('')
+  const filtered = useMemo(() => {
+    const q = filter.trim().toLowerCase()
+    if (!q) return models
+    return models.filter((m) => m.toLowerCase().includes(q))
+  }, [models, filter])
+  const display = filtered.length ? filtered : models
+  const safeVal = display.includes(value) ? value : display[0] || ''
+  const n = display.length
   const size = listbox && n > 1 ? Math.min(22, Math.max(5, n)) : undefined
   return (
     <div>
       <label className="mb-1 block text-[10px] font-semibold uppercase tracking-[0.2em] text-mist-400">{label}</label>
+      {listbox && models.length > 14 ? (
+        <input
+          type="search"
+          value={filter}
+          onChange={(e) => setFilter(e.target.value)}
+          placeholder="Filter models (e.g. gpt-5.4, claude-opus)…"
+          className="input-shadow mb-2 w-full px-3 py-2 font-mono text-xs"
+          autoComplete="off"
+        />
+      ) : null}
       <select
         value={safeVal}
         size={size}
         onChange={(e) => onChange(e.target.value)}
         className={`input-shadow w-full px-3 py-2 font-mono text-xs ${size ? 'min-h-0' : 'py-2.5'}`}
       >
-        {models.map((m) => (
+        {display.map((m) => (
           <option key={m} value={m} className="bg-void-900">
             {m}
           </option>
         ))}
       </select>
+      {filter.trim() && !filtered.length ? (
+        <p className="mt-1 text-[10px] text-amber-400">No match — clear filter or type the id below.</p>
+      ) : null}
     </div>
   )
 })
@@ -215,13 +235,12 @@ export default function Settings() {
   const [provider, setProvider] = useState('groq')
   const [sttProvider, setSttProvider] = useState('groq')
   const [secretByProvider, setSecretByProvider] = useState({})
-  const [expandedChatProvider, setExpandedChatProvider] = useState('groq')
   const [sttSecretInput, setSttSecretInput] = useState('')
   const [keySetMap, setKeySetMap] = useState({})
   const [systemPrompt, setSystemPrompt] = useState('')
   const [testByProvider, setTestByProvider] = useState({})
   const [testingProvider, setTestingProvider] = useState(null)
-  const [activeTab, setActiveTab] = useState('api')
+  const [activeTab, setActiveTab] = useState('profile')
   const [hasCompletedOnboarding, setHasCompletedOnboarding] = useState(true)
   const [ocrEnabled, setOcrEnabled] = useState(true)
   const [audioEnabled, setAudioEnabled] = useState(true)
@@ -241,6 +260,7 @@ export default function Settings() {
   const [selectedCalendarDate, setSelectedCalendarDate] = useState('')
   const [calendarRemindersEnabled, setCalendarRemindersEnabled] = useState(true)
   const [calendarReminderMinutes, setCalendarReminderMinutes] = useState(5)
+  const [meetingForegroundDetectionEnabled, setMeetingForegroundDetectionEnabled] = useState(true)
   const [listenSummaries, setListenSummaries] = useState([])
   const [selectedSummaryId, setSelectedSummaryId] = useState('')
   const [resumeContext, setResumeContext] = useState('')
@@ -252,6 +272,7 @@ export default function Settings() {
   const [modelCatalog, setModelCatalog] = useState({})
   const [sttPolicy, setSttPolicy] = useState(null)
   const [remoteModelsByProvider, setRemoteModelsByProvider] = useState({})
+  const [modelListSourceByProvider, setModelListSourceByProvider] = useState({})
   const [listModelsLoadingId, setListModelsLoadingId] = useState(null)
   const [listModelsErrByProvider, setListModelsErrByProvider] = useState({})
 
@@ -279,7 +300,6 @@ export default function Settings() {
         setProviderMeta(meta || [])
         const chatProv = s.provider || 'groq'
         setProvider(chatProv)
-        setExpandedChatProvider(chatProv)
         setSttProvider(s.sttProvider || s.provider || 'groq')
         setSystemPrompt(s.systemPrompt || '')
         setHasCompletedOnboarding(!!s.hasCompletedOnboarding)
@@ -294,6 +314,7 @@ export default function Settings() {
         setGoogleCalendarClientSecret(s.googleCalendarClientSecret ? '••••••••' : '')
         setGoogleCalendarConnectedEmail(s.googleCalendarConnectedEmail || '')
         setCalendarRemindersEnabled(s.calendarRemindersEnabled !== false)
+        setMeetingForegroundDetectionEnabled(s.meetingForegroundDetectionEnabled !== false)
         setCalendarReminderMinutes(
           Number.isFinite(Number(s.calendarReminderMinutes))
             ? Math.max(0, Number(s.calendarReminderMinutes))
@@ -397,6 +418,10 @@ export default function Settings() {
   }, [])
 
   useEffect(() => {
+    if (isFirstRunWindow) setActiveTab('session')
+  }, [isFirstRunWindow])
+
+  useEffect(() => {
     if (!ipc) return
     const unsub = ipc.on('listen-session-summaries:update', () => {
       void refreshListenSummaries()
@@ -426,30 +451,28 @@ export default function Settings() {
     }
     setSttSecretInput('')
     setKeySetMap((k) => ({ ...k, [storeKey]: true }))
+    if (providerId) void syncRemoteModelsFor(providerId)
   }
 
   const chatOptionsFor = (pId) => {
-    const meta = providerMeta.find((p) => p.id === pId)
-    const mf = meta?.modelField
-    const base = modelCatalog[pId] || []
-    const fromApi = remoteModelsByProvider[pId]?.length ? remoteModelsByProvider[pId] : []
-    const set = new Set([...fromApi, ...base])
-    const m = mf && snap ? String(snap[mf] ?? '').trim() : ''
-    if (m) set.add(m)
-    return [...set].sort((a, b) => a.localeCompare(b))
+    const source = modelListSourceByProvider[pId]
+    const fromApi = remoteModelsByProvider[pId]
+    if (source !== 'api' || !fromApi?.length) return []
+    return fromApi
   }
 
-  const openChatProvider = (pId) => {
-    const nextOpen = expandedChatProvider === pId ? null : pId
-    setExpandedChatProvider(nextOpen)
-    if (nextOpen) {
-      setProvider(pId)
-      save('provider', pId)
-      setTestByProvider((t) => {
-        const n = { ...t }
-        delete n[pId]
-        return n
-      })
+  const selectChatProvider = (pId) => {
+    if (!pId || pId === provider) return
+    setProvider(pId)
+    save('provider', pId)
+    setTestByProvider((t) => {
+      const n = { ...t }
+      delete n[pId]
+      return n
+    })
+    const meta = providerMeta.find((p) => p.id === pId)
+    if (meta?.keyField && keySetMap[meta.keyField]) {
+      void syncRemoteModelsFor(pId)
     }
   }
 
@@ -527,8 +550,12 @@ export default function Settings() {
     setListModelsErrByProvider((e) => ({ ...e, [pId]: '' }))
     try {
       const res = await ipc.invoke('list-remote-models', pId)
-      if (res.ok && res.models?.length) {
+      if (res.ok && res.source === 'api' && res.models?.length) {
         setRemoteModelsByProvider((m) => ({ ...m, [pId]: res.models }))
+        setModelListSourceByProvider((m) => ({ ...m, [pId]: 'api' }))
+      } else {
+        setRemoteModelsByProvider((m) => ({ ...m, [pId]: [] }))
+        setModelListSourceByProvider((m) => ({ ...m, [pId]: 'static' }))
       }
       setListModelsErrByProvider((e) => ({
         ...e,
@@ -541,6 +568,15 @@ export default function Settings() {
     }
   }
 
+  useEffect(() => {
+    if (!snap || !providerMeta.length) return
+    const meta = providerMeta.find((p) => p.id === provider)
+    if (meta?.keyField && keySetMap[meta.keyField]) {
+      void syncRemoteModelsFor(provider)
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- hydrate model list when provider/key ready
+  }, [snap, provider, providerMeta.length])
+
   const clearResume = async () => {
     await save('resumeContext', '')
     await save('resumeSourceName', '')
@@ -550,13 +586,12 @@ export default function Settings() {
   }
 
   const tabs = [
-    { id: 'api', label: 'Neural link', sub: 'Vendors & keys' },
-    { id: 'profile', label: 'Shadow profile', sub: 'Tone & meeting context' },
-    { id: 'display', label: 'Overlay', sub: 'Look & layout' },
-    { id: 'session', label: 'Field ops', sub: 'OCR & audio' },
-    { id: 'meetings', label: 'Meetings', sub: 'Calendar sync' },
-    { id: 'privacy', label: 'Privacy & Data', sub: 'Undetectable meeting AI' },
-    { id: 'about', label: 'Manifest', sub: 'About' },
+    { id: 'profile', label: 'Profile', sub: 'Prompt & context' },
+    { id: 'display', label: 'Display', sub: 'Overlay layout' },
+    { id: 'meetings', label: 'Meetings', sub: 'Calendar & detection' },
+    { id: 'session', label: 'Session', sub: 'Chat, STT & capture' },
+    { id: 'privacy', label: 'Privacy', sub: 'Data on this device' },
+    { id: 'about', label: 'About', sub: 'Version & info' },
   ]
 
   const connectGoogleCalendar = async () => {
@@ -717,6 +752,18 @@ export default function Settings() {
   const sttKeyField = currentSttMeta?.keyField
   const sttKeySaved = sttKeyField ? !!keySetMap[sttKeyField] : false
 
+  const chatVendor = providerMeta.find((p) => p.id === provider) || null
+  const chatKf = chatVendor?.keyField
+  const chatMf = chatVendor?.modelField
+  const chatKeySaved = chatKf ? !!keySetMap[chatKf] : false
+  const chatOpts = chatVendor ? chatOptionsFor(chatVendor.id) : []
+  const chatModel =
+    chatMf && snap ? String(snap[chatMf] ?? chatVendor?.defaultModel ?? '') : ''
+  const chatTest = chatVendor ? testByProvider[chatVendor.id] : null
+  const chatListErr = chatVendor ? listModelsErrByProvider[chatVendor.id] : ''
+  const chatTesting = chatVendor ? testingProvider === chatVendor.id : false
+  const chatListLoading = chatVendor ? listModelsLoadingId === chatVendor.id : false
+
   return (
     <AppWindowFrame>
       <div className="settings-root relative z-10 flex min-h-0 flex-1 flex-col overflow-hidden">
@@ -728,7 +775,9 @@ export default function Settings() {
             <p className="text-[10px] font-medium uppercase tracking-[0.2em] text-zinc-500">Settings</p>
             <h1 className="font-display mt-0.5 text-xl font-semibold tracking-tight text-white md:text-2xl">ShadowAssist</h1>
             <p className="mt-1 max-w-xl text-[13px] leading-snug text-zinc-500">
-              {showSetupBanner ? 'Finish first-time setup: vendor, key, and model.' : 'Providers, overlay appearance, shortcuts, and privacy.'}
+              {showSetupBanner
+                ? 'Finish first-time setup under Session: chat provider, API key, and model.'
+                : 'Profile, display, meetings, session, and privacy.'}
             </p>
           </div>
         </div>
@@ -736,7 +785,9 @@ export default function Settings() {
 
       {showSetupBanner && (
         <div className="relative z-20 shrink-0 border-b border-white/[0.06] bg-accent/5 px-5 py-2.5 lg:px-8">
-          <p className="text-[12px] font-medium text-accent-light">First run — complete Neural link, then you can close this window.</p>
+          <p className="text-[12px] font-medium text-accent-light">
+            First run: open Session, set chat provider, API key, and model, then launch.
+          </p>
         </div>
       )}
 
@@ -760,231 +811,17 @@ export default function Settings() {
         </nav>
 
         <main className="settings-scroll-outer min-h-0 min-w-0 flex-1 overflow-y-auto overflow-x-hidden p-6 lg:p-8">
-          {activeTab === 'api' && (
-            <div className="mx-auto max-w-[1600px] space-y-6 animate-fade-in">
-              <div className="grid grid-cols-1 gap-5 xl:grid-cols-12">
-                <section className="glass-panel animate-border-pulse xl:col-span-12 p-5">
-                  <div className="mb-4">
-                    <h2 className="font-display text-sm font-bold uppercase tracking-[0.2em] text-gray-300">01 — Chat provider</h2>
-                  </div>
-
-                  {!snap || !providerMeta.length ? (
-                    <p className="text-sm text-gray-500">Loading providers…</p>
-                  ) : (
-                    <div className="settings-scroll max-h-[min(72vh,720px)] overflow-y-auto pr-0.5">
-                      <div className="flex flex-col gap-1.5">
-                        {providerMeta.map((p) => {
-                          const open = expandedChatProvider === p.id
-                          const active = provider === p.id
-                          const kf = p.keyField
-                          const mf = p.modelField
-                          const keySaved = kf ? !!keySetMap[kf] : false
-                          const chatOpts = chatOptionsFor(p.id)
-                          const pModel = mf && snap ? (snap[mf] ?? p.defaultModel ?? '') : ''
-                          const pTest = testByProvider[p.id]
-                          const pListErr = listModelsErrByProvider[p.id]
-                          const pRemote = remoteModelsByProvider[p.id]
-                          const pTesting = testingProvider === p.id
-                          const pListLoading = listModelsLoadingId === p.id
-
-                          return (
-                            <div
-                              key={p.id}
-                              className="overflow-hidden rounded-xl border transition-all duration-300"
-                              style={{
-                                borderColor: active ? `${p.color}70` : 'rgba(255,255,255,0.1)',
-                                boxShadow: active ? `0 0 20px -10px ${p.color}44` : 'none',
-                              }}
-                            >
-                              <button
-                                type="button"
-                                onClick={() => openChatProvider(p.id)}
-                                className="flex w-full items-center gap-2 px-3 py-2.5 text-left transition-colors"
-                                style={{
-                                  background: open
-                                    ? `linear-gradient(145deg, ${p.color}18, rgba(0,0,0,0.35))`
-                                    : 'linear-gradient(165deg, rgba(255,255,255,0.05) 0%, rgba(0,0,0,0.4) 100%)',
-                                }}
-                              >
-                                <span
-                                  className="shrink-0 font-mono text-[10px] text-gray-500 transition-transform duration-200"
-                                  style={{ transform: open ? 'rotate(90deg)' : 'rotate(0deg)' }}
-                                  aria-hidden
-                                >
-                                  ▶
-                                </span>
-                                <span className="min-w-0 flex-1 font-display text-xs font-bold text-white">{p.label}</span>
-                                {keySaved ? (
-                                  <span className="shrink-0 font-mono text-[9px] text-accent">Key ✓</span>
-                                ) : null}
-                                <span
-                                  className="shrink-0 rounded px-1.5 py-0.5 font-mono text-[8px] font-bold uppercase"
-                                  style={{ background: `${p.color}28`, color: p.color }}
-                                >
-                                  {p.badge}
-                                </span>
-                              </button>
-
-                              {open && (
-                                <div className="space-y-4 border-t border-white/[0.06] bg-black/25 px-3 py-4">
-                                  <div className="flex flex-wrap items-center justify-between gap-2">
-                                    <span className="font-display text-[10px] font-bold uppercase tracking-[0.2em] text-gray-400">
-                                      02 — Chat key & model
-                                    </span>
-                                    {p.docs ? (
-                                      <a
-                                        href={p.docs}
-                                        target="_blank"
-                                        rel="noreferrer"
-                                        className="text-xs font-medium hover:underline"
-                                        style={{ color: p.color }}
-                                      >
-                                        Get API key →
-                                      </a>
-                                    ) : null}
-                                  </div>
-
-                                  {p.kind === 'anthropic' && (
-                                    <p className="rounded-lg border border-amber-500/20 bg-amber-500/5 px-3 py-2 text-xs text-amber-200/90">
-                                      Claude uses the Anthropic Messages API (not OpenAI). Paste an Anthropic API key; model id must match your account (e.g. claude-3-5-sonnet-20241022).
-                                    </p>
-                                  )}
-
-                                  {p.usesCustomBase && (
-                                    <div>
-                                      <label className="mb-1 block text-[10px] font-semibold uppercase tracking-[0.2em] text-mist-400">
-                                        OpenAI-compatible base URL
-                                      </label>
-                                      <input
-                                        type="url"
-                                        value={snap.customOpenaiBaseUrl || ''}
-                                        onChange={(e) => patchSnap('customOpenaiBaseUrl', e.target.value)}
-                                        onBlur={(e) => save('customOpenaiBaseUrl', e.target.value.trim())}
-                                        className="input-shadow w-full px-3 py-2.5 font-mono text-xs"
-                                        placeholder="https://api.openai.com/v1"
-                                      />
-                                    </div>
-                                  )}
-
-                                  <div className="flex flex-wrap gap-2">
-                                    <input
-                                      type="password"
-                                      value={secretByProvider[p.id] ?? ''}
-                                      onChange={(e) =>
-                                        setSecretByProvider((m) => ({ ...m, [p.id]: e.target.value }))
-                                      }
-                                      placeholder={keySaved ? '••••••••' : 'Paste API key'}
-                                      className="input-shadow min-w-[200px] flex-1 px-3 py-2.5"
-                                    />
-                                    <button
-                                      type="button"
-                                      onClick={() => testApiFor(p.id)}
-                                      disabled={pTesting}
-                                      className="btn-ghost px-4 py-2.5 text-accent"
-                                    >
-                                      {pTesting ? '…' : 'Ping'}
-                                    </button>
-                                    <button
-                                      type="button"
-                                      onClick={() =>
-                                        kf && saveKey(kf, secretByProvider[p.id] || '', p.id)
-                                      }
-                                      className="btn-ghost px-4 py-2.5"
-                                    >
-                                      Commit
-                                    </button>
-                                  </div>
-
-                                  {mf && chatOpts.length > 0 && (
-                                    <div className="space-y-2">
-                                      <div className="flex flex-wrap items-end gap-2">
-                                        <div className="min-w-[min(100%,320px)] flex-1">
-                                          <ModelSelect
-                                            label={`Chat model (${chatOpts.length} ids — app catalog${pRemote?.length ? ' + API' : ''})`}
-                                            value={pModel || p.defaultModel || chatOpts[0]}
-                                            models={chatOpts}
-                                            listbox={chatOpts.length > 14}
-                                            onChange={(v) => {
-                                              patchSnap(mf, v)
-                                              save(mf, v)
-                                            }}
-                                          />
-                                        </div>
-                                        <button
-                                          type="button"
-                                          onClick={() => syncRemoteModelsFor(p.id)}
-                                          disabled={pListLoading}
-                                          className="btn-ghost whitespace-nowrap px-4 py-2.5 text-xs"
-                                        >
-                                          {pListLoading ? 'Syncing…' : 'Refresh from API'}
-                                        </button>
-                                      </div>
-                                      {pListErr ? <p className="text-xs text-amber-400">{pListErr}</p> : null}
-                                      <p className="text-[10px] text-gray-600">
-                                        Bundled lists are curated from each vendor’s docs.{' '}
-                                        <strong className="text-gray-400">Refresh from API</strong> calls GET /v1/models
-                                        (OpenAI-compatible), public OpenRouter, or Anthropic /v1/models — save your key
-                                        first where required.
-                                      </p>
-                                    </div>
-                                  )}
-
-                                  {mf && chatOpts.length === 0 && (
-                                    <ModelInput
-                                      label="Model ID (catalog loading…)"
-                                      value={pModel}
-                                      onChange={(v) => patchSnap(mf, v)}
-                                      onCommit={(v) => save(mf, v)}
-                                      suggestions={p.defaultModel ? [p.defaultModel] : []}
-                                      hint="If this stays empty, restart settings — or type an id from the vendor console."
-                                    />
-                                  )}
-
-                                  {pTest && (
-                                    <p
-                                      className={`font-mono text-xs ${pTest.success ? 'text-accent' : 'text-rose-400'}`}
-                                    >
-                                      {pTest.success ? '◆ Uplink verified' : pTest.error}
-                                    </p>
-                                  )}
-                                  <button
-                                    type="button"
-                                    onClick={() => testApiFor(p.id)}
-                                    disabled={pTesting}
-                                    className="btn-glow py-3 px-8"
-                                  >
-                                    {pTesting ? 'Handshaking…' : 'Full connection test'}
-                                  </button>
-                                </div>
-                              )}
-                            </div>
-                          )
-                        })}
-                      </div>
-                    </div>
-                  )}
-                </section>
-              </div>
-
-              {showSetupBanner && (
-                <button type="button" onClick={launchFromSetup} className="btn-glow w-full py-4 text-base">
-                  Launch ShadowAssist
-                </button>
-              )}
-            </div>
-          )}
-
           {activeTab === 'profile' && (
             <div className="mx-auto max-w-[1600px] animate-fade-in space-y-5">
               <div>
-                <h2 className="font-display text-xl font-bold text-white">Shadow profile</h2>
+                <h2 className="font-display text-xl font-bold text-white">Profile</h2>
                 <p className="mt-1 max-w-3xl text-sm text-mist-500">
                   <strong className="text-gray-300">Persona</strong> defines how the AI sounds. <strong className="text-gray-300">Profile</strong> + <strong className="text-gray-300">notes / JD</strong> ground suggestions in your background and team context for meetings.
                 </p>
               </div>
 
               <section className="glass-panel p-6">
-                <h3 className="font-display text-sm font-bold uppercase tracking-[0.2em] text-gray-300">Persona stream</h3>
+                <h3 className="font-display text-sm font-bold uppercase tracking-[0.2em] text-gray-300">System prompt</h3>
                 <p className="mt-1 text-xs text-gray-500">
                   How the AI should behave — merged with resume/JD on every ask. Leave empty or choose <strong className="text-gray-400">ShadowAssist (built-in)</strong> to use the{' '}
                   <span className="font-mono text-mist-400">lib/defaultSystemPrompt.js</span> base prompt. Override here for your own use case.
@@ -1016,7 +853,7 @@ export default function Settings() {
                 <section className="glass-panel p-6">
                   <div className="mb-4 flex items-start justify-between gap-3">
                     <div>
-                      <h3 className="font-display text-sm font-bold uppercase tracking-widest text-phantom-300">Resume ingest</h3>
+                      <h3 className="font-display text-sm font-bold uppercase tracking-widest text-phantom-300">Resume</h3>
                       <p className="mt-1 text-xs text-gray-500">PDF or plain text — parsed locally until you send a question to the AI.</p>
                     </div>
                     <span className="rounded-full border border-accent/30 bg-accent/10 px-2 py-1 font-mono text-[9px] uppercase tracking-wider text-accent">CV</span>
@@ -1262,10 +1099,24 @@ export default function Settings() {
           )}
 
           {activeTab === 'session' && (
-            <div className="mx-auto max-w-3xl animate-fade-in">
-              <section className="glass-panel p-8">
-                <h2 className="font-display text-lg font-bold text-white">Field operations</h2>
-                <div className="mt-8 space-y-6">
+            <div className="mx-auto max-w-3xl animate-fade-in space-y-5">
+              <div>
+                <h2 className="font-display text-xl font-bold text-white">Session</h2>
+                <p className="mt-1 text-sm text-zinc-500">
+                  Chat model for answers, transcription for Listen, and screen or mic capture.
+                </p>
+              </div>
+
+              <details className="glass-panel group p-0 open" open>
+                <summary className="cursor-pointer list-none px-6 py-4 font-display text-sm font-bold uppercase tracking-[0.15em] text-gray-300 [&::-webkit-details-marker]:hidden">
+                  <span className="flex items-center justify-between gap-2">
+                    Capture
+                    <span className="font-mono text-[10px] font-normal normal-case tracking-normal text-zinc-600 group-open:hidden">
+                      Show
+                    </span>
+                  </span>
+                </summary>
+                <div className="space-y-6 border-t border-white/[0.06] px-6 pb-6 pt-2">
                   <label className="settings-row-tile flex cursor-pointer items-center justify-between gap-4">
                     <div>
                       <span className="font-medium text-gray-200">Screen reading (OCR)</span>
@@ -1301,11 +1152,10 @@ export default function Settings() {
                   </label>
                   <div className="settings-row-tile flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
                     <div className="min-w-0 flex-1">
-                      <span className="font-medium text-gray-200">Mic language (transcription)</span>
+                      <span className="font-medium text-gray-200">Mic language</span>
                       <p className="mt-1 text-xs text-gray-600">
-                        English + Hindi + Hinglish uses auto language detection (no <span className="font-mono text-zinc-500">language</span>{' '}
-                        code — avoids forcing one script). We do not send a Whisper “prompt” here: instructional prompts are often
-                        hallucinated as fake words on quiet audio. Forcing English or Hindi sets <span className="font-mono text-zinc-500">language</span> only — best for single-language sessions.
+                        English + Hindi + Hinglish uses auto language detection. Forcing English or Hindi sets a single
+                        language code — best for single-language sessions.
                       </p>
                     </div>
                     <select
@@ -1328,8 +1178,246 @@ export default function Settings() {
                       </option>
                     </select>
                   </div>
+                  <div className="settings-row-tile flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+                    <div className="min-w-0 flex-1">
+                      <span className="font-medium text-gray-200">Mic sensitivity</span>
+                      <p className="mt-1 text-xs text-gray-600">
+                        Boost helps quiet mics; restart Listen after changing. Shortcut keys are under Display → Keyboard
+                        shortcuts.
+                      </p>
+                    </div>
+                    <select
+                      value={micSensitivity}
+                      onChange={(e) => {
+                        const v = e.target.value === 'boost' ? 'boost' : 'standard'
+                        setMicSensitivity(v)
+                        save('micSensitivity', v)
+                      }}
+                      className="input-shadow w-full shrink-0 px-3 py-2 text-sm sm:w-64"
+                    >
+                      <option value="standard" className="bg-void-900">
+                        Standard
+                      </option>
+                      <option value="boost" className="bg-void-900">
+                        Boost (quiet mic)
+                      </option>
+                    </select>
+                  </div>
+                  <label className="settings-row-tile flex cursor-pointer items-center justify-between gap-4">
+                    <div>
+                      <span className="font-medium text-gray-200">Assist mode (auto AI)</span>
+                      <p className="text-xs text-gray-600">
+                        Off (default): Listen — speech is context only; use hotkey or type to ask. On: Assist — AI may run
+                        when intent is clear (question or strong speech + screen).
+                      </p>
+                    </div>
+                    <input
+                      type="checkbox"
+                      checked={assistAutoTrigger}
+                      onChange={(e) => {
+                        setAssistAutoTrigger(e.target.checked)
+                        save('assistAutoTrigger', e.target.checked)
+                      }}
+                      className="h-5 w-5 rounded border-white/20 accent-accent"
+                    />
+                  </label>
+                </div>
+              </details>
+
+              <details className="glass-panel group p-0 open" open>
+                <summary className="cursor-pointer list-none px-6 py-4 font-display text-sm font-bold uppercase tracking-[0.15em] text-gray-300 [&::-webkit-details-marker]:hidden">
+                  Chat
+                </summary>
+                <div className="space-y-4 border-t border-white/[0.06] px-6 pb-6 pt-2">
+                  {!snap || !providerMeta.length ? (
+                    <p className="text-sm text-gray-500">Loading providers…</p>
+                  ) : (
+                    <>
+                      <div>
+                        <label className="mb-1 block text-[10px] font-semibold uppercase tracking-[0.2em] text-mist-400">
+                          Chat provider
+                        </label>
+                        <select
+                          value={provider}
+                          onChange={(e) => selectChatProvider(e.target.value)}
+                          className="input-shadow w-full px-3 py-2.5 font-mono text-sm"
+                        >
+                          {providerMeta.map((pm) => (
+                            <option key={pm.id} value={pm.id} className="bg-void-900">
+                              {pm.label}
+                              {pm.keyField && keySetMap[pm.keyField] ? ' ✓' : ''}
+                            </option>
+                          ))}
+                        </select>
+                      </div>
+
+                      {chatVendor && snap && (
+                        <div
+                          className="space-y-4 rounded-xl border px-4 py-4"
+                          style={{
+                            borderColor: `${chatVendor.color}55`,
+                            background: `linear-gradient(165deg, ${chatVendor.color}12 0%, rgba(0,0,0,0.35) 100%)`,
+                          }}
+                        >
+                          <div className="flex flex-wrap items-center justify-between gap-2">
+                            <span className="font-display text-xs font-bold text-white">{chatVendor.label}</span>
+                            {chatVendor.docs ? (
+                              <a
+                                href={chatVendor.docs}
+                                target="_blank"
+                                rel="noreferrer"
+                                className="text-xs font-medium hover:underline"
+                                style={{ color: chatVendor.color }}
+                              >
+                                Get API key →
+                              </a>
+                            ) : null}
+                          </div>
+
+                          {chatVendor.kind === 'anthropic' && (
+                            <p className="rounded-lg border border-amber-500/20 bg-amber-500/5 px-3 py-2 text-xs text-amber-200/90">
+                              Claude uses the Anthropic Messages API (not OpenAI). Model id must match your account.
+                            </p>
+                          )}
+
+                          {chatVendor.usesCustomBase && (
+                            <div>
+                              <label className="mb-1 block text-[10px] font-semibold uppercase tracking-[0.2em] text-mist-400">
+                                OpenAI-compatible base URL
+                              </label>
+                              <input
+                                type="url"
+                                value={snap.customOpenaiBaseUrl || ''}
+                                onChange={(e) => patchSnap('customOpenaiBaseUrl', e.target.value)}
+                                onBlur={(e) => save('customOpenaiBaseUrl', e.target.value.trim())}
+                                className="input-shadow w-full px-3 py-2.5 font-mono text-xs"
+                                placeholder="https://api.openai.com/v1"
+                              />
+                            </div>
+                          )}
+
+                          <div className="flex flex-wrap gap-2">
+                            <input
+                              type="password"
+                              value={secretByProvider[chatVendor.id] ?? ''}
+                              onChange={(e) =>
+                                setSecretByProvider((m) => ({ ...m, [chatVendor.id]: e.target.value }))
+                              }
+                              placeholder={chatKeySaved ? '••••••••' : 'Paste API key'}
+                              className="input-shadow min-w-[200px] flex-1 px-3 py-2.5"
+                            />
+                            <button
+                              type="button"
+                              onClick={() => testApiFor(chatVendor.id)}
+                              disabled={chatTesting}
+                              className="btn-ghost px-4 py-2.5 text-accent"
+                            >
+                              {chatTesting ? '…' : 'Ping'}
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() =>
+                                chatKf && saveKey(chatKf, secretByProvider[chatVendor.id] || '', chatVendor.id)
+                              }
+                              className="btn-ghost px-4 py-2.5"
+                            >
+                              Commit
+                            </button>
+                          </div>
+
+                          {chatMf && chatOpts.length > 0 && (
+                            <div className="space-y-2">
+                              <div className="flex flex-wrap items-end gap-2">
+                                <div className="min-w-[min(100%,320px)] flex-1">
+                                  <ModelSelect
+                                    label={`Chat model (${chatOpts.length} from ${chatVendor.label})`}
+                                    value={chatModel || chatVendor.defaultModel || chatOpts[0]}
+                                    models={chatOpts}
+                                    listbox={chatOpts.length > 14}
+                                    onChange={(v) => {
+                                      patchSnap(chatMf, v)
+                                      save(chatMf, v)
+                                    }}
+                                  />
+                                </div>
+                                <button
+                                  type="button"
+                                  onClick={() => syncRemoteModelsFor(chatVendor.id)}
+                                  disabled={chatListLoading}
+                                  className="btn-ghost whitespace-nowrap px-4 py-2.5 text-xs"
+                                >
+                                  {chatListLoading ? 'Syncing…' : 'Refresh from API'}
+                                </button>
+                              </div>
+                              {chatListErr ? <p className="text-xs text-amber-400">{chatListErr}</p> : null}
+                            </div>
+                          )}
+
+                          {chatMf && chatOpts.length === 0 && (
+                            <div className="space-y-2">
+                              <ModelInput
+                                label={
+                                  chatListLoading
+                                    ? 'Loading models…'
+                                    : chatKeySaved
+                                      ? 'Chat model (save key & refresh, or type id)'
+                                      : 'Chat model (save API key first)'
+                                }
+                                value={chatModel}
+                                onChange={(v) => patchSnap(chatMf, v)}
+                                onCommit={(v) => save(chatMf, v)}
+                                suggestions={
+                                  modelCatalog[chatVendor.id] ||
+                                  (chatVendor.defaultModel ? [chatVendor.defaultModel] : [])
+                                }
+                                hint="Commit your key, then Refresh from API to load models from your vendor account."
+                              />
+                              {chatKeySaved ? (
+                                <button
+                                  type="button"
+                                  onClick={() => syncRemoteModelsFor(chatVendor.id)}
+                                  disabled={chatListLoading}
+                                  className="btn-ghost whitespace-nowrap px-4 py-2.5 text-xs"
+                                >
+                                  {chatListLoading ? 'Syncing…' : 'Refresh from API'}
+                                </button>
+                              ) : null}
+                              {chatListErr ? <p className="text-xs text-amber-400">{chatListErr}</p> : null}
+                            </div>
+                          )}
+
+                          {chatTest && (
+                            <p
+                              className={`font-mono text-xs ${chatTest.success ? 'text-accent' : 'text-rose-400'}`}
+                            >
+                              {chatTest.success ? 'API key verified' : chatTest.error}
+                            </p>
+                          )}
+                          <button
+                            type="button"
+                            onClick={() => testApiFor(chatVendor.id)}
+                            disabled={chatTesting}
+                            className="btn-glow py-3 px-8"
+                          >
+                            {chatTesting ? 'Testing…' : 'Full connection test'}
+                          </button>
+                        </div>
+                      )}
+                    </>
+                  )}
+                </div>
+              </details>
+
+              <details className="glass-panel group p-0 open" open>
+                <summary className="cursor-pointer list-none px-6 py-4 font-display text-sm font-bold uppercase tracking-[0.15em] text-gray-300 [&::-webkit-details-marker]:hidden">
+                  Transcription
+                </summary>
+                <div className="space-y-6 border-t border-white/[0.06] px-6 pb-6 pt-2">
                   <div className="settings-row-tile flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-                    <span className="font-medium text-gray-200">Transcription</span>
+                    <div>
+                      <span className="font-medium text-gray-200">Mode</span>
+                      <p className="mt-1 text-xs text-gray-600">Local runs on-device; cloud uses your STT vendor API key.</p>
+                    </div>
                     <select
                       value={sttMode}
                       onChange={(e) => {
@@ -1339,8 +1427,12 @@ export default function Settings() {
                       }}
                       className="input-shadow w-full shrink-0 px-3 py-2 text-sm sm:w-48"
                     >
-                      <option value="local" className="bg-void-900">Local</option>
-                      <option value="cloud" className="bg-void-900">Cloud</option>
+                      <option value="local" className="bg-void-900">
+                        Local
+                      </option>
+                      <option value="cloud" className="bg-void-900">
+                        Cloud
+                      </option>
                     </select>
                   </div>
 
@@ -1471,60 +1563,50 @@ export default function Settings() {
                       )}
                     </>
                   )}
-                  <div className="settings-row-tile flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
-                    <div className="min-w-0 flex-1">
-                      <span className="font-medium text-gray-200">Mic sensitivity</span>
-                      <p className="mt-1 text-xs text-gray-600">
-                        Standard applies a light digital boost and slightly easier voice detection than before. Boost is for quiet
-                        rooms, soft voices, or sitting farther from the mic — it raises gain and relaxes the gate so more chunks are
-                        sent to transcription (may pick up more background noise). Restart the Listen session after changing this.
-                      </p>
-                    </div>
-                    <select
-                      value={micSensitivity}
-                      onChange={(e) => {
-                        const v = e.target.value === 'boost' ? 'boost' : 'standard'
-                        setMicSensitivity(v)
-                        save('micSensitivity', v)
-                      }}
-                      className="input-shadow w-full shrink-0 px-3 py-2 text-sm sm:w-64"
-                    >
-                      <option value="standard" className="bg-void-900">
-                        Standard
-                      </option>
-                      <option value="boost" className="bg-void-900">
-                        Boost (quiet mic)
-                      </option>
-                    </select>
-                  </div>
-                  <label className="settings-row-tile flex cursor-pointer items-center justify-between gap-4">
-                    <div>
-                      <span className="font-medium text-gray-200">Assist mode (auto AI)</span>
-                      <p className="text-xs text-gray-600">
-                        Off (default): Listen — speech is context only; use hotkey or type to ask. On: Assist — AI may run
-                        when intent is clear (question or strong speech + screen).
-                      </p>
-                    </div>
-                    <input
-                      type="checkbox"
-                      checked={assistAutoTrigger}
-                      onChange={(e) => {
-                        setAssistAutoTrigger(e.target.checked)
-                        save('assistAutoTrigger', e.target.checked)
-                      }}
-                      className="h-5 w-5 rounded border-white/20 accent-accent"
-                    />
-                  </label>
-                  <p className="text-[11px] text-zinc-600">
-                    Shortcut keys are editable under <span className="text-zinc-500">Overlay → Keyboard shortcuts</span>.
-                  </p>
+                  {sttMode === 'local' && (
+                    <p className="text-xs text-zinc-500">
+                      Local transcription runs on-device (Moonshine). No cloud API key required.
+                    </p>
+                  )}
                 </div>
-              </section>
+              </details>
+
+              {showSetupBanner && (
+                <button type="button" onClick={launchFromSetup} className="btn-glow w-full py-4 text-base">
+                  Launch ShadowAssist
+                </button>
+              )}
             </div>
           )}
 
           {activeTab === 'meetings' && (
             <div className="mx-auto max-w-3xl animate-fade-in space-y-5">
+              <section className="glass-panel p-8">
+                <h2 className="font-display text-lg font-bold text-white">Meeting detection</h2>
+                <p className="mt-1 text-sm text-gray-500">
+                  When enabled, ShadowAssist watches the foreground window on Windows and can notify you when Google
+                  Meet or Microsoft Teams is active (desktop app or browser tab).
+                </p>
+                <label className="settings-row-tile mt-6 flex cursor-pointer items-center justify-between gap-4">
+                  <div>
+                    <span className="font-medium text-gray-200">Detect Meet & Teams</span>
+                    <p className="mt-1 text-xs text-gray-600">
+                      Shows a one-time toast per meeting window. Does not use your calendar or microphone.
+                    </p>
+                  </div>
+                  <input
+                    type="checkbox"
+                    checked={meetingForegroundDetectionEnabled}
+                    onChange={(e) => {
+                      const v = e.target.checked
+                      setMeetingForegroundDetectionEnabled(v)
+                      save('meetingForegroundDetectionEnabled', v)
+                    }}
+                    className="h-5 w-5 shrink-0 rounded border-white/20 accent-accent"
+                  />
+                </label>
+              </section>
+
               <section className="glass-panel p-8">
                 <div className="flex items-center gap-3">
                   <img
@@ -1532,7 +1614,7 @@ export default function Settings() {
                     alt="Google Calendar"
                     className="h-[34px] w-[34px] rounded-lg border border-white/15 object-cover shadow-[0_8px_24px_-16px_rgba(0,0,0,0.65)]"
                   />
-                  <h2 className="font-display text-lg font-bold text-white">Coming Up</h2>
+                  <h2 className="font-display text-lg font-bold text-white">Google Calendar</h2>
                 </div>
                 <p className="mt-1 text-sm text-gray-500">
                   Connect Google Calendar to sync accepted upcoming meetings and keep this list updated.
@@ -1866,7 +1948,7 @@ export default function Settings() {
             <div className="mx-auto max-w-3xl animate-fade-in space-y-5">
               <section className="glass-panel p-8">
                 <h2 className="font-display text-lg font-bold text-white">Privacy &amp; Data</h2>
-                <p className="mt-1 text-sm text-indigo-200/70">Undetectable AI for live meetings — discreet on-screen assistance. You must disclose use where policies or participants require it.</p>
+                <p className="mt-1 text-sm text-indigo-200/70">Local meeting assistant data stays on this device. Disclose use where policies or participants require it.</p>
                 <p className="mt-4 text-sm leading-relaxed text-zinc-400">
                   Audio is never stored. Transcripts and OCR text used during a session are cleared automatically when your session ends or after extended inactivity. Session buffers stay in memory only.
                 </p>
@@ -1913,8 +1995,8 @@ export default function Settings() {
                   <span className="font-display text-2xl font-bold text-white">S</span>
                 </div>
                 <h2 className="font-display text-2xl font-bold text-white">ShadowAssist</h2>
-                <p className="mt-2 text-xs text-indigo-300/80">Undetectable AI for live meetings</p>
-                <p className="mt-3 text-sm text-gray-400">Discreet on-screen meeting assistant — built for calls and live meetings only, not hiring interviews. Disclosure is your responsibility where required.</p>
+                <p className="mt-2 text-xs text-indigo-300/80">AI overlay for live meetings</p>
+                <p className="mt-3 text-sm text-gray-400">On-screen assistant for calls and live meetings. Disclosure is your responsibility where required.</p>
                 <p className="mt-6 text-xs text-gray-600">
                   Groq, OpenAI, Anthropic, DeepSeek, Kimi, Mistral, xAI, OpenRouter, Together, Perplexity, Gemini, Fireworks, Cerebras, NVIDIA NIM, or any OpenAI-compatible URL.
                 </p>

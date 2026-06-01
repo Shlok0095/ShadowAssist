@@ -76,6 +76,8 @@ const schema = {
   calendarRemindersEnabled: { type: 'boolean', default: true },
   /** Minutes before start to notify (0 = at start time). */
   calendarReminderMinutes: { type: 'number', default: 5 },
+  /** Windows: detect Google Meet / Microsoft Teams foreground windows and show a toast. */
+  meetingForegroundDetectionEnabled: { type: 'boolean', default: true },
   /** Persisted listen session summaries shown in Settings > Meetings. */
   listenSessionSummaries: { type: 'array', default: [] },
   fireworksKey: { type: 'string', default: '' },

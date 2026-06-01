@@ -82,28 +82,24 @@ const bento = [
 
 const shipped = [
   {
-    k: '01',
     title: 'Meetings tab',
     body:
       'Connect Google Calendar with your own OAuth app credentials. See upcoming accepted meetings and optionally get Windows notifications before start time.',
   },
   {
-    k: '02',
-    title: 'Meeting Summary list',
+    title: 'Meeting summaries',
     body:
-      'Each Listen session (Start → Stop) can produce a concise bullet summary. Pick a session by time range and read the recap—driven by Listen data.',
+      'Each Listen session (Start → Stop) can produce a concise bullet summary. Pick a session by time range and read the recap from that session.',
   },
   {
-    k: '03',
     title: 'Recaps that survive restarts',
     body:
-      'Session summaries are stored in your local app data so they stay after you quit or reboot. Clear past summaries from the same panel when you want.',
+      'Session summaries are stored in your local app data so they stay after you quit or reboot. Clear past summaries from Settings when you want.',
   },
   {
-    k: '04',
-    title: 'Prompts & persona',
+    title: 'System prompt',
     body:
-      'A built-in default system prompt lives in the app backend; override with your own text in the Shadow profile when you need a custom voice.',
+      'A built-in default system prompt ships with the app; override it in Profile when you need a custom voice.',
   },
 ] as const
 
@@ -120,11 +116,11 @@ export function MarketingHome() {
             <ScrollReveal>
               <div className="mb-5 inline-flex items-center gap-2 rounded-full border border-cyan-500/20 bg-cyan-500/[0.06] px-4 py-1.5 font-mono text-[10px] uppercase tracking-[0.28em] text-cyan-300/90 sm:text-[11px]">
                 <span className="h-1.5 w-1.5 rounded-full bg-cyan-400 shadow-[0_0_12px_2px_rgba(34,211,238,0.55)] motion-safe:animate-pulse" />
-                Native intelligence layer
+                Windows desktop app
               </div>
               <h1 className="font-display text-[1.85rem] font-bold leading-[1.06] tracking-[-0.03em] sm:text-4xl md:text-5xl lg:text-[3.15rem] xl:text-[3.45rem]">
-                <span className="block text-white">Context-aware AI</span>
-                <span className="futura-gradient-text mt-1 block">built for live rooms.</span>
+                <span className="block text-white">AI overlay</span>
+                <span className="futura-gradient-text mt-1 block">for live meetings</span>
               </h1>
             </ScrollReveal>
 
@@ -204,10 +200,9 @@ export function MarketingHome() {
 
           <div className="mt-12 grid gap-4 sm:grid-cols-2 xl:grid-cols-4 xl:gap-5">
             {shipped.map((row, i) => (
-              <ScrollReveal key={row.k} delay={i * 0.06}>
+              <ScrollReveal key={row.title} delay={i * 0.06}>
                 <article className="futura-card group flex h-full flex-col p-6 sm:p-7">
-                  <span className="font-mono text-xs font-semibold tabular-nums text-cyan-400/50">{row.k}</span>
-                  <h3 className="mt-2 font-display text-lg font-semibold tracking-[-0.01em] text-white">{row.title}</h3>
+                  <h3 className="font-display text-lg font-semibold tracking-[-0.01em] text-white">{row.title}</h3>
                   <p className="mt-2 flex-1 text-sm leading-relaxed tracking-wide text-zinc-500 transition-colors group-hover:text-zinc-400">
                     {row.body}
                   </p>
@@ -232,7 +227,7 @@ export function MarketingHome() {
         <div className="mx-auto w-full max-w-[90rem]">
           <ScrollReveal>
             <h2 className="text-center font-display text-xl font-bold tracking-[-0.02em] text-white sm:text-2xl md:text-[1.85rem]">
-              Inference-adjacent, <span className="futura-gradient-text">unified</span>
+              Features
             </h2>
             <p className="mx-auto mt-3 max-w-3xl text-center font-mono text-sm leading-relaxed tracking-wide text-zinc-500">
               Listening, low-latency answers, screen grounding, and a compact overlay surface—one panel.

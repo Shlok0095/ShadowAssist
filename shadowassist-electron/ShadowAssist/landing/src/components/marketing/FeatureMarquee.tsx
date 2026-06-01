@@ -20,9 +20,8 @@ export function FeatureMarquee() {
         {track.map((label, i) => (
           <span
             key={`${label}-${i}`}
-            className="flex shrink-0 items-center gap-10 font-mono text-[11px] uppercase tracking-[0.22em] text-zinc-500"
+            className="shrink-0 font-mono text-[11px] uppercase tracking-[0.22em] text-zinc-500"
           >
-            <span className="text-cyan-400/80">◆</span>
             {label}
           </span>
         ))}

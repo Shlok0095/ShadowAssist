@@ -3,24 +3,20 @@ import { SITE } from '@/config/site'
 
 const steps = [
   {
-    n: '01',
-    title: 'Install the native shell',
-    body: 'Run the Windows installer; ShadowAssist registers as a tray app with a standard uninstall entry—no Electron tab strip, no silent auto-updater unless you opt in later.',
+    title: 'Install',
+    body: 'Run the Windows installer. ShadowAssist lives in the system tray with a standard uninstall entry.',
   },
   {
-    n: '02',
-    title: 'Bind your provider + model',
-    body: 'In Settings, paste API credentials and select a chat completion model. Keys never ship inside the binary; traffic goes straight to the HTTPS endpoint you configure.',
+    title: 'Add your API key and model',
+    body: 'In Settings, paste API credentials and pick a chat model. Keys stay on your device; traffic goes to the provider you choose.',
   },
   {
-    n: '03',
-    title: 'Invoke the overlay on demand',
-    body: 'Map a global hotkey, then pull the panel over slides, IDEs, or the browser. Type prompts by default; enable listening or screen capture only when the workflow warrants it.',
+    title: 'Use the overlay',
+    body: 'Open the panel with a hotkey over slides, IDEs, or the browser. Type questions or enable listening and screen context when you need them.',
   },
   {
-    n: '04',
-    title: 'Optional calendar & session recaps',
-    body: 'Wire Google Calendar if you want accepted meetings in one list and light reminders. Ending a listen session can produce a short bullet recap stored locally. Persona: built-in default or your own profile text—same as in the app.',
+    title: 'Calendar and session recaps (optional)',
+    body: 'Connect Google Calendar for upcoming meetings and reminders. Ending a listen session can save a short bullet recap locally.',
   },
 ] as const
 
@@ -34,14 +30,13 @@ export function MarketingHowItWorks() {
         <p className="font-mono text-xs font-medium uppercase tracking-[0.22em] text-zinc-500">Guide</p>
         <h1 className="mt-3 font-display text-3xl font-semibold tracking-[-0.02em] sm:text-4xl">How it works</h1>
         <p className="mt-3 font-mono text-sm leading-relaxed tracking-wide text-zinc-500">
-          From artifact download to first grounded answer—four deliberate steps, no hand-wavy onboarding.
+          Download, connect your provider, and start using the overlay.
         </p>
 
         <ol className="mt-12 space-y-8">
           {steps.map((s) => (
-            <li key={s.n} className="rounded-2xl border border-[#2a2a2a] bg-[#121212] p-6 sm:p-7">
-              <span className="font-mono text-sm font-semibold tabular-nums text-zinc-400">{s.n}</span>
-              <h2 className="mt-2 font-display text-lg font-semibold tracking-[-0.01em] text-white">{s.title}</h2>
+            <li key={s.title} className="rounded-2xl border border-[#2a2a2a] bg-[#121212] p-6 sm:p-7">
+              <h2 className="font-display text-lg font-semibold tracking-[-0.01em] text-white">{s.title}</h2>
               <p className="mt-2 text-sm leading-relaxed tracking-wide text-zinc-500">{s.body}</p>
             </li>
           ))}

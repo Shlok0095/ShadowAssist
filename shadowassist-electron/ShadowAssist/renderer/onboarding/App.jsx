@@ -113,7 +113,7 @@ export default function Onboarding() {
         <div className="settings-scroll-outer relative z-20 min-h-0 flex-1 overflow-y-auto overflow-x-hidden p-5 lg:p-8">
           <div className="mx-auto max-w-md space-y-5 pb-8">
             <section className="glass-panel p-5">
-              <h2 className="text-[11px] font-semibold uppercase tracking-wider text-zinc-500">1 · Provider</h2>
+              <h2 className="text-[11px] font-semibold uppercase tracking-wider text-zinc-500">Provider</h2>
               <div className="mt-3 space-y-2">
                 {PROVIDERS.map((p) => (
                   <button
@@ -143,7 +143,7 @@ export default function Onboarding() {
             </section>
 
             <section className="glass-panel p-5">
-              <h2 className="text-[11px] font-semibold uppercase tracking-wider text-zinc-500">2 · API key</h2>
+              <h2 className="text-[11px] font-semibold uppercase tracking-wider text-zinc-500">API key</h2>
               <a href={current.link} target="_blank" rel="noreferrer" className="mt-2 inline-block text-[11px] transition-opacity hover:opacity-90" style={{ color: current.color }}>
                 Get a key from {current.label} →
               </a>
@@ -176,7 +176,7 @@ export default function Onboarding() {
             </section>
 
             <section className="glass-panel p-5">
-              <h2 className="text-[11px] font-semibold uppercase tracking-wider text-zinc-500">3 · Key acknowledgment</h2>
+              <h2 className="text-[11px] font-semibold uppercase tracking-wider text-zinc-500">Key acknowledgment</h2>
               <p className="mt-1 text-[11px] text-zinc-600">Required for provider program compliance.</p>
               <div className="mt-3 space-y-2">
                 {BYOK_CHECKS.map(({ key, label }) => (
@@ -197,7 +197,7 @@ export default function Onboarding() {
             </section>
 
             <section className="glass-panel p-5">
-              <h2 className="text-[11px] font-semibold uppercase tracking-wider text-zinc-500">4 · System prompt</h2>
+              <h2 className="text-[11px] font-semibold uppercase tracking-wider text-zinc-500">System prompt</h2>
               <div className="mt-3 flex flex-wrap gap-2">
                 {PRESETS.map((p) => (
                   <button

@@ -531,6 +531,7 @@ function stopMeetingForegroundPoll() {
 
 function runMeetingForegroundTick() {
   if (process.platform !== 'win32') return
+  if (store.get('meetingForegroundDetectionEnabled') === false) return
   if (meetingForegroundTickInFlight) return
   meetingForegroundTickInFlight = true
   detectMeetingForegroundOrScan((err, hit) => {
