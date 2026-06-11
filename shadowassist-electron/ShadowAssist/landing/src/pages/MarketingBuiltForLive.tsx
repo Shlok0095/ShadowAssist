@@ -1,4 +1,6 @@
 import { Link } from 'react-router-dom'
+import { GlowCta } from '@/components/marketing/GlowCta'
+import { ScrollReveal } from '@/components/marketing/ScrollReveal'
 import { SITE } from '@/config/site'
 
 const bullets = [
@@ -24,49 +26,57 @@ const bullets = [
   },
 ] as const
 
-const ctaClass =
-  'marketing-cta inline-flex items-center justify-center rounded-xl border border-[#3f3f46] bg-[#1f1f1f] px-5 py-3 font-display text-sm font-semibold tracking-wide text-zinc-50 shadow-[0_0_32px_-10px_rgba(0,0,0,0.55)] transition-[transform,box-shadow,background-color,border-color] hover:scale-[1.03] hover:border-[#52525b] hover:bg-[#2a2a2a]'
+const ghostBtnClass =
+  'inline-flex items-center justify-center rounded-xl border border-white/[0.08] bg-white/[0.03] px-5 py-3 text-sm font-medium text-zinc-200 no-underline transition-colors hover:border-cyan-500/20 hover:text-white'
 
 export function MarketingBuiltForLive() {
   return (
-    <div className="min-w-0 bg-[#0a0a0a] px-4 py-14 font-sans text-white antialiased sm:px-8 sm:py-20 md:px-10 lg:px-14">
-      <div className="mx-auto w-full max-w-3xl">
-        <p className="font-mono text-xs font-medium uppercase tracking-[0.22em] text-zinc-500">Product</p>
-        <h1 className="mt-3 font-display text-3xl font-semibold tracking-[-0.02em] sm:text-4xl">Built for live work</h1>
-        <p className="mt-3 font-mono text-sm leading-relaxed tracking-wide text-zinc-500">
-          ShadowAssist is a Windows-native co-pilot layer: synchronous meetings, live document reviews, and any session
-          where latency and situational awareness beat batch chat.
-        </p>
+    <div className="relative min-w-0 font-sans text-white antialiased">
+      <section className="relative overflow-hidden px-4 pb-16 pt-12 sm:px-8 sm:pb-20 sm:pt-16 md:px-10 lg:px-14 xl:px-16">
+        <div className="relative z-[1] mx-auto w-full max-w-3xl">
+          <ScrollReveal>
+            <p className="font-mono text-xs font-medium uppercase tracking-[0.24em] text-cyan-400/70">Product</p>
+            <h1 className="mt-3 font-display text-3xl font-semibold tracking-[-0.02em] sm:text-4xl">Built for live work</h1>
+            <p className="mt-3 font-mono text-sm leading-relaxed tracking-wide text-zinc-500">
+              ShadowAssist is a Windows-native co-pilot layer: synchronous meetings, live document reviews, and any session
+              where latency and situational awareness beat batch chat.
+            </p>
+          </ScrollReveal>
 
-        <ul className="mt-12 space-y-6">
-          {bullets.map((b) => (
-            <li key={b.title} className="rounded-2xl border border-[#2a2a2a] bg-[#121212] p-6 sm:p-7">
-              <h2 className="font-display text-lg font-semibold tracking-[-0.01em] text-white">{b.title}</h2>
-              <p className="mt-2 text-sm leading-relaxed tracking-wide text-zinc-500">{b.body}</p>
-            </li>
-          ))}
-        </ul>
+          <ul className="mt-12 space-y-4">
+            {bullets.map((b, i) => (
+              <ScrollReveal key={b.title} delay={i * 0.05}>
+                <li className="futura-card list-none p-6 sm:p-7">
+                  <h2 className="font-display text-lg font-semibold tracking-[-0.01em] text-white">{b.title}</h2>
+                  <p className="mt-2 text-sm leading-relaxed tracking-wide text-zinc-500">{b.body}</p>
+                </li>
+              </ScrollReveal>
+            ))}
+          </ul>
 
-        <p className="mt-10 font-mono text-sm tracking-wide text-zinc-600">
-          Provider matrix, env vars, and security notes live in{' '}
-          <Link to="/docs/getting-started" className="text-zinc-400 no-underline transition-colors hover:text-zinc-200">
-            Getting started
-          </Link>
-          .
-        </p>
+          <ScrollReveal delay={0.15}>
+            <p className="mt-10 font-mono text-sm tracking-wide text-zinc-600">
+              Provider matrix, env vars, and security notes live in{' '}
+              <Link
+                to="/docs/getting-started"
+                className="text-zinc-400 no-underline transition-colors hover:text-cyan-300/90"
+              >
+                Getting started
+              </Link>
+              .
+            </p>
+          </ScrollReveal>
 
-        <div className="mt-8 flex flex-col gap-3 sm:flex-row sm:flex-wrap sm:gap-4">
-          <Link
-            to="/"
-            className="inline-flex items-center justify-center rounded-xl border border-[#2a2a2a] bg-[#121212] px-5 py-3 text-sm font-medium text-zinc-200 no-underline transition-colors hover:border-zinc-600 hover:text-white"
-          >
-            ← Home
-          </Link>
-          <a href={SITE.downloadSetupExeUrl} target="_blank" rel="noopener noreferrer" className={ctaClass}>
-            Download for Windows
-          </a>
+          <ScrollReveal delay={0.2} className="mt-8 flex flex-col gap-3 sm:flex-row sm:flex-wrap sm:gap-4">
+            <Link to="/" className={ghostBtnClass}>
+              ← Home
+            </Link>
+            <GlowCta href={SITE.downloadSetupExeUrl} size="md">
+              Download for Windows
+            </GlowCta>
+          </ScrollReveal>
         </div>
-      </div>
+      </section>
     </div>
   )
 }

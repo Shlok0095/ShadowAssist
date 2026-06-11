@@ -10,14 +10,14 @@ export function Footer() {
 
   const linkCls = cn(
     'text-sm no-underline transition-colors duration-200',
-    isMarketingDark ? 'text-zinc-500 hover:text-zinc-200' : 'text-zinc-600 hover:text-zinc-900'
+    isMarketingDark ? 'text-zinc-500 hover:text-cyan-300/90' : 'text-zinc-600 hover:text-zinc-900'
   )
 
   return (
     <footer
       className={cn(
         'mt-auto border-t px-4 py-10 sm:px-6 md:px-8 md:py-12',
-        isMarketingDark ? 'border-[#2a2a2a] bg-[#0a0a0a]/90' : 'border-zinc-200/80'
+        isMarketingDark ? 'border-white/[0.06] bg-transparent' : 'border-zinc-200/80'
       )}
     >
       <div className="mx-auto flex max-w-6xl flex-col gap-4 sm:flex-row sm:flex-wrap sm:items-center sm:gap-x-6 sm:gap-y-2">

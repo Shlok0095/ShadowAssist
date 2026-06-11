@@ -56,7 +56,7 @@ export function Header() {
   const menuPanelClass = cn(
     'absolute right-0 top-full z-50 mt-2 w-[min(17rem,calc(100vw-2rem))] origin-top-right scale-100 rounded-2xl border-2 p-2 opacity-100 shadow-xl',
     isMarketing
-      ? 'border-zinc-600 bg-[#1f1f1f] text-zinc-50 ring-1 ring-white/10'
+      ? 'border-white/[0.08] bg-[#050508]/95 text-zinc-50 ring-1 ring-white/10 backdrop-blur-xl'
       : 'border-zinc-300 bg-white text-zinc-950 ring-1 ring-black/5'
   )
 
@@ -137,7 +137,7 @@ export function Header() {
             className={cn(
               'flex h-10 w-10 items-center justify-center rounded-xl border transition-colors',
               isMarketing
-                ? 'border-[#2a2a2a] bg-[#121212] text-[#a1a1aa] hover:border-zinc-600 hover:text-white'
+                ? 'border-white/[0.08] bg-white/[0.03] text-zinc-400 hover:border-cyan-500/20 hover:text-white'
                 : 'border-zinc-200 bg-white text-zinc-700 hover:bg-zinc-50'
             )}
           >
