@@ -519,6 +519,15 @@ export default function App() {
   const [status, setStatus] = useState('idle')
   const [opacity, setOpacity] = useState(0.92)
   const [fontSize, setFontSize] = useState('medium')
+  const [answerStyle, setAnswerStyle] = useState('brief')
+  const [overlayAnswerView, setOverlayAnswerView] = useState('latest')
+  const [overlayTeleprompter, setOverlayTeleprompter] = useState(false)
+  const [overlayFocusMode, setOverlayFocusMode] = useState(false)
+  const [focusInputOpen, setFocusInputOpen] = useState(false)
+  const [streamPreview, setStreamPreview] = useState('')
+  const answerStyleRef = useRef('brief')
+  const lastAskRef = useRef({ q: null, opts: {} })
+  const streamPreviewFlushRef = useRef(null)
   const [micTranscript, setMicTranscript] = useState('')
   const [liveTranscriptSegments, setLiveTranscriptSegments] = useState([])
   const [sessionOn, setSessionOn] = useState(false)
@@ -543,7 +552,7 @@ export default function App() {
   const handleAskRef = useRef(null)
   const clearRollingSpeechRef = useRef(null)
   const msgId = useRef(0)
-  const expandedSize = useRef({ w: 400, h: 540 })
+  const expandedSize = useRef({ w: 480, h: 580 })
   const audioCtx = useRef(null)
   const energyIntervalRef = useRef(null)
   const energySampleRef = useRef(null)
@@ -612,9 +621,9 @@ export default function App() {
   const [activeAskSource, setActiveAskSource] = useState(null)
 
   const scrollBottom = useCallback(() => {
-    requestAnimationFrame(() =>
-      panelRef.current?.scrollTo({ top: panelRef.current.scrollHeight, behavior: 'smooth' }),
-    )
+    requestAnimationFrame(() => {
+      if (panelRef.current) panelRef.current.scrollTop = 0
+    })
   }, [])
 
   const clearRollingSpeech = useCallback(() => {
@@ -708,12 +717,12 @@ export default function App() {
     }
   }, [])
 
-  const scheduleStreamScroll = useCallback(() => {
+  const scrollPanelToAnswerTop = useCallback(() => {
     if (streamScrollRafRef.current != null) return
     streamScrollRafRef.current = requestAnimationFrame(() => {
       streamScrollRafRef.current = null
       const el = panelRef.current
-      if (el) el.scrollTop = el.scrollHeight
+      if (el) el.scrollTop = 0
     })
   }, [])
 
@@ -731,53 +740,30 @@ export default function App() {
    * Single microtask scheduler: at most one queued flush; all sync tokens merge into domTokenBufferRef.
    * DOM: appendChild(createTextNode(chunk)) per flush — avoids O(n) re-copy of the full string each time.
    */
+  const scheduleStreamPreviewFlush = useCallback(() => {
+    if (answerStyleRef.current === 'brief') return
+    if (streamPreviewFlushRef.current != null) return
+    streamPreviewFlushRef.current = window.setTimeout(() => {
+      streamPreviewFlushRef.current = null
+      setStreamPreview(streamAccumRef.current)
+    }, 180)
+  }, [])
+
   const appendTokenToStreamDom = useCallback(
     (t) => {
       if (t == null || t === '' || !streamDomAcceptingRef.current) return
       streamAccumRef.current += t
-      if (streamPulseRef.current) streamPulseRef.current.style.display = 'none'
-      domTokenBufferRef.current += t
-      if (domTokenFlushScheduledRef.current) return
-      domTokenFlushScheduledRef.current = true
-      queueMicrotask(() => {
-        domTokenFlushScheduledRef.current = false
-        const chunk = domTokenBufferRef.current
-        domTokenBufferRef.current = ''
-        if (!streamDomAcceptingRef.current) {
-          scheduleStreamScroll()
-          return
+      scheduleStreamPreviewFlush()
+      if (!perfFirstTokenLoggedRef.current) {
+        perfFirstTokenLoggedRef.current = true
+        if (perfAskT0Ref.current) {
+          const dt = Date.now() - perfAskT0Ref.current
+          console.log('UI_FIRST_TOKEN_MS', dt)
+          console.log('UI_RESPONSE_DELAY', dt)
         }
-        const textEl = streamTextRef.current
-        if (textEl && chunk) {
-          textEl.appendChild(document.createTextNode(chunk))
-          ipc?.send('shadowassist-stream-flush')
-        }
-        if (!perfFirstTokenLoggedRef.current) {
-          perfFirstTokenLoggedRef.current = true
-          if (perfAskT0Ref.current) {
-            const dt = Date.now() - perfAskT0Ref.current
-            console.log('UI_FIRST_TOKEN_MS', dt)
-            console.log('UI_RESPONSE_DELAY', dt)
-          }
-          try {
-            performance.mark('first-token-received')
-          } catch (_) {}
-          requestAnimationFrame(() => {
-            try {
-              performance.mark('painted')
-              performance.measure('PAINT_DELAY', 'first-token-received', 'painted')
-              const e = performance.getEntriesByName('PAINT_DELAY').pop()
-              if (e && typeof e.duration === 'number') console.log('PAINT_DELAY', Math.round(e.duration))
-              performance.clearMarks('first-token-received')
-              performance.clearMarks('painted')
-              performance.clearMeasures('PAINT_DELAY')
-            } catch (_) {}
-          })
-        }
-        scheduleStreamScroll()
-      })
+      }
     },
-    [scheduleStreamScroll],
+    [scheduleStreamPreviewFlush],
   )
 
   useEffect(() => {
@@ -787,6 +773,7 @@ export default function App() {
       cancelStreamScroll()
       streamDomAcceptingRef.current = true
       streamAccumRef.current = ''
+      setStreamPreview('')
       perfFirstTokenLoggedRef.current = false
       domTokenBufferRef.current = ''
       domTokenFlushScheduledRef.current = false
@@ -809,7 +796,7 @@ export default function App() {
       if (perfAskT0Ref.current) {
         console.log('UI_AI_START_MS', Date.now() - perfAskT0Ref.current)
       }
-      scheduleStreamScroll()
+      scrollPanelToAnswerTop()
     }
     const onToken = (_, t) => {
       appendTokenToStreamDom(t)
@@ -833,22 +820,32 @@ export default function App() {
           setMessages((m) => [...m, { role: 'ai', text: full, id: ++msgId.current, askSource: turnMeta?.askSource }])
           requestAnimationFrame(() => {
             const el = panelRef.current
-            if (el) el.scrollTo({ top: el.scrollHeight, behavior: 'smooth' })
+            if (el) el.scrollTop = 0
           })
         }
       } finally {
         activeTurnMetaRef.current = null
         setActiveAskSource(null)
         clearStreamDom()
+        setStreamPreview('')
         commitLockRef.current = false
       }
     }
     const onThinking = (_, v) => {
       setIsThinking(v)
-      if (!v) { commit(); ipc.invoke('session-active').then((a) => setStatus(a ? 'active' : 'idle')) }
-      else setStatus('thinking')
+      if (!v) {
+        commit()
+        setStreamPreview('')
+        ipc.invoke('session-active').then((a) => setStatus(a ? 'active' : 'idle'))
+      } else setStatus('thinking')
     }
-    const onAborted = () => { setIsThinking(false); commit() }
+    const onAborted = () => {
+      setIsThinking(false)
+      setStreamPreview('')
+      responseLockRef.current = false
+      isProcessingAskRef.current = false
+      commit()
+    }
     const onError = (_, msg) => {
       cancelStreamScroll()
       streamDomAcceptingRef.current = false
@@ -912,13 +909,23 @@ export default function App() {
         ipc.removeAllListeners(ch),
       )
     }
-  }, [scrollBottom, cancelStreamScroll, scheduleStreamScroll, clearStreamDom, appendTokenToStreamDom, clearRollingSpeech])
+  }, [scrollBottom, cancelStreamScroll, scrollPanelToAnswerTop, clearStreamDom, appendTokenToStreamDom, clearRollingSpeech])
 
   useEffect(() => {
     if (!ipc) return
     ipc.invoke('get-store', 'uiAccentTheme').then((id) => applyUiAccentTheme(document.documentElement, normalizeUiAccentId(id)))
     ipc.invoke('get-store', 'overlayOpacity').then((o) => o != null && setOpacity(o))
     ipc.invoke('get-store', 'overlayFontSize').then((f) => f && setFontSize(f))
+    ipc.invoke('get-store', 'answerStyle').then((v) => {
+      const s = v === 'detailed' ? 'detailed' : 'brief'
+      answerStyleRef.current = s
+      setAnswerStyle(s)
+    })
+    ipc.invoke('get-store', 'overlayAnswerView').then((v) =>
+      setOverlayAnswerView(v === 'history' ? 'history' : 'latest'),
+    )
+    ipc.invoke('get-store', 'overlayTeleprompter').then((v) => setOverlayTeleprompter(v === true))
+    ipc.invoke('get-store', 'overlayFocusMode').then((v) => setOverlayFocusMode(v === true))
     ipc.invoke('get-window-bounds').then((b) => {
       if (b && b.height > COLLAPSED_H) expandedSize.current = { w: b.width, h: b.height }
     })
@@ -930,6 +937,15 @@ export default function App() {
     const onDisplay = (_, p) => {
       if (p?.overlayOpacity != null) setOpacity(p.overlayOpacity)
       if (p?.overlayFontSize) setFontSize(p.overlayFontSize)
+      if (p?.answerStyle === 'brief' || p?.answerStyle === 'detailed') {
+        answerStyleRef.current = p.answerStyle
+        setAnswerStyle(p.answerStyle)
+      }
+      if (p?.overlayAnswerView === 'latest' || p?.overlayAnswerView === 'history') {
+        setOverlayAnswerView(p.overlayAnswerView)
+      }
+      if (p?.overlayTeleprompter != null) setOverlayTeleprompter(!!p.overlayTeleprompter)
+      if (p?.overlayFocusMode != null) setOverlayFocusMode(!!p.overlayFocusMode)
       if (p?.width != null && p?.height != null) expandedSize.current = { w: p.width, h: p.height }
       if (p?.assistAutoTrigger != null) assistAutoTriggerRef.current = !!p.assistAutoTrigger
     }
@@ -1536,6 +1552,10 @@ export default function App() {
         opts.bypassCaptureCooldown === true || bypassCaptureOnceRef.current
       bypassCaptureOnceRef.current = false
 
+      if (!opts._followUpRefine) {
+        lastAskRef.current = { q: trimmed, opts: { source: opts.source, auto: isAuto } }
+      }
+
       void (async () => {
         try {
           if (isProcessingAskRef.current || isThinkingRef.current || responseLockRef.current) return
@@ -1668,6 +1688,37 @@ export default function App() {
   useEffect(() => {
     handleAskRef.current = handleAsk
   }, [handleAsk])
+
+  useEffect(() => {
+    answerStyleRef.current = answerStyle
+  }, [answerStyle])
+
+  const onAbortGeneration = useCallback(async () => {
+    await ipc?.invoke('abort-ai')
+    responseLockRef.current = false
+    isProcessingAskRef.current = false
+  }, [])
+
+  const onRetryLastAsk = useCallback(() => {
+    const { q, opts } = lastAskRef.current
+    handleAsk(q, { ...opts, bypassCaptureCooldown: true })
+  }, [handleAsk])
+
+  const onAnswerFollowUp = useCallback(
+    (kind) => {
+      if (kind === 'regenerate') {
+        const { q, opts } = lastAskRef.current
+        handleAsk(q, { ...opts, bypassCaptureCooldown: true })
+        return
+      }
+      const refine =
+        kind === 'shorter'
+          ? 'Rewrite your previous answer to be shorter: keep the takeaway, then at most two tight paragraphs. Omit lists unless essential.'
+          : 'Expand your previous answer with significantly more depth, examples, and nuance. Keep the takeaway + explanation structure.'
+      handleAsk(refine, { source: 'typed', bypassCaptureCooldown: true, _followUpRefine: true })
+    },
+    [handleAsk],
+  )
   useEffect(() => {
     clearRollingSpeechRef.current = clearRollingSpeech
   }, [clearRollingSpeech])
@@ -1866,13 +1917,41 @@ export default function App() {
                 streamTextRef={streamTextRef}
                 streamPulseRef={streamPulseRef}
                 fontSize={fontSize}
+                answerStyle={answerStyle}
+                overlayAnswerView={overlayAnswerView}
+                overlayTeleprompter={overlayTeleprompter}
+                streamPreview={streamPreview}
                 activeAskSource={activeAskSource}
+                sessionOn={sessionOn}
+                onAbort={onAbortGeneration}
+                onFollowUp={onAnswerFollowUp}
+                onRetry={onRetryLastAsk}
               />
 
               {/* LiveTranscriptPanel — logic + data intact, not rendered per UI spec */}
 
               <div className="shrink-0 border-t border-white/[0.07]">
-                <InputBar onAsk={(t, opts) => handleAsk(t, opts || {})} isThinking={isThinking} />
+                {overlayFocusMode && !focusInputOpen ? (
+                  <button
+                    type="button"
+                    onClick={() => setFocusInputOpen(true)}
+                    className="flex w-full items-center justify-between px-4 py-3 text-left text-[12px] text-zinc-500 transition-colors hover:bg-white/[0.03] hover:text-zinc-300"
+                  >
+                    <span>Tap to ask · Ctrl+Enter for help</span>
+                    <span className="text-zinc-600">▲</span>
+                  </button>
+                ) : (
+                  <InputBar
+                    onAsk={(t, opts) => {
+                      handleAsk(t, opts || {})
+                      if (overlayFocusMode) setFocusInputOpen(false)
+                    }}
+                    onAbort={onAbortGeneration}
+                    isThinking={isThinking}
+                    sessionOn={sessionOn}
+                    focusMode={overlayFocusMode}
+                  />
+                )}
               </div>
             </div>
           </div>

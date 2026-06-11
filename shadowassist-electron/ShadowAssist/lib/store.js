@@ -94,9 +94,17 @@ const schema = {
   /** Empty = use built-in prompt from lib/defaultSystemPrompt.js (ShadowAssist base). */
   systemPrompt: { type: 'string', default: '' },
   // x/y optional — main seeds top-right when missing or off-screen
-  overlayBounds: { type: 'object', default: { width: 400, height: 540 } },
+  overlayBounds: { type: 'object', default: { width: 480, height: 580 } },
   overlayOpacity: { type: 'number', default: 0.92 },
   overlayFontSize: { type: 'string', default: 'medium' },
+  /** brief = prose summary + collapsible details; detailed = full markdown lists */
+  answerStyle: { type: 'string', default: 'brief' },
+  /** latest = show only the current exchange; history = full thread */
+  overlayAnswerView: { type: 'string', default: 'latest' },
+  /** Large-type reading mode — minimal chrome for live meetings */
+  overlayTeleprompter: { type: 'boolean', default: false },
+  /** Hide input until tapped — more space for answers */
+  overlayFocusMode: { type: 'boolean', default: false },
   /** Accent preset id — see renderer/shared/uiAccentThemes.js (default neon = original green) */
   uiAccentTheme: { type: 'string', default: 'neon' },
   hotkeys: {

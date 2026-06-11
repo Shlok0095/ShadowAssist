@@ -3,9 +3,13 @@
 
 import React, { useState, useRef, memo } from 'react'
 
-function InputBar({ onAsk, isThinking }) {
+function InputBar({ onAsk, onAbort, isThinking, sessionOn = false, focusMode = false }) {
   const [value, setValue] = useState('')
   const textRef = useRef(null)
+
+  const placeholder = sessionOn
+    ? 'Ask about the meeting… or Enter to read screen'
+    : 'Type a question… or Enter to read screen · Ctrl+Enter anytime'
 
   const submitText = () => {
     const trimmed = value.trim()
@@ -22,6 +26,10 @@ function InputBar({ onAsk, isThinking }) {
       e.preventDefault()
       submitText()
     }
+    if (e.key === 'Escape' && focusMode) {
+      setValue('')
+      textRef.current?.blur()
+    }
   }
 
   return (
@@ -31,7 +39,7 @@ function InputBar({ onAsk, isThinking }) {
         value={value}
         onChange={(e) => setValue(e.target.value)}
         onKeyDown={handleKeyDown}
-        placeholder="Ask anything… or press Enter to read screen"
+        placeholder={placeholder}
         rows={1}
         className={[
           'flex-1 min-h-[34px] max-h-[72px] resize-none rounded-xl px-3 py-2',
@@ -41,29 +49,33 @@ function InputBar({ onAsk, isThinking }) {
         ].join(' ')}
         style={{ scrollbarWidth: 'none', msOverflowStyle: 'none' }}
       />
-      <button
-        type="button"
-        onClick={submitText}
-        disabled={isThinking && !value.trim()}
-        className={[
-          'cursor-default flex h-[34px] w-[34px] shrink-0 items-center justify-center rounded-xl transition-all duration-150 active:scale-95',
-          isThinking && !value.trim()
-            ? 'bg-amber-500/10 text-amber-400/70'
-            : 'border border-accent/25 bg-accent/10 text-accent hover:bg-accent/20 hover:border-accent/40',
-        ].join(' ')}
-      >
-        {isThinking && !value.trim() ? (
-          <svg className="animate-spin w-3.5 h-3.5" viewBox="0 0 24 24" fill="none">
-            <circle cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="2.5" strokeOpacity="0.25" />
-            <path d="M12 2a10 10 0 0 1 10 10" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" />
-          </svg>
-        ) : (
+      {isThinking && !value.trim() ? (
+        <button
+          type="button"
+          onClick={() => onAbort?.()}
+          title="Stop generating"
+          className="cursor-default flex h-[34px] shrink-0 items-center justify-center rounded-xl border border-rose-500/25 bg-rose-500/10 px-3 text-[11px] font-medium text-rose-300 hover:bg-rose-500/20"
+        >
+          Stop
+        </button>
+      ) : (
+        <button
+          type="button"
+          onClick={submitText}
+          disabled={isThinking && !value.trim()}
+          className={[
+            'cursor-default flex h-[34px] w-[34px] shrink-0 items-center justify-center rounded-xl transition-all duration-150 active:scale-95',
+            isThinking && !value.trim()
+              ? 'bg-amber-500/10 text-amber-400/70'
+              : 'border border-accent/25 bg-accent/10 text-accent hover:bg-accent/20 hover:border-accent/40',
+          ].join(' ')}
+        >
           <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
             <line x1="22" y1="2" x2="11" y2="13" />
             <polygon points="22 2 15 22 11 13 2 9 22 2" />
           </svg>
-        )}
-      </button>
+        </button>
+      )}
     </div>
   )
 }

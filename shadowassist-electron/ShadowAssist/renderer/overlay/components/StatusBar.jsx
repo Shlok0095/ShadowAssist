@@ -45,7 +45,10 @@ function StatusBar({ status, sessionOn, expanded, onToggleSession, onOpenSetting
         setMicError('')
       }
     }
-    const onTranscript = (e) => setLastHeard(e.detail?.latest || '')
+    const onTranscript = (e) => {
+      const raw = String(e.detail?.latest || '').trim()
+      setLastHeard(raw)
+    }
     const onErr = (e) => {
       setMicError(e.detail?.message)
       setMicActive(false)
@@ -122,7 +125,13 @@ function StatusBar({ status, sessionOn, expanded, onToggleSession, onOpenSetting
             <div className="flex items-center gap-1.5">
               <WaveBars active={micActive} />
               <span className="min-w-0 flex-1 truncate text-[11px] text-accent-light/85">
-                {lastHeard ? lastHeard.slice(-52) : 'Listening…'}
+                {lastHeard
+                  ? lastHeard.includes('Participant:')
+                    ? `They: ${lastHeard.replace(/^Participant:\s*/i, '').slice(-44)}`
+                    : lastHeard.includes('Me:')
+                      ? `You: ${lastHeard.replace(/^Me:\s*/i, '').slice(-44)}`
+                      : lastHeard.slice(-52)
+                  : 'Listening…'}
               </span>
             </div>
           ) : micError ? (

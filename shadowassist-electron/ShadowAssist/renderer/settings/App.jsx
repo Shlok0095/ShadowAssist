@@ -278,6 +278,10 @@ export default function Settings() {
 
   const [overlayOpacityUi, setOverlayOpacityUi] = useState(0.92)
   const [overlayFontUi, setOverlayFontUi] = useState('medium')
+  const [answerStyleUi, setAnswerStyleUi] = useState('brief')
+  const [overlayAnswerViewUi, setOverlayAnswerViewUi] = useState('latest')
+  const [overlayTeleprompterUi, setOverlayTeleprompterUi] = useState(false)
+  const [overlayFocusModeUi, setOverlayFocusModeUi] = useState(false)
   const [overlayW, setOverlayW] = useState(400)
   const [overlayH, setOverlayH] = useState(540)
   const [uiAccentThemeId, setUiAccentThemeId] = useState('neon')
@@ -326,8 +330,12 @@ export default function Settings() {
         const ob = s.overlayBounds || {}
         setOverlayOpacityUi(typeof s.overlayOpacity === 'number' ? s.overlayOpacity : 0.92)
         setOverlayFontUi(s.overlayFontSize || 'medium')
-        setOverlayW(ob.width || 400)
-        setOverlayH(ob.height || 540)
+        setAnswerStyleUi(s.answerStyle === 'detailed' ? 'detailed' : 'brief')
+        setOverlayAnswerViewUi(s.overlayAnswerView === 'history' ? 'history' : 'latest')
+        setOverlayTeleprompterUi(s.overlayTeleprompter === true)
+        setOverlayFocusModeUi(s.overlayFocusMode === true)
+        setOverlayW(ob.width || 480)
+        setOverlayH(ob.height || 580)
         const accentId = normalizeUiAccentId(s.uiAccentTheme)
         setUiAccentThemeId(accentId)
         applyUiAccentTheme(document.documentElement, accentId)
@@ -687,6 +695,41 @@ export default function Settings() {
     await ipc?.invoke('apply-overlay-display', { overlayFontSize: v })
   }
 
+  const applyAnswerStyle = async (v) => {
+    const next = v === 'detailed' ? 'detailed' : 'brief'
+    setAnswerStyleUi(next)
+    patchSnap('answerStyle', next)
+    await save('answerStyle', next)
+    await ipc?.invoke('apply-overlay-display', { answerStyle: next })
+  }
+
+  const applyOverlayAnswerView = async (v) => {
+    const next = v === 'history' ? 'history' : 'latest'
+    setOverlayAnswerViewUi(next)
+    patchSnap('overlayAnswerView', next)
+    await save('overlayAnswerView', next)
+    await ipc?.invoke('apply-overlay-display', { overlayAnswerView: next })
+  }
+
+  const applyOverlayTeleprompter = async (v) => {
+    setOverlayTeleprompterUi(!!v)
+    patchSnap('overlayTeleprompter', !!v)
+    await save('overlayTeleprompter', !!v)
+    await ipc?.invoke('apply-overlay-display', { overlayTeleprompter: !!v })
+  }
+
+  const applyOverlayFocusMode = async (v) => {
+    setOverlayFocusModeUi(!!v)
+    patchSnap('overlayFocusMode', !!v)
+    await save('overlayFocusMode', !!v)
+    await ipc?.invoke('apply-overlay-display', { overlayFocusMode: !!v })
+  }
+
+  const applyOpacityPreset = async (pct) => {
+    const v = Math.min(1, Math.max(0.35, pct / 100))
+    await applyOverlayOpacity(v)
+  }
+
   const applyUiAccent = async (id) => {
     const next = normalizeUiAccentId(id)
     setUiAccentThemeId(next)
@@ -973,6 +1016,24 @@ export default function Settings() {
                       <label className="text-[10px] font-semibold uppercase tracking-[0.2em] text-mist-400">Window opacity</label>
                       <span className="font-mono text-xs text-accent">{Math.round(overlayOpacityUi * 100)}%</span>
                     </div>
+                    <div className="mb-2 flex flex-wrap gap-2">
+                      {[
+                        { label: 'Stealth', pct: 65 },
+                        { label: 'Balanced', pct: 85 },
+                        { label: 'Clear', pct: 92 },
+                      ].map((p) => (
+                        <button
+                          key={p.pct}
+                          type="button"
+                          onClick={() => applyOpacityPreset(p.pct)}
+                          className={`settings-chip settings-chip-sm !normal-case ${
+                            Math.round(overlayOpacityUi * 100) === p.pct ? 'settings-chip-active' : ''
+                          }`}
+                        >
+                          {p.label}
+                        </button>
+                      ))}
+                    </div>
                     <input
                       type="range"
                       min={35}
@@ -997,6 +1058,95 @@ export default function Settings() {
                           className={`settings-chip settings-chip-sm ${overlayFontUi === sz ? 'settings-chip-active' : ''}`}
                         >
                           {sz}
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+
+                  <div>
+                    <label className="mb-2 block text-[10px] font-semibold uppercase tracking-[0.2em] text-mist-400">Answer style</label>
+                    <p className="mb-2 text-[11px] text-zinc-600">
+                      Brief: multi-paragraph depth + visible code; lists tuck under “Show lists &amp; steps”. Detailed: full markdown.
+                    </p>
+                    <div className="flex flex-wrap gap-2">
+                      {[
+                        { id: 'brief', label: 'Brief (summary)' },
+                        { id: 'detailed', label: 'Detailed' },
+                      ].map((opt) => (
+                        <button
+                          key={opt.id}
+                          type="button"
+                          onClick={() => applyAnswerStyle(opt.id)}
+                          className={`settings-chip settings-chip-sm !normal-case ${answerStyleUi === opt.id ? 'settings-chip-active' : ''}`}
+                        >
+                          {opt.label}
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+
+                  <div>
+                    <label className="mb-2 block text-[10px] font-semibold uppercase tracking-[0.2em] text-mist-400">Reading modes</label>
+                    <div className="space-y-3">
+                      <label className="settings-row-tile flex cursor-pointer items-center justify-between gap-4">
+                        <div>
+                          <span className="font-medium text-gray-200">Teleprompter</span>
+                          <p className="text-xs text-gray-600">Larger type, minimal labels — best during live calls.</p>
+                        </div>
+                        <input
+                          type="checkbox"
+                          checked={overlayTeleprompterUi}
+                          onChange={(e) => applyOverlayTeleprompter(e.target.checked)}
+                          className="h-5 w-5 rounded border-white/20 accent-accent"
+                        />
+                      </label>
+                      <label className="settings-row-tile flex cursor-pointer items-center justify-between gap-4">
+                        <div>
+                          <span className="font-medium text-gray-200">Focus mode</span>
+                          <p className="text-xs text-gray-600">Hide the input bar until you tap — more room for answers.</p>
+                        </div>
+                        <input
+                          type="checkbox"
+                          checked={overlayFocusModeUi}
+                          onChange={(e) => applyOverlayFocusMode(e.target.checked)}
+                          className="h-5 w-5 rounded border-white/20 accent-accent"
+                        />
+                      </label>
+                    </div>
+                  </div>
+
+                  <div>
+                    <label className="mb-2 block text-[10px] font-semibold uppercase tracking-[0.2em] text-mist-400">Answer preview</label>
+                    <div className="rounded-xl border border-white/[0.08] bg-black/40 p-4">
+                      <div className="rounded-lg border border-accent/15 bg-accent/[0.06] px-3 py-2">
+                        <p className="text-[10px] font-semibold uppercase tracking-wider text-accent/70">Takeaway</p>
+                        <p className="mt-1 text-[13px] font-medium text-gray-100">
+                          Lead with this line in the meeting — the core point in plain language.
+                        </p>
+                      </div>
+                      <p className="mt-3 text-[12px] leading-relaxed text-gray-400">
+                        Explanation paragraphs follow with depth. Code stays visible; lists tuck under &quot;Show lists &amp; steps&quot;.
+                      </p>
+                    </div>
+                  </div>
+
+                  <div>
+                    <label className="mb-2 block text-[10px] font-semibold uppercase tracking-[0.2em] text-mist-400">Answer panel view</label>
+                    <p className="mb-2 text-[11px] text-zinc-600">
+                      Latest shows only the current Q&amp;A during a call. History keeps the full thread.
+                    </p>
+                    <div className="flex flex-wrap gap-2">
+                      {[
+                        { id: 'latest', label: 'Latest only' },
+                        { id: 'history', label: 'Full history' },
+                      ].map((opt) => (
+                        <button
+                          key={opt.id}
+                          type="button"
+                          onClick={() => applyOverlayAnswerView(opt.id)}
+                          className={`settings-chip settings-chip-sm !normal-case ${overlayAnswerViewUi === opt.id ? 'settings-chip-active' : ''}`}
+                        >
+                          {opt.label}
                         </button>
                       ))}
                     </div>

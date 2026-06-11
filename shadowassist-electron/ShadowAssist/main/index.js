@@ -38,6 +38,7 @@ if (!gotLock) {
 } else {
 const store = require('../lib/store')
 const { resolveSystemPrompt } = require('../lib/defaultSystemPrompt')
+const { getAnswerStyleSuffix } = require('../lib/answerStyle')
 store.runDataMigration()
 const hotkeys = require('../lib/hotkeys')
 const screenCapture = require('../lib/screenCapture')
@@ -967,6 +968,7 @@ async function handleAskAI(userQuestion, audioTranscript, _askMeta = {}) {
   const profileBlock = profileParts.length ? `\n\n---\n${profileParts.join('\n\n---\n')}` : ''
   let fullSystem = `${systemPrompt}${profileBlock}${CONTEXT_ROUTING_RULES}`
   if (playbookText) fullSystem = `${fullSystem}\n\n---\n## REFERENCE PLAYBOOKS\n${playbookText}`
+  fullSystem = `${fullSystem}\n\n---\n${getAnswerStyleSuffix(store.get('answerStyle'))}`
 
   const structured =
     typeof _askMeta?.structuredUserPrompt === 'string' ? _askMeta.structuredUserPrompt.trim() : ''
@@ -1332,6 +1334,30 @@ function setupIPC() {
       sendToOverlay('overlay-display-update', { assistAutoTrigger: v })
       return true
     }
+    if (key === 'answerStyle') {
+      const v = value === 'detailed' ? 'detailed' : 'brief'
+      store.set('answerStyle', v)
+      sendToOverlay('overlay-display-update', { answerStyle: v })
+      return true
+    }
+    if (key === 'overlayAnswerView') {
+      const v = value === 'history' ? 'history' : 'latest'
+      store.set('overlayAnswerView', v)
+      sendToOverlay('overlay-display-update', { overlayAnswerView: v })
+      return true
+    }
+    if (key === 'overlayTeleprompter') {
+      const v = !!value
+      store.set('overlayTeleprompter', v)
+      sendToOverlay('overlay-display-update', { overlayTeleprompter: v })
+      return true
+    }
+    if (key === 'overlayFocusMode') {
+      const v = !!value
+      store.set('overlayFocusMode', v)
+      sendToOverlay('overlay-display-update', { overlayFocusMode: v })
+      return true
+    }
     if (key === 'stealth_mode') {
       store.set('stealth_mode', !!value)
       applyContentProtectionAllWindows()
@@ -1380,6 +1406,13 @@ function setupIPC() {
     nativeSttProviderIds: NATIVE_STT_PROVIDER_IDS,
   }))
   ipcMain.handle('get-chat-model-catalog', () => require('../lib/chatModelCatalog.json'))
+  ipcMain.handle('abort-ai', () => {
+    if (currentAbortController) {
+      currentAbortController.abort()
+      return { ok: true }
+    }
+    return { ok: false }
+  })
   ipcMain.handle('ask-ai-with-transcript', (_, q, t, meta) => {
     if (meta && typeof meta._llmTriggerAt === 'number') {
       console.log('LLM_START_DELAY_MS', Date.now() - meta._llmTriggerAt)
@@ -1469,6 +1502,24 @@ function setupIPC() {
       if (opts.overlayFontSize && ['small', 'medium', 'large'].includes(opts.overlayFontSize)) {
         store.set('overlayFontSize', opts.overlayFontSize)
         sendToOverlay('overlay-display-update', { overlayFontSize: opts.overlayFontSize })
+      }
+      if (opts.answerStyle === 'brief' || opts.answerStyle === 'detailed') {
+        store.set('answerStyle', opts.answerStyle)
+        sendToOverlay('overlay-display-update', { answerStyle: opts.answerStyle })
+      }
+      if (opts.overlayAnswerView === 'latest' || opts.overlayAnswerView === 'history') {
+        store.set('overlayAnswerView', opts.overlayAnswerView)
+        sendToOverlay('overlay-display-update', { overlayAnswerView: opts.overlayAnswerView })
+      }
+      if (opts.overlayTeleprompter != null) {
+        const v = !!opts.overlayTeleprompter
+        store.set('overlayTeleprompter', v)
+        sendToOverlay('overlay-display-update', { overlayTeleprompter: v })
+      }
+      if (opts.overlayFocusMode != null) {
+        const v = !!opts.overlayFocusMode
+        store.set('overlayFocusMode', v)
+        sendToOverlay('overlay-display-update', { overlayFocusMode: v })
       }
       if (typeof opts.width === 'number' || typeof opts.height === 'number') {
         const prev = store.get('overlayBounds') || {}
