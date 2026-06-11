@@ -3,6 +3,7 @@
 
 import React, { useCallback, useEffect, useMemo, useRef, memo, useState } from 'react'
 import { createIpcShim } from '../../shared/ipcShim'
+import { isCodingQuestion } from '../../shared/responseIntent'
 
 const panelIpc = createIpcShim()
 
@@ -430,11 +431,17 @@ function copyText(text) {
   else void navigator.clipboard?.writeText(t)
 }
 
-const BriefAnswer = memo(function BriefAnswer({ text, teleprompter = false }) {
+const BriefAnswer = memo(function BriefAnswer({ text, teleprompter = false, allowCode = false }) {
   const [detailsOpen, setDetailsOpen] = useState(false)
   const [copied, setCopied] = useState('')
   const nodes = useMemo(() => parseMarkdown(text), [text])
-  const { takeaway, prose, code, details } = useMemo(() => partitionForBrief(nodes), [nodes])
+  const { takeaway, prose, code, details } = useMemo(() => {
+    const p = partitionForBrief(nodes)
+    if (!allowCode && p.code.length > 0) {
+      return { ...p, code: [] }
+    }
+    return p
+  }, [nodes, allowCode])
   const fallback = nodes.length === 0 ? text : null
   const codeText = useMemo(() => code.map((c) => c.content).join('\n\n'), [code])
   const tp = teleprompter
@@ -544,6 +551,7 @@ const MessageBubble = memo(function MessageBubble({
   text,
   answerStyle = 'brief',
   teleprompter = false,
+  allowCode = false,
   onRetry,
   animateIn = false,
 }) {
@@ -570,11 +578,11 @@ const MessageBubble = memo(function MessageBubble({
           <ErrorBubble text={text} onRetry={onRetry} />
         ) : role === 'ai' ? (
           isBriefAi ? (
-            <BriefAnswer text={text} teleprompter={teleprompter} />
+            <BriefAnswer text={text} teleprompter={teleprompter} allowCode={allowCode} />
           ) : fallback ? (
             <p className="leading-[1.65]" dangerouslySetInnerHTML={{ __html: renderInline(text) }} />
           ) : (
-            <MarkdownNodes nodes={nodes} />
+            <MarkdownNodes nodes={allowCode ? nodes : nodes.filter((n) => n.type !== 'code')} />
           )
         ) : (
           <span className="whitespace-pre-wrap text-[13px] leading-relaxed">{text}</span>
@@ -650,25 +658,6 @@ function DetailedStreamPreview({ streamPreview, onAbort, teleprompter = false })
   )
 }
 
-function AnswerActionsRow({ onFollowUp, disabled }) {
-  if (!onFollowUp) return null
-  const btn =
-    'rounded-lg border border-white/[0.08] bg-white/[0.03] px-2.5 py-1 text-[10px] font-medium text-zinc-400 transition-colors hover:bg-white/[0.06] hover:text-zinc-200 disabled:opacity-40'
-  return (
-    <div className="mt-3 flex flex-wrap gap-1.5">
-      <button type="button" disabled={disabled} className={btn} onClick={() => onFollowUp('shorter')}>
-        Shorter
-      </button>
-      <button type="button" disabled={disabled} className={btn} onClick={() => onFollowUp('deeper')}>
-        Deeper
-      </button>
-      <button type="button" disabled={disabled} className={btn} onClick={() => onFollowUp('regenerate')}>
-        Regenerate
-      </button>
-    </div>
-  )
-}
-
 function AnswerPanelToolbar({ answerStyle, overlayAnswerView, onViewChange }) {
   const setView = (v) => {
     onViewChange?.(v)
@@ -732,7 +721,6 @@ const ResponsePanelInner = React.forwardRef(function ResponsePanel(
     activeAskSource = null,
     sessionOn = false,
     onAbort,
-    onFollowUp,
     onRetry,
   },
   ref,
@@ -758,9 +746,16 @@ const ResponsePanelInner = React.forwardRef(function ResponsePanel(
     setAnswerView(overlayAnswerView === 'history' ? 'history' : 'latest')
   }, [overlayAnswerView])
 
+  useEffect(() => {
+    if (answerView !== 'history' || !scrollRef.current) return
+    scrollRef.current.scrollTop = 0
+  }, [answerView, turns.length])
+
   const visibleTurns = useMemo(() => {
-    if (answerView !== 'latest' || turns.length === 0) return turns
-    return [turns[turns.length - 1]]
+    if (turns.length === 0) return turns
+    if (answerView === 'latest') return [turns[turns.length - 1]]
+    // History: newest exchange at top, older below.
+    return [...turns].reverse()
   }, [turns, answerView])
 
   useEffect(() => {
@@ -773,12 +768,8 @@ const ResponsePanelInner = React.forwardRef(function ResponsePanel(
   const scrollAnswerToTop = useCallback(() => {
     const el = scrollRef.current
     if (!el) return
-    if (answerView === 'latest') {
-      el.scrollTop = 0
-      return
-    }
-    answerAnchorRef.current?.scrollIntoView({ block: 'start', behavior: 'auto' })
-  }, [answerView])
+    el.scrollTop = 0
+  }, [])
 
   useEffect(() => {
     if (scrollKickRef.current != null) cancelAnimationFrame(scrollKickRef.current)
@@ -864,6 +855,8 @@ const ResponsePanelInner = React.forwardRef(function ResponsePanel(
             const ribbonSource =
               isLatestTurn && hasActiveReply ? (activeAskSource ?? turn.askSource) : turn.askSource
             const exchangeNum = turns.findIndex((t) => t.id === turn.id) + 1
+            const questionCtx = String(turn.user?.text || turn.heard?.text || '').trim()
+            const allowCode = isCodingQuestion(questionCtx)
             return (
               <div key={turn.id} className={idx > 0 ? 'mt-8 pt-8 border-t border-white/[0.06]' : ''}>
                 {!overlayTeleprompter && (
@@ -906,16 +899,12 @@ const ResponsePanelInner = React.forwardRef(function ResponsePanel(
                             text={m.text}
                             answerStyle={answerStyle}
                             teleprompter={overlayTeleprompter}
+                            allowCode={allowCode}
                             onRetry={m.role === 'error' ? onRetry : undefined}
                             animateIn={m.role === 'ai' && isLatestTurn}
                           />
                         ))}
                       </div>
-                      {isLatestTurn &&
-                        turn.replies.some((r) => r.role === 'ai') &&
-                        !hasActiveReply && (
-                          <AnswerActionsRow onFollowUp={onFollowUp} disabled={!!isThinking} />
-                        )}
                     </div>
                   )}
                 </div>

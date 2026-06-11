@@ -968,7 +968,6 @@ async function handleAskAI(userQuestion, audioTranscript, _askMeta = {}) {
   const profileBlock = profileParts.length ? `\n\n---\n${profileParts.join('\n\n---\n')}` : ''
   let fullSystem = `${systemPrompt}${profileBlock}${CONTEXT_ROUTING_RULES}`
   if (playbookText) fullSystem = `${fullSystem}\n\n---\n## REFERENCE PLAYBOOKS\n${playbookText}`
-  fullSystem = `${fullSystem}\n\n---\n${getAnswerStyleSuffix(store.get('answerStyle'))}`
 
   const structured =
     typeof _askMeta?.structuredUserPrompt === 'string' ? _askMeta.structuredUserPrompt.trim() : ''
@@ -986,6 +985,12 @@ async function handleAskAI(userQuestion, audioTranscript, _askMeta = {}) {
   const userQ = (userQuestion || '').trim()
   const screenRaw = screenOcrText || ''
   const cleanScreen = screenRaw || ''
+
+  fullSystem = `${fullSystem}\n\n---\n${getAnswerStyleSuffix(store.get('answerStyle'), {
+    userQuestion: userQ,
+    transcript: overlayAudio,
+    screen: cleanScreen,
+  })}`
 
   let audioCombined = overlayAudio
   // Screen / OCR-only turns intentionally send empty audio — never backfill from session memory

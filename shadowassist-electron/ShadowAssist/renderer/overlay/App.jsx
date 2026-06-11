@@ -1552,9 +1552,7 @@ export default function App() {
         opts.bypassCaptureCooldown === true || bypassCaptureOnceRef.current
       bypassCaptureOnceRef.current = false
 
-      if (!opts._followUpRefine) {
-        lastAskRef.current = { q: trimmed, opts: { source: opts.source, auto: isAuto } }
-      }
+      lastAskRef.current = { q: trimmed, opts: { source: opts.source, auto: isAuto } }
 
       void (async () => {
         try {
@@ -1704,21 +1702,6 @@ export default function App() {
     handleAsk(q, { ...opts, bypassCaptureCooldown: true })
   }, [handleAsk])
 
-  const onAnswerFollowUp = useCallback(
-    (kind) => {
-      if (kind === 'regenerate') {
-        const { q, opts } = lastAskRef.current
-        handleAsk(q, { ...opts, bypassCaptureCooldown: true })
-        return
-      }
-      const refine =
-        kind === 'shorter'
-          ? 'Rewrite your previous answer to be shorter: keep the takeaway, then at most two tight paragraphs. Omit lists unless essential.'
-          : 'Expand your previous answer with significantly more depth, examples, and nuance. Keep the takeaway + explanation structure.'
-      handleAsk(refine, { source: 'typed', bypassCaptureCooldown: true, _followUpRefine: true })
-    },
-    [handleAsk],
-  )
   useEffect(() => {
     clearRollingSpeechRef.current = clearRollingSpeech
   }, [clearRollingSpeech])
@@ -1924,7 +1907,6 @@ export default function App() {
                 activeAskSource={activeAskSource}
                 sessionOn={sessionOn}
                 onAbort={onAbortGeneration}
-                onFollowUp={onAnswerFollowUp}
                 onRetry={onRetryLastAsk}
               />
 
