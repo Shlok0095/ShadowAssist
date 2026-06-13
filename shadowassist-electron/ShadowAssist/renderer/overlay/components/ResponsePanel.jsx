@@ -3,7 +3,7 @@
 
 import React, { useCallback, useEffect, useMemo, useRef, memo, useState } from 'react'
 import { createIpcShim } from '../../shared/ipcShim'
-import { isCodingQuestion } from '../../shared/responseIntent'
+import { inferResponseIntent } from '../../shared/responseIntent'
 
 const panelIpc = createIpcShim()
 
@@ -33,6 +33,12 @@ function groupMessagesIntoTurns(list) {
       }
       turn.heard = m
     } else if (m.role === 'ai' || m.role === 'error') {
+      // Screen-only asks (Ctrl+Enter) add no user/heard — each answer is its own exchange.
+      if (turn.replies.length > 0) {
+        turns.push(turn)
+        tid += 1
+        turn = { user: null, heard: null, replies: [], id: `t${tid}` }
+      }
       turn.replies.push(m)
     }
   }
@@ -738,6 +744,7 @@ const ResponsePanelInner = React.forwardRef(function ResponsePanel(
       ...t,
       /** Prefer assistant/error — set by main from the real request payload. */
       askSource: t.replies.find((r) => r.askSource)?.askSource || t.user?.askSource || null,
+      screenContext: t.replies.find((r) => r.screenContext)?.screenContext || null,
     }))
   }, [messages])
   const hasActiveReply = !!isThinking
@@ -753,7 +760,13 @@ const ResponsePanelInner = React.forwardRef(function ResponsePanel(
 
   const visibleTurns = useMemo(() => {
     if (turns.length === 0) return turns
-    if (answerView === 'latest') return [turns[turns.length - 1]]
+    if (answerView === 'latest') {
+      const last = turns[turns.length - 1]
+      if (!last) return turns
+      const replies =
+        last.replies.length > 0 ? [last.replies[last.replies.length - 1]] : []
+      return [{ ...last, replies }]
+    }
     // History: newest exchange at top, older below.
     return [...turns].reverse()
   }, [turns, answerView])
@@ -856,7 +869,11 @@ const ResponsePanelInner = React.forwardRef(function ResponsePanel(
               isLatestTurn && hasActiveReply ? (activeAskSource ?? turn.askSource) : turn.askSource
             const exchangeNum = turns.findIndex((t) => t.id === turn.id) + 1
             const questionCtx = String(turn.user?.text || turn.heard?.text || '').trim()
-            const allowCode = isCodingQuestion(questionCtx)
+            const allowCode =
+              inferResponseIntent({
+                userQuestion: questionCtx,
+                screen: turn.screenContext || '',
+              }) === 'coding'
             return (
               <div key={turn.id} className={idx > 0 ? 'mt-8 pt-8 border-t border-white/[0.06]' : ''}>
                 {!overlayTeleprompter && (

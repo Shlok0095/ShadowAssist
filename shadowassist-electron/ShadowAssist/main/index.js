@@ -39,6 +39,7 @@ if (!gotLock) {
 const store = require('../lib/store')
 const { resolveSystemPrompt } = require('../lib/defaultSystemPrompt')
 const { getAnswerStyleSuffix } = require('../lib/answerStyle')
+const { looksLikeCodeScreen } = require('../lib/responseIntent')
 store.runDataMigration()
 const hotkeys = require('../lib/hotkeys')
 const screenCapture = require('../lib/screenCapture')
@@ -959,6 +960,7 @@ async function handleAskAI(userQuestion, audioTranscript, _askMeta = {}) {
   const systemPrompt = resolveSystemPrompt(sp)
   /** Route between transcribing (audio) and screen mode — structured user-turn routing. */
   const isScreenMode = _askMeta?.mode === 'screen' || _askMeta?.assistTrigger === 'screen'
+  const cleanScreen = String(screenOcrText || '').trim()
   const resumeCtx = (store.get('resumeContext') || '').trim()
   const jdCtx = (store.get('jdContext') || '').trim()
   const playbookText = (store.get('playbooks') || []).filter(p => p.enabled).map(p => p.content).join('\n\n')
@@ -972,9 +974,17 @@ async function handleAskAI(userQuestion, audioTranscript, _askMeta = {}) {
   const structured =
     typeof _askMeta?.structuredUserPrompt === 'string' ? _askMeta.structuredUserPrompt.trim() : ''
   if (structured) {
+    const screenCoding = looksLikeCodeScreen(cleanScreen)
+    const segmentedTranscript = structured.includes('## ACTIVE QUESTION')
     fullSystem = `${fullSystem}\n\n---\n${isScreenMode
-      ? 'Analyze the SCREEN section and solve the visible problem. Use QUESTION only if present.'
-      : 'Respond ONLY to the last question in TRANSCRIPT. Use SCREEN only if essential.'
+      ? screenCoding
+        ? 'Analyze the SCREEN section — it shows a coding problem. Solve it and you MUST include complete runnable code in fenced blocks.'
+        : 'Analyze the SCREEN section and solve the visible problem. Use QUESTION only if present.'
+      : segmentedTranscript
+        ? 'Answer ONLY the ACTIVE QUESTION in the user message. RECENT CONTEXT is optional clarification — do not merge unrelated earlier questions.'
+        : screenCoding
+          ? 'If the SCREEN shows a coding problem, solve it with complete fenced code.'
+          : 'Respond ONLY to the last question in TRANSCRIPT. Use SCREEN only if essential.'
     }`
   }
 
@@ -983,8 +993,6 @@ async function handleAskAI(userQuestion, audioTranscript, _askMeta = {}) {
 
   const overlayAudio = audioTranscript || ''
   const userQ = (userQuestion || '').trim()
-  const screenRaw = screenOcrText || ''
-  const cleanScreen = screenRaw || ''
 
   fullSystem = `${fullSystem}\n\n---\n${getAnswerStyleSuffix(store.get('answerStyle'), {
     userQuestion: userQ,
@@ -995,7 +1003,9 @@ async function handleAskAI(userQuestion, audioTranscript, _askMeta = {}) {
   let audioCombined = overlayAudio
   // Screen / OCR-only turns intentionally send empty audio — never backfill from session memory
   // or the same sentence replays on every OCR tick (non-conversational loop).
-  if (!String(audioCombined).trim() && !isScreenMode) {
+  const structuredHasSegmentedAudio =
+    !!structured && structured.includes('## ACTIVE QUESTION')
+  if (!String(audioCombined).trim() && !isScreenMode && !structuredHasSegmentedAudio) {
     if (userQ) {
       audioCombined = sessionMemory.getTranscriptIfRecent(SESSION_TRANSCRIPT_MAX_AGE_MS) || audioCombined
     } else {
@@ -1071,7 +1081,12 @@ async function handleAskAI(userQuestion, audioTranscript, _askMeta = {}) {
     promptPreview: userTurnText,
   })
 
-  sendToOverlay('ai-start', { askSource: displayAskSource, transcriptEcho })
+  const screenContextForUi =
+    typeof _askMeta?.screenContext === 'string' && _askMeta.screenContext.trim()
+      ? _askMeta.screenContext.trim()
+      : null
+
+  sendToOverlay('ai-start', { askSource: displayAskSource, transcriptEcho, screenContext: screenContextForUi })
   llmResponseInFlight = true
 
   let sawFirstToken = false

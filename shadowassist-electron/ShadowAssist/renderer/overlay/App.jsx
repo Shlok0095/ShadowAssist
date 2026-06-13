@@ -8,6 +8,8 @@ import ResponsePanel from './components/ResponsePanel'
 import InputBar from './components/InputBar'
 import { applyUiAccentTheme, normalizeUiAccentId } from '../shared/uiAccentThemes'
 import { createIpcShim } from '../shared/ipcShim'
+import { looksLikeCodeScreen } from '../shared/responseIntent'
+import { structureScreenOcr } from '../shared/structureScreenOcr'
 import {
   AGGREGATE_DROP_HARD_MIN,
   filterWhisperVerboseJson,
@@ -46,12 +48,56 @@ const MIN_OCR_TRIGGER_CHARS = 40
 const SCREEN_ASSIST_COOLDOWN_MS = 4000
 /** Minimum ms between any auto Assist trigger (speech or screen). */
 const GLOBAL_TRIGGER_COOLDOWN_MS = 2000
-/** Cap OCR bytes in structured prompt (full OCR still in ref; not content filtering). */
-const MAX_SCREEN_CONTEXT_CHARS = 1000
+/** Cap filtered OCR text sent to the LLM (raw OCR stays in ref). */
+const MAX_SCREEN_CONTEXT_CHARS = 2000
 /** Screen-read can reuse very fresh OCR to avoid extra wait. */
 const FRESH_OCR_MAX_AGE_MS = 1200
 
 const MAX_LIVE_SEGMENTS = 30
+/** Max utterance segments sent to the LLM (Cluely-style window). */
+const MAX_LLM_SEGMENTS = 4
+/** Tighter window for manual Ctrl+Enter asks. */
+const MAX_LLM_SEGMENTS_MANUAL = 3
+
+function speakerLabel(speaker) {
+  return speaker === 'other' ? 'Participant' : 'Me'
+}
+
+/** Build chunked transcript for the model — not one flat merged blob. */
+function formatSegmentsForLLM(segments, maxSegments = MAX_LLM_SEGMENTS) {
+  const list = Array.isArray(segments) ? segments : []
+  const tail = list.slice(-Math.max(1, maxSegments))
+  if (tail.length === 0) return ''
+
+  const active = tail[tail.length - 1]
+  const context = tail.slice(0, -1)
+  const activeLine = `${speakerLabel(active.speaker)}: ${String(active.text || '').trim()}`
+  if (!activeLine.replace(/^[^:]+:\s*/, '').trim()) return ''
+
+  if (context.length === 0) {
+    return `## ACTIVE QUESTION (answer this)\n${activeLine}`
+  }
+
+  const contextLines = context
+    .map((s) => `${speakerLabel(s.speaker)}: ${String(s.text || '').trim()}`)
+    .filter((l) => l.replace(/^[^:]+:\s*/, '').trim())
+    .join('\n')
+  if (!contextLines) {
+    return `## ACTIVE QUESTION (answer this)\n${activeLine}`
+  }
+  return [
+    `## ACTIVE QUESTION (answer this)\n${activeLine}`,
+    `## RECENT CONTEXT (only if it clarifies the active question)\n${contextLines}`,
+  ].join('\n\n')
+}
+
+function formatTranscriptForPrompt(text, { background = false } = {}) {
+  const t = String(text || '').trim()
+  if (!t) return null
+  if (t.startsWith('## ACTIVE QUESTION')) return t
+  if (background) return `## TRANSCRIPT (background context)\n${t}`
+  return `## TRANSCRIPT (respond to last question only)\n${t}`
+}
 
 function trimBufferSmart(buffer) {
   const b = String(buffer || '')
@@ -96,26 +142,36 @@ function buildStructuredUserPrompt({ rawSpeech, micFallback, screenText, typedQu
 
   const hasScreen = !!screenCtx
   const hasTyped = !!typedQ
+  const screenBlock = hasScreen
+    ? screenCtx.startsWith('## ')
+      ? screenCtx
+      : `## SCREEN\n${screenCtx}`
+    : null
+  const supportingScreenBlock = screenBlock
+    ? screenBlock
+        .replace('## QUESTION (from screen)', '## SCREEN QUESTION')
+        .replace('## DETAILS (from screen)', '## SCREEN DETAILS')
+        .replace('## STARTER CODE (from screen)', '## SCREEN CODE')
+        .replace(/^## SCREEN\n/, '## SCREEN (supporting context)\n')
+    : null
 
   if (mode === 'screen') {
     // Non-transcribing mode: screen is everything — do NOT inject stale audio as "question"
     if (!hasScreen && !hasTyped) {
       return 'The screen could not be read clearly. Please describe what you need help with.'
     }
-    return [
-      hasScreen ? `## SCREEN\n${screenCtx}` : null,
-      hasTyped ? `## QUESTION\n${typedQ}` : null,
-    ]
-      .filter(Boolean)
-      .join('\n\n')
+    const body = [screenBlock, hasTyped ? `## QUESTION\n${typedQ}` : null].filter(Boolean).join('\n\n')
+    return looksLikeCodeScreen(screenCtx)
+      ? `${body}\n\nSolve the coding problem on screen. Include complete runnable code in a fenced block (e.g. \`\`\`python).`
+      : body
   }
 
   if (mode === 'typed') {
     // User explicitly typed a question — typed text is primary
     return [
       hasTyped ? `## QUESTION\n${typedQ}` : null,
-      audioCtx ? `## TRANSCRIPT (background context)\n${audioCtx}` : null,
-      hasScreen ? `## SCREEN (supporting context)\n${screenCtx}` : null,
+      formatTranscriptForPrompt(audioCtx, { background: true }),
+      supportingScreenBlock,
     ]
       .filter(Boolean)
       .join('\n\n')
@@ -127,8 +183,13 @@ function buildStructuredUserPrompt({ rawSpeech, micFallback, screenText, typedQu
     return 'No context available.'
   }
   return [
-    hasAudio ? `## TRANSCRIPT (respond to last question only)\n${audioCtx}` : null,
-    hasScreen ? `## SCREEN (use only if relevant to last question)\n${screenCtx}` : null,
+    formatTranscriptForPrompt(audioCtx),
+    supportingScreenBlock
+      ? supportingScreenBlock.replace(
+          /^## SCREEN \(supporting context\)/,
+          '## SCREEN (use only if relevant to last question)',
+        )
+      : null,
     hasTyped ? `## QUESTION\n${typedQ}` : null,
   ]
     .filter(Boolean)
@@ -779,7 +840,15 @@ export default function App() {
       domTokenFlushScheduledRef.current = false
       const askSource =
         meta && typeof meta === 'object' && typeof meta.askSource === 'string' ? meta.askSource : 'screen'
-      activeTurnMetaRef.current = { askSource }
+      const screenContext =
+        meta && typeof meta === 'object' && typeof meta.screenContext === 'string'
+          ? meta.screenContext
+          : ''
+      activeTurnMetaRef.current = {
+        ...(activeTurnMetaRef.current || {}),
+        askSource,
+        ...(screenContext ? { screenContext } : {}),
+      }
       const echoRaw = meta && typeof meta === 'object' ? meta.transcriptEcho : null
       const echo = typeof echoRaw === 'string' && echoRaw.trim() ? echoRaw.trim() : ''
       flushSync(() => {
@@ -817,7 +886,16 @@ export default function App() {
             return
           }
           lastResponseRef.current = full
-          setMessages((m) => [...m, { role: 'ai', text: full, id: ++msgId.current, askSource: turnMeta?.askSource }])
+          setMessages((m) => [
+            ...m,
+            {
+              role: 'ai',
+              text: full,
+              id: ++msgId.current,
+              askSource: turnMeta?.askSource,
+              screenContext: turnMeta?.screenContext || null,
+            },
+          ])
           requestAnimationFrame(() => {
             const el = panelRef.current
             if (el) el.scrollTop = 0
@@ -1558,9 +1636,18 @@ export default function App() {
         try {
           if (isProcessingAskRef.current || isThinkingRef.current || responseLockRef.current) return
 
-          // Snapshot the speech buffer NOW — before async OCR wait and before
-          // applySpeechSilenceWindow() can wipe it (silence > 20s wipes the live ref).
+          // Snapshot speech NOW — before async OCR wait and before manual freeze clears refs.
           const bufferedSpeech = String(speechBufferRef.current || '').trim()
+          const segmentSnapshot = [...speechSegmentsRef.current]
+          const isManualAsk = !isAuto
+          const promptModeEarly = (isScreenRead && !trimmed) ? 'screen' : trimmed ? 'typed' : 'audio'
+          if (
+            isManualAsk &&
+            promptModeEarly !== 'screen' &&
+            (segmentSnapshot.length > 0 || bufferedSpeech)
+          ) {
+            clearRollingSpeech()
+          }
 
           if (sessionOnRef.current && ipc) {
             const ocrAgeMs = Date.now() - lastOcrUpdateRef.current
@@ -1597,26 +1684,44 @@ export default function App() {
           console.log('SCREEN:', latestOcrTextRef.current)
 
           const ocrText = latestOcrTextRef.current || ''
-          const screenLimited = isOcrQualityGood(ocrText)
-            ? String(ocrText).slice(0, MAX_SCREEN_CONTEXT_CHARS)
-            : ''
+          const structuredOcr = structureScreenOcr(ocrText)
+          const filteredScreenText = structuredOcr.promptText || structuredOcr.displayText || ocrText
+          const screenLimited =
+            isOcrQualityGood(filteredScreenText) ||
+            looksLikeCodeScreen(filteredScreenText) ||
+            structuredOcr.confidence >= 3
+              ? String(filteredScreenText).slice(0, MAX_SCREEN_CONTEXT_CHARS)
+              : ''
 
-          /**
-           * Determine prompt mode (mirrors Cluely's two-prompt architecture):
-           *  'screen' → Ctrl+Enter with no typed text: DO NOT use stale audio, focus on screen.
-           *  'typed'  → user typed a question: typed text is primary.
-           *  'audio'  → speech/auto trigger: respond to last question in transcript.
-           */
-          const promptMode = (isScreenRead && !trimmed) ? 'screen' : trimmed ? 'typed' : 'audio'
+          const promptMode = promptModeEarly
+
+          const maxSegs = isManualAsk ? MAX_LLM_SEGMENTS_MANUAL : MAX_LLM_SEGMENTS
+          const segmentedTranscript =
+            promptMode === 'screen'
+              ? ''
+              : formatSegmentsForLLM(segmentSnapshot, maxSegs) || bufferedSpeech
 
           /**
            * Screen mode must NOT inject stale audio — the user wants screen info,
            * not a replay of what they said minutes ago ("Am I audible to the meeting").
            */
-          const rawSpeech = promptMode === 'screen' ? '' : bufferedSpeech
-          const transcriptToSend = rawSpeech || (promptMode !== 'screen' ? micTranscriptRef.current : '') || ''
+          const rawSpeech = promptMode === 'screen' ? '' : segmentedTranscript
+          const transcriptToSend = rawSpeech
 
-          console.log('🔀 PROMPT MODE:', promptMode, '| ocr_useful:', !!screenLimited, '| audio_len:', rawSpeech.length)
+          console.log(
+            '🔀 PROMPT MODE:',
+            promptMode,
+            '| ocr_useful:',
+            !!screenLimited,
+            '| ocr_filtered:',
+            !!structuredOcr.question,
+            '| segments:',
+            segmentSnapshot.length,
+            '| manual:',
+            isManualAsk,
+            '| audio_len:',
+            rawSpeech.length,
+          )
 
           const finalPrompt = buildStructuredUserPrompt({
             rawSpeech,
@@ -1626,6 +1731,8 @@ export default function App() {
             mode: promptMode,
           })
           console.log('FINAL PROMPT:', finalPrompt)
+
+          const screenContext = String(structuredOcr.promptText || screenLimited || '').slice(0, 3000)
 
           if (hasText) {
             setMessages((m) => [...m, { role: 'user', text: trimmed, id: ++msgId.current }])
@@ -1637,6 +1744,7 @@ export default function App() {
           const meta = {
             transcript: transcriptToSend,
             screen: ocrText,
+            screenContext,
             structuredUserPrompt: finalPrompt,
             mode: promptMode,
             promptSummary: {
@@ -1657,6 +1765,10 @@ export default function App() {
 
           try {
             responseLockRef.current = true
+            activeTurnMetaRef.current = {
+              ...(activeTurnMetaRef.current || {}),
+              screenContext,
+            }
             const askP = ipc?.invoke('ask-ai-with-transcript', trimmed, transcriptToSend, meta)
             if (askP) {
               await askP

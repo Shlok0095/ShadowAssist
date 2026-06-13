@@ -14,8 +14,20 @@ const ML_TOPIC_RE =
 
 const CODE_ASK_RE = /\b(code|python|implement|sample|example|sklearn|scikit)\b/i
 
+/** Visible coding problem on screen (LeetCode, IDE, etc.). */
+const SCREEN_CODE_RE =
+  /\b(coding question|group_anagrams|anagram|write a function|implement a function|complete the (code|function)|def |function\s+\w+\s*\(|class Solution|leetcode|hacker\s*rank|fix (the )?(bug|code)|syntax error|Traceback|public static|#include|import \w+)\b/i
+
 const PROCESS_RE =
   /\b(steps?\s+(to|we|for)|how (do|can|should) we|what steps|sales|insurance|strategy|workflow|pitch|approach|onboard|policy|customer|procedure|playbook|objection|provide (the )?sales)\b/i
+
+/**
+ * @param {string} text
+ */
+function looksLikeCodeScreen(text) {
+  const t = String(text || '')
+  return SCREEN_CODE_RE.test(t) || ALGORITHM_RE.test(t) || /\b(function|=>|class Solution)\b/.test(t)
+}
 
 /**
  * @param {{ userQuestion?: string, transcript?: string, screen?: string }} ctx
@@ -24,7 +36,12 @@ const PROCESS_RE =
 function inferResponseIntent({ userQuestion = '', transcript = '', screen = '' } = {}) {
   const text = `${userQuestion}\n${transcript}\n${screen}`.trim()
   if (!text) return 'explanation'
-  if (CODING_RE.test(text) || ALGORITHM_RE.test(text) || (ML_TOPIC_RE.test(text) && CODE_ASK_RE.test(text))) {
+  if (
+    CODING_RE.test(text) ||
+    ALGORITHM_RE.test(text) ||
+    (ML_TOPIC_RE.test(text) && CODE_ASK_RE.test(text)) ||
+    looksLikeCodeScreen(screen)
+  ) {
     return 'coding'
   }
   if (PROCESS_RE.test(text)) return 'process'
@@ -56,5 +73,6 @@ function getIntentRoutingHint(intent) {
 module.exports = {
   inferResponseIntent,
   isCodingQuestion,
+  looksLikeCodeScreen,
   getIntentRoutingHint,
 }
