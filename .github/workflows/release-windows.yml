@@ -63,6 +63,9 @@ jobs:
           CSC_IDENTITY_AUTO_DISCOVERY: 'false'
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
+      - name: Verify packaged OCR assets
+        run: npm run verify:packaged-ocr
+
       - name: SHA256 checksums
         run: npm run dist:checksums
 

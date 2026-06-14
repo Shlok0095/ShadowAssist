@@ -1214,6 +1214,33 @@ function sendToSettingsWindow(channel, ...args) {
   if (settingsWindow && !settingsWindow.isDestroyed()) settingsWindow.webContents.send(channel, ...args)
 }
 
+function broadcastOcrStatus() {
+  const payload = rapidOcr.getWarmupState()
+  sendToOverlay('ocr-status-update', payload)
+  sendToSettingsWindow('ocr-status-update', payload)
+}
+
+/** Load ONNX models in background after boot — first packaged load can take 10–30s (unlike instant dev). */
+function startBackgroundOcrWarmup() {
+  const st = rapidOcr.getWarmupState()
+  if (st.ready || st.state === 'loading') {
+    broadcastOcrStatus()
+    return
+  }
+  broadcastOcrStatus()
+  console.log('[ocr] background warmup starting…')
+  screenCapture
+    .initOcr()
+    .then(() => {
+      console.log('[ocr] background warmup done')
+      broadcastOcrStatus()
+    })
+    .catch((e) => {
+      console.error('[ocr] background warmup failed:', e?.message || e)
+      broadcastOcrStatus()
+    })
+}
+
 function setupHotkeys() {
   hotkeys.register('toggleOverlay', toggleOverlay)
   hotkeys.register('askAI', () => sendToOverlay('trigger-ask-ai'))
@@ -1542,14 +1569,18 @@ function setupIPC() {
   ipcMain.handle('get-desktop-source-id', () => screenCapture.getDesktopSourceId())
   ipcMain.handle('ocr:warmup', async () => {
     try {
+      const t0 = Date.now()
       await screenCapture.initOcr()
-      return { ok: true }
+      broadcastOcrStatus()
+      return { ok: true, durationMs: Date.now() - t0 }
     } catch (e) {
       const msg = e?.message || String(e)
       console.warn('[ocr:warmup]', msg)
+      broadcastOcrStatus()
       return { ok: false, error: msg }
     }
   })
+  ipcMain.handle('ocr:status', () => ({ ok: true, ...rapidOcr.getWarmupState() }))
   ipcMain.handle('ocr:diagnose', () => {
     try {
       return { ok: true, ...rapidOcr.getDiagnostics() }
@@ -1760,6 +1791,7 @@ async function initApp() {
   })
   createOverlayWindow()
   showOverlay()
+  startBackgroundOcrWarmup()
   startMeetingForegroundPoll()
   startCalendarReminderPoll()
   setupAutoUpdater()

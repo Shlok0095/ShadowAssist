@@ -32,16 +32,33 @@ function StopSquareIcon() {
   )
 }
 
-function StatusBar({ sessionOn, onToggleSession, onOpenSettings, onQuit }) {
+function StatusBar({ sessionOn, ocrStatus, onToggleSession, onOpenSettings, onQuit }) {
+  const ocrHint =
+    ocrStatus === 'loading'
+      ? 'Loading screen OCR…'
+      : ocrStatus === 'error'
+        ? 'Screen OCR failed'
+        : null
+
   return (
     <div className="crystal-status-row crystal-notch-bar relative flex h-10 items-center justify-between gap-2 pl-2 pr-2.5 select-none">
-      <div className="flex shrink-0 items-center" style={{ WebkitAppRegion: 'no-drag' }}>
+      <div className="flex shrink-0 items-center gap-2" style={{ WebkitAppRegion: 'no-drag' }}>
         <img
           src={logoSrc}
           alt="VeilAssist"
           className="crystal-notch-logo"
           draggable={false}
         />
+        {ocrHint && (
+          <span
+            className={`crystal-sublabel text-[10px] font-medium normal-case ${
+              ocrStatus === 'error' ? 'text-red-400' : 'text-white/55'
+            }`}
+            title={ocrStatus === 'error' ? 'Restart app or reinstall if screen reading stays broken' : 'First launch loads ONNX models (10–30s)'}
+          >
+            {ocrHint}
+          </span>
+        )}
       </div>
 
       <div className="flex shrink-0 items-center gap-1" style={{ WebkitAppRegion: 'no-drag' }}>

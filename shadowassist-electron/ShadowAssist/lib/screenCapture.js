@@ -398,6 +398,8 @@ module.exports = {
   getDesktopSourceId,
   getDisplayMediaLoopbackPayload,
   initOcr: () => rapidOcr.warmup(),
+  isOcrReady: () => rapidOcr.isReady(),
+  getOcrWarmupState: () => rapidOcr.getWarmupState(),
   terminateOcr,
   /** @deprecated */ terminateTesseract: terminateOcr,
 }

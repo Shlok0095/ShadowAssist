@@ -1,28 +1,17 @@
 // Copyright (c) 2026 ShadowAssist. All rights reserved.
 // PP-OCRv4 (RapidOCR/Paddle ONNX) in the Electron main process.
+// Packaged builds must load ONNX + native deps from app.asar.unpacked (not inside asar).
 
 const path = require('path')
 const fs = require('fs')
 
-let sharp = null
-function getSharp() {
-  if (!sharp) {
-    sharp = require('sharp')
-  }
-  return sharp
-}
-
+let sharpModule = null
 let ocrInstance = null
 let initPromise = null
 let lastInitError = ''
-
-/** Native onnxruntime cannot read inside app.asar — models live in app.asar.unpacked. */
-function toAsarUnpacked(fsPath) {
-  if (typeof fsPath !== 'string') return fsPath
-  const asarSeg = `${path.sep}app.asar${path.sep}`
-  if (!fsPath.includes(asarSeg)) return fsPath
-  return fsPath.split(asarSeg).join(`${path.sep}app.asar.unpacked${path.sep}`)
-}
+/** idle | loading | ready | error */
+let warmupState = 'idle'
+let warmupStartedAt = 0
 
 function isPackagedApp() {
   try {
@@ -32,18 +21,32 @@ function isPackagedApp() {
   }
 }
 
+function unpackedModulePath(...segments) {
+  if (!isPackagedApp() || !process.resourcesPath) return null
+  const p = path.join(process.resourcesPath, 'app.asar.unpacked', 'node_modules', ...segments)
+  return fs.existsSync(p) ? p : null
+}
+
+function getSharp() {
+  if (!sharpModule) {
+    const unpackedSharp = unpackedModulePath('sharp')
+    sharpModule = unpackedSharp ? require(unpackedSharp) : require('sharp')
+  }
+  return sharpModule
+}
+
+/** Native onnxruntime cannot read inside app.asar — models live in app.asar.unpacked. */
+function toAsarUnpacked(fsPath) {
+  if (typeof fsPath !== 'string') return fsPath
+  const asarSeg = `${path.sep}app.asar${path.sep}`
+  if (!fsPath.includes(asarSeg)) return fsPath
+  return fsPath.split(asarSeg).join(`${path.sep}app.asar.unpacked${path.sep}`)
+}
+
 function getRepeatoOcrRoot() {
-  if (isPackagedApp() && process.resourcesPath) {
-    const unpackedRoot = path.join(
-      process.resourcesPath,
-      'app.asar.unpacked',
-      'node_modules',
-      '@repeato',
-      'ocr',
-    )
-    if (fs.existsSync(path.join(unpackedRoot, 'build', 'node', 'index.cjs'))) {
-      return unpackedRoot
-    }
+  const unpackedRoot = unpackedModulePath('@repeato', 'ocr')
+  if (unpackedRoot && fs.existsSync(path.join(unpackedRoot, 'build', 'node', 'index.cjs'))) {
+    return unpackedRoot
   }
   const pkgJson = toAsarUnpacked(require.resolve('@repeato/ocr/package.json'))
   return path.dirname(pkgJson)
@@ -66,26 +69,31 @@ function getRepeatoOcrModelPaths() {
 }
 
 function getOcrModule() {
-  if (isPackagedApp() && process.resourcesPath) {
-    const cjs = path.join(getRepeatoOcrRoot(), 'build', 'node', 'index.cjs')
-    if (fs.existsSync(cjs)) return require(cjs)
-  }
+  const cjs = path.join(getRepeatoOcrRoot(), 'build', 'node', 'index.cjs')
+  if (fs.existsSync(cjs)) return require(cjs)
   return require('@repeato/ocr')
 }
 
 async function getOcr() {
   if (ocrInstance) return ocrInstance
   if (initPromise) return initPromise
+  warmupState = 'loading'
+  warmupStartedAt = Date.now()
   initPromise = (async () => {
     lastInitError = ''
+    console.log('[rapidOcr] loading ONNX models (first run can take 10–30s in installer builds)…')
     const Ocr = getOcrModule()
     ocrInstance = await Ocr.create({ models: getRepeatoOcrModelPaths() })
+    warmupState = 'ready'
+    const ms = Date.now() - warmupStartedAt
+    console.log(`[rapidOcr] ready in ${ms}ms`)
     return ocrInstance
   })()
   try {
     return await initPromise
   } catch (e) {
     lastInitError = e?.message || String(e)
+    warmupState = 'error'
     console.error('[rapidOcr] init failed:', lastInitError)
     throw e
   } finally {
@@ -126,6 +134,19 @@ async function warmup() {
   await getOcr()
 }
 
+function isReady() {
+  return warmupState === 'ready' && !!ocrInstance
+}
+
+function getWarmupState() {
+  return {
+    state: warmupState,
+    ready: isReady(),
+    loadingMs: warmupStartedAt && warmupState === 'loading' ? Date.now() - warmupStartedAt : 0,
+    error: lastInitError || '',
+  }
+}
+
 async function terminate() {
   try {
     if (ocrInstance) {
@@ -138,6 +159,8 @@ async function terminate() {
     console.warn('[rapidOcr] terminate:', e?.message || e)
     ocrInstance = null
   }
+  warmupState = 'idle'
+  lastInitError = ''
 }
 
 function getDiagnostics() {
@@ -149,13 +172,16 @@ function getDiagnostics() {
   } catch (e) {
     models = { error: e?.message || String(e) }
   }
+  const sharpRoot = unpackedModulePath('sharp') || 'node_modules/sharp'
   return {
     packaged: isPackagedApp(),
     repeatoRoot: root,
     assetsDir,
+    sharpRoot,
     modelsOk: models && !models.error,
     modelsError: models?.error || lastInitError || '',
-    ocrReady: !!ocrInstance,
+    ocrReady: isReady(),
+    warmup: getWarmupState(),
   }
 }
 
@@ -164,5 +190,7 @@ module.exports = {
   recognizePngDataUrl,
   warmup,
   terminate,
+  isReady,
+  getWarmupState,
   getDiagnostics,
 }

@@ -1,6 +1,6 @@
 {
   "name": "veilassist",
-  "version": "1.0.4",
+  "version": "1.0.5",
   "description": "Undetectable AI for live meetings — discreet on-screen meeting assistant",
   "author": "VeilAssist",
   "license": "UNLICENSED",
@@ -17,6 +17,7 @@
     "build:win": "npm run dist:release",
     "dist:dir": "node scripts/make-win-ico.cjs && npm run build && node scripts/run-electron-builder.cjs --win dir",
     "dist:checksums": "node scripts/sha256-dist.cjs",
+    "verify:packaged-ocr": "node scripts/verify-packaged-ocr.cjs",
     "open:portable": "start \"\" \"dist\\VeilAssist.exe\"",
     "open:unpacked": "start \"\" \"dist\\win-unpacked\\VeilAssist.exe\""
   },
@@ -32,7 +33,9 @@
     "forceCodeSigning": false,
     "asarUnpack": [
       "lib/meetingScanMeet.ps1",
+      "lib/rapidOcrMain.js",
       "node_modules/@repeato/ocr/**",
+      "node_modules/@gutenye/**",
       "node_modules/onnxruntime-node/**",
       "node_modules/sharp/**",
       "node_modules/@img/**"

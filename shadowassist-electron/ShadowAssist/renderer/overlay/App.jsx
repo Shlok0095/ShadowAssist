@@ -626,6 +626,8 @@ export default function App() {
   const [expanded, setExpanded] = useState(false)
   const [hiding, setHiding] = useState(false)
   const [stealthMode, setStealthMode] = useState(false)
+  const [ocrStatus, setOcrStatus] = useState('idle')
+  const ocrStatusRef = useRef('idle')
   const [showAudioConsent, setShowAudioConsent] = useState(false)
   const panelRef = useRef(null)
   const audioSessionAcknowledgedRef = useRef(false)
@@ -760,6 +762,21 @@ export default function App() {
     const capped = next.slice(-MAX_LIVE_SEGMENTS)
     speechSegmentsRef.current = capped
     setLiveTranscriptSegments(capped)
+  }, [])
+
+  useEffect(() => {
+    if (!ipc) return
+    ipc.invoke('ocr:status').then((s) => {
+      const st = s?.state || 'idle'
+      setOcrStatus(st)
+      ocrStatusRef.current = st
+    })
+    const unsub = ipc.on('ocr-status-update', (_, payload) => {
+      const st = payload?.state || 'idle'
+      setOcrStatus(st)
+      ocrStatusRef.current = st
+    })
+    return unsub
   }, [])
 
   useEffect(() => {
@@ -1849,8 +1866,11 @@ export default function App() {
 
   useEffect(() => {
     if (!sessionOn) return
-    void warmupLocalOcr()
-    void refreshLocalOcr({ allowAutoTrigger: false })
+    void (async () => {
+      const w = await warmupLocalOcr()
+      if (!w?.ok) return
+      void refreshLocalOcr({ allowAutoTrigger: false })
+    })()
   }, [sessionOn, refreshLocalOcr])
 
   useEffect(() => {
@@ -1858,6 +1878,7 @@ export default function App() {
     if (localOcrTickRef.current) clearInterval(localOcrTickRef.current)
     localOcrTickRef.current = window.setInterval(() => {
       if (!sessionOnRef.current || responseLockRef.current || isThinkingRef.current) return
+      if (ocrStatusRef.current !== 'ready') return
       void refreshLocalOcr({ allowAutoTrigger: true })
     }, 1200)
     return () => {
@@ -1966,6 +1987,7 @@ export default function App() {
         <div className="crystal-pill crystal-notch-shell relative z-20 shrink-0 overflow-hidden">
           <StatusBar
             sessionOn={sessionOn}
+            ocrStatus={ocrStatus}
             onToggleSession={onToggleSession}
             onOpenSettings={onOpenSettings}
             onQuit={quitApp}
