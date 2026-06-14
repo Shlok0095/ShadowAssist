@@ -8,6 +8,12 @@
   },
   "redirects": [
     {
+      "source": "/:path*",
+      "has": [{ "type": "host", "value": "shadow-assist.vercel.app" }],
+      "destination": "https://veilassist.vercel.app/:path*",
+      "permanent": true
+    },
+    {
       "source": "/download",
       "destination": "https://github.com/Shlok0095/VeilAssist/releases/download/latest/VeilAssist-Setup.exe",
       "permanent": false
