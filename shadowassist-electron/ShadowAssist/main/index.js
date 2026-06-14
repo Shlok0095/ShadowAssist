@@ -1774,7 +1774,7 @@ function setupAutoUpdater() {
 
   const { autoUpdater } = require('electron-updater')
   const channel = readUpdateReleaseChannel()
-  const feedBase = `https://github.com/Shlok0095/ShadowAssist/releases/download/${channel}/`
+  const feedBase = `https://github.com/Shlok0095/VeilAssist/releases/download/${channel}/`
 
   autoUpdater.setFeedURL({ provider: 'generic', url: feedBase })
   autoUpdater.autoDownload = true

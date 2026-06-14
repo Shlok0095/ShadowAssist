@@ -9,7 +9,7 @@ Use **Download** in the header or the home page. It points at the rolling **stag
 - **Installer (`VeilAssist-Setup.exe`)** — stable filename from CI; classic wizard: license, folder, Start menu entry, optional desktop shortcut on the last page.
 - **Portable (`VeilAssist.exe`)** — one file, no install. Good for USB or locked-down machines.
 
-Assets and **SHA256SUMS.txt** for that build: [VeilAssist releases (latest-stag)](https://github.com/Shlok0095/ShadowAssist/releases/tag/latest-stag). Verify hashes when SmartScreen or AV makes you nervous.
+Assets and **SHA256SUMS.txt** for that build: [VeilAssist releases (latest-stag)](https://github.com/Shlok0095/VeilAssist/releases/tag/latest-stag). Verify hashes when SmartScreen or AV makes you nervous.
 
 ## First launch
 

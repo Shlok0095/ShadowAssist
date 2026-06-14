@@ -3,7 +3,7 @@
  * Fallbacks match the primary VeilAssist repo when env is unset.
  */
 const repoOwner = import.meta.env.VITE_REPO_OWNER ?? 'Shlok0095'
-const repoName = import.meta.env.VITE_REPO_NAME ?? 'ShadowAssist'
+const repoName = import.meta.env.VITE_REPO_NAME ?? 'VeilAssist'
 const rollingTag = import.meta.env.VITE_ROLLING_TAG ?? 'latest-stag'
 const siteOrigin = String(import.meta.env.VITE_SITE_ORIGIN ?? '').replace(/\/$/, '')
 

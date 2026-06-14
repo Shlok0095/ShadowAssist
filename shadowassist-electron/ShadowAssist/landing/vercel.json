@@ -9,12 +9,12 @@
   "redirects": [
     {
       "source": "/download",
-      "destination": "https://github.com/Shlok0095/ShadowAssist/releases/download/latest/VeilAssist-Setup.exe",
+      "destination": "https://github.com/Shlok0095/VeilAssist/releases/download/latest/VeilAssist-Setup.exe",
       "permanent": false
     },
     {
       "source": "/download/beta",
-      "destination": "https://github.com/Shlok0095/ShadowAssist/releases/download/latest-stag/VeilAssist-Setup.exe",
+      "destination": "https://github.com/Shlok0095/VeilAssist/releases/download/latest-stag/VeilAssist-Setup.exe",
       "permanent": false
     }
   ]
