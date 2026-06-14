@@ -32,5 +32,8 @@ mustExist('onnxruntime binding', path.join(
   'x64',
   'onnxruntime_binding.node',
 ), 1000)
+mustExist('detect-libc', path.join(unpacked, 'detect-libc', 'lib', 'detect-libc.js'), 100)
+mustExist('semver', path.join(unpacked, 'semver', 'package.json'), 100)
+mustExist('onnxruntime-common', path.join(unpacked, 'onnxruntime-common', 'package.json'), 100)
 
 console.log('[verify-packaged-ocr] all checks passed')

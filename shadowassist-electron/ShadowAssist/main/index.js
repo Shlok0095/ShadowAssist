@@ -1229,14 +1229,18 @@ function startBackgroundOcrWarmup() {
   }
   broadcastOcrStatus()
   console.log('[ocr] background warmup starting…')
+  const { ocrDebugLog } = require('../lib/ocrDebugLog')
+  ocrDebugLog('warmup_start', rapidOcr.getDiagnostics())
   screenCapture
     .initOcr()
     .then(() => {
       console.log('[ocr] background warmup done')
+      ocrDebugLog('warmup_ok', rapidOcr.getDiagnostics())
       broadcastOcrStatus()
     })
     .catch((e) => {
       console.error('[ocr] background warmup failed:', e?.message || e)
+      ocrDebugLog('warmup_fail', { error: e?.message || String(e), ...rapidOcr.getDiagnostics() })
       broadcastOcrStatus()
     })
 }
@@ -1594,14 +1598,29 @@ function setupIPC() {
   })
   ipcMain.handle('ocr:capture-screen-text', async (_, opts) => {
     try {
+      if (!rapidOcr.isReady()) {
+        await screenCapture.initOcr()
+      }
       const text = await withOverlayExcludedFromScreenCapture(() =>
         screenCapture.captureScreenText(opts || {}),
       )
       const out = String(text || '')
-      return { ok: true, text: out, empty: !out.trim() }
+      return {
+        ok: true,
+        text: out,
+        empty: !out.trim(),
+        capture: screenCapture.getLastCaptureDiagnostics(),
+        ocr: rapidOcr.getWarmupState(),
+      }
     } catch (e) {
       console.warn('[ocr:capture-screen-text]', e?.message || e)
-      return { ok: false, text: '', error: e?.message || String(e) }
+      return {
+        ok: false,
+        text: '',
+        error: e?.message || String(e),
+        capture: screenCapture.getLastCaptureDiagnostics(),
+        ocr: rapidOcr.getWarmupState(),
+      }
     }
   })
   ipcMain.handle('ocr:recognize-png-dataurl', async (_, dataUrl) => {

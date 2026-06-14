@@ -3,6 +3,7 @@
 
 const { desktopCapturer, nativeImage, screen } = require('electron')
 const rapidOcr = require('./rapidOcrMain')
+const { ocrDebugLog } = require('./ocrDebugLog')
 
 /**
  * Full-frame capture: target thumbnail size for desktopCapturer (capped to physical display size below).
@@ -32,6 +33,7 @@ let lastRawFrameFingerprint = ''
 let lastOcrForSamePng = ''
 let captureFailCount = 0
 let ocrInFlightPromise = null
+let lastCaptureDiag = { ok: false, sources: 0, dataUrlLen: 0, thumbW: 0, thumbH: 0, err: '' }
 
 function sleep(ms) {
   return new Promise((r) => setTimeout(r, ms))
@@ -213,30 +215,59 @@ async function ocrPngBuffer(buf) {
 }
 
 async function safeCaptureDataUrl() {
-  for (let i = 0; i < 3; i++) {
-    try {
-      const sources = await desktopCapturer.getSources({
-        types: ['screen'],
-        thumbnailSize: getOcrThumbnailSize(),
-      })
-      if (!sources?.length) {
-        cachedScreenSourceId = null
-        throw new Error('no screen sources')
+  const thumbSizes = [
+    getOcrThumbnailSize(),
+    { width: 1280, height: 720 },
+    { width: 960, height: 540 },
+  ]
+  for (const thumbSize of thumbSizes) {
+    for (let i = 0; i < 2; i++) {
+      try {
+        const sources = await desktopCapturer.getSources({
+          types: ['screen'],
+          thumbnailSize: thumbSize,
+        })
+        if (!sources?.length) {
+          cachedScreenSourceId = null
+          throw new Error('no screen sources')
+        }
+        let pick = null
+        if (cachedScreenSourceId) {
+          pick = sources.find((s) => s.id === cachedScreenSourceId) || null
+        }
+        if (!pick) pick = pickScreenSource(sources) || sources[0]
+        cachedScreenSourceId = pick.id
+        const dataUrl = pick.thumbnail?.toDataURL('image/png')
+        if (!dataUrl || typeof dataUrl !== 'string' || dataUrl.length < 80) {
+          throw new Error('invalid thumbnail')
+        }
+        captureFailCount = 0
+        lastCaptureDiag = {
+          ok: true,
+          sources: sources.length,
+          dataUrlLen: dataUrl.length,
+          thumbW: thumbSize.width,
+          thumbH: thumbSize.height,
+          err: '',
+        }
+        ocrDebugLog('capture_ok', lastCaptureDiag)
+        return dataUrl
+      } catch (e) {
+        if (i < 1) await sleep(120)
+        else {
+          lastCaptureDiag = {
+            ok: false,
+            sources: 0,
+            dataUrlLen: 0,
+            thumbW: thumbSize.width,
+            thumbH: thumbSize.height,
+            err: e?.message || String(e),
+          }
+        }
       }
-      let pick = null
-      if (cachedScreenSourceId) {
-        pick = sources.find((s) => s.id === cachedScreenSourceId) || null
-      }
-      if (!pick) pick = pickScreenSource(sources) || sources[0]
-      cachedScreenSourceId = pick.id
-      const dataUrl = pick.thumbnail?.toDataURL('image/png')
-      if (!dataUrl || typeof dataUrl !== 'string' || dataUrl.length < 80) throw new Error('invalid thumbnail')
-      captureFailCount = 0
-      return dataUrl
-    } catch (_) {
-      if (i < 2) await sleep(150)
     }
   }
+  ocrDebugLog('capture_fail', lastCaptureDiag)
   captureFailCount++
   const delay = Math.min(1000 * 2 ** captureFailCount, 8000)
   captureFailCooldownUntil = Date.now() + delay
@@ -400,6 +431,7 @@ module.exports = {
   initOcr: () => rapidOcr.warmup(),
   isOcrReady: () => rapidOcr.isReady(),
   getOcrWarmupState: () => rapidOcr.getWarmupState(),
+  getLastCaptureDiagnostics: () => ({ ...lastCaptureDiag }),
   terminateOcr,
   /** @deprecated */ terminateTesseract: terminateOcr,
 }
