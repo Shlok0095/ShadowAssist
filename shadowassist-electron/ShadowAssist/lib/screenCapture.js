@@ -2,14 +2,7 @@
 // Unauthorized copying or distribution is prohibited.
 
 const { desktopCapturer, nativeImage, screen } = require('electron')
-const path = require('path')
-const { Worker } = require('worker_threads')
-
-let tesseractWorker = null
-let ocrNodeWorker = null
-let ocrReqId = 0
-/** @type {Map<number, { resolve: (v: string) => void, reject: (e: Error) => void }>} */
-const ocrPending = new Map()
+const rapidOcr = require('./rapidOcrMain')
 
 /**
  * Full-frame capture: target thumbnail size for desktopCapturer (capped to physical display size below).
@@ -17,7 +10,10 @@ const ocrPending = new Map()
  */
 const CAPTURE_THUMB_W = 1920
 const CAPTURE_THUMB_H = 1080
-const OCR_MAX_W = 1280
+/** Max frame width before preprocess (~44% fewer OCR pixels vs 1280→1600 path). */
+const OCR_MAX_W = 1200
+/** Cap after grayscale + contrast upscale (was 1600). */
+const OCR_PREPROCESS_MAX_W = 1200
 
 const CAPTURE_COOLDOWN_MS = 1200
 const OCR_LOCK_MS = 1500
@@ -35,6 +31,7 @@ let lastCompositeScreenHash = ''
 let lastRawFrameFingerprint = ''
 let lastOcrForSamePng = ''
 let captureFailCount = 0
+let ocrInFlightPromise = null
 
 function sleep(ms) {
   return new Promise((r) => setTimeout(r, ms))
@@ -51,9 +48,23 @@ function getOcrThumbnailSize() {
   }
 }
 
-function getFastHash(buffer) {
-  if (!Buffer.isBuffer(buffer) || buffer.length === 0) return ''
-  return buffer.slice(0, Math.min(400, buffer.length)).toString('base64')
+function simpleByteHash(u8) {
+  if (!u8 || !u8.length) return ''
+  const n = Math.min(400, u8.length)
+  let h = 0
+  for (let i = 0; i < n; i++) h = ((h * 31) ^ u8[i]) >>> 0
+  return `${n}:${h.toString(36)}`
+}
+
+/** Matches overlay localOcr composite-frame skip (sampled base64 fingerprint). */
+function pngSampleHash(pngBuffer) {
+  if (!Buffer.isBuffer(pngBuffer) || pngBuffer.length < 40) return ''
+  const b64 = pngBuffer.toString('base64')
+  if (b64.length < 80) return ''
+  const sample = `${b64.slice(0, 320)}|${b64.slice(Math.floor(b64.length / 2), Math.floor(b64.length / 2) + 160)}|${b64.slice(-320)}`
+  const u8 = new Uint8Array(sample.length)
+  for (let j = 0; j < sample.length; j++) u8[j] = sample.charCodeAt(j) & 0xff
+  return simpleByteHash(u8)
 }
 
 /** Cheap stable-ish fingerprint of desktop thumbnail PNG (no full decode). Same frame → skip OCR work. */
@@ -146,7 +157,7 @@ function preprocessImageForOcr(img) {
       }
     }
     const grayImg = nativeImage.createFromBitmap(out, { width, height })
-    const nw = Math.min(1600, Math.round(width * 1.5))
+    const nw = Math.min(OCR_PREPROCESS_MAX_W, Math.round(width * 1.5))
     const nh = Math.max(1, Math.round(height * (nw / width)))
     return grayImg.resize({ width: nw, height: nh })
   } catch (_) {
@@ -163,85 +174,15 @@ function fullFrameFromDataUrl(imageDataUrl) {
   }
   const png = img.toPNG()
   if (!png || png.length < 80) return null
-  return { png, imageForTesseract: png }
+  return { png, imageForOcr: png }
 }
 
-async function initTesseract() {
-  if (tesseractWorker) return tesseractWorker
+async function ocrPngBuffer(buf) {
   try {
-    const Tesseract = require('tesseract.js')
-    tesseractWorker = await Tesseract.createWorker('eng', 1, {
-      logger: () => {},
-      errorHandler: (m) => console.warn('[Tesseract]', m),
-    })
-    await tesseractWorker.setParameters({
-      tessedit_pageseg_mode: String(Tesseract.PSM.AUTO),
-      preserve_interword_spaces: '1',
-    })
-    return tesseractWorker
-  } catch (e) {
-    console.error('Tesseract init failed:', e)
-    return null
-  }
-}
-
-function getOcrNodeWorker() {
-  if (ocrNodeWorker) return ocrNodeWorker
-  try {
-    const w = new Worker(path.join(__dirname, 'ocrWorkerThread.js'))
-    w.on('message', (msg) => {
-      if (!msg || msg.type !== 'result') return
-      const p = ocrPending.get(msg.id)
-      if (!p) return
-      ocrPending.delete(msg.id)
-      if (msg.ok) p.resolve(msg.text || '')
-      else p.reject(new Error(msg.error || 'OCR worker failed'))
-    })
-    w.on('error', (err) => {
-      for (const [, pending] of ocrPending) pending.reject(err)
-      ocrPending.clear()
-      try {
-        w.terminate()
-      } catch (_) {}
-      ocrNodeWorker = null
-    })
-    ocrNodeWorker = w
-    return w
-  } catch (e) {
-    console.warn('OCR worker thread unavailable:', e?.message || e)
-    return null
-  }
-}
-
-function recognizePngInWorker(pngBuffer) {
-  const w = getOcrNodeWorker()
-  if (!w) return Promise.reject(new Error('no OCR worker'))
-  const id = ++ocrReqId
-  return new Promise((resolve, reject) => {
-    ocrPending.set(id, { resolve, reject })
-    try {
-      w.postMessage({ type: 'recognize', id, buffer: pngBuffer })
-    } catch (e) {
-      ocrPending.delete(id)
-      reject(e)
-    }
-  })
-}
-
-async function ocrPngBuffer(buf, imageForTesseract) {
-  try {
-    return await recognizePngInWorker(buf)
-  } catch (e) {
-    console.warn('Worker OCR fallback (main thread):', e?.message || e)
-    const worker = await initTesseract()
-    if (!worker) return ''
-    try {
-      const { data } = await worker.recognize(imageForTesseract)
-      return (data?.text || '').trim()
-    } catch (err) {
-      console.warn('OCR recognize:', err?.message || err)
-      return ''
-    }
+    return await rapidOcr.recognizePngBuffer(buf)
+  } catch (err) {
+    console.warn('OCR recognize:', err?.message || err)
+    return ''
   }
 }
 
@@ -256,11 +197,11 @@ async function safeCaptureDataUrl() {
         cachedScreenSourceId = null
         throw new Error('no screen sources')
       }
-      let pick = sources[0]
+      let pick = null
       if (cachedScreenSourceId) {
-        const m = sources.find((s) => s.id === cachedScreenSourceId)
-        if (m) pick = m
+        pick = sources.find((s) => s.id === cachedScreenSourceId) || null
       }
+      if (!pick) pick = pickScreenSource(sources) || sources[0]
       cachedScreenSourceId = pick.id
       const dataUrl = pick.thumbnail?.toDataURL('image/png')
       if (!dataUrl || typeof dataUrl !== 'string' || dataUrl.length < 80) throw new Error('invalid thumbnail')
@@ -286,51 +227,38 @@ async function safeCaptureDataUrl() {
  * @param {{ bypassCaptureCooldown?: boolean }} [opts]
  */
 async function captureScreenText(opts = {}) {
+  if (ocrInFlightPromise) return ocrInFlightPromise
   const bypassCd = opts.bypassCaptureCooldown === true
 
-  if (Date.now() < captureFailCooldownUntil) {
-    return lastOcrForSamePng
-  }
-  if (Date.now() < ocrRunningUntil) {
-    return lastOcrForSamePng
-  }
-  if (!bypassCd && Date.now() - lastCaptureTime < CAPTURE_COOLDOWN_MS) {
-    return lastOcrForSamePng
-  }
+  if (Date.now() < captureFailCooldownUntil) return lastOcrForSamePng
+  if (Date.now() < ocrRunningUntil) return lastOcrForSamePng
+  if (!bypassCd && Date.now() - lastCaptureTime < CAPTURE_COOLDOWN_MS) return lastOcrForSamePng
 
   const lockToken = Date.now() + OCR_LOCK_MS
   ocrRunningUntil = lockToken
 
-  try {
+  const run = async () => {
     const imageDataUrl = await safeCaptureDataUrl()
-    if (!imageDataUrl) {
-      return lastOcrForSamePng
-    }
+    if (!imageDataUrl) return lastOcrForSamePng
 
     lastCaptureTime = Date.now()
 
     const rawFp = fingerprintDataUrl(imageDataUrl)
-    if (rawFp && rawFp === lastRawFrameFingerprint && !bypassCd) {
-      return lastOcrForSamePng
-    }
+    if (rawFp && rawFp === lastRawFrameFingerprint && !bypassCd) return lastOcrForSamePng
     lastRawFrameFingerprint = rawFp
 
-    let img = nativeImage.createFromDataURL(imageDataUrl)
-    if (img.isEmpty()) {
-      return lastOcrForSamePng
-    }
+    const img = nativeImage.createFromDataURL(imageDataUrl)
+    if (img.isEmpty()) return lastOcrForSamePng
 
-    // Full-frame: no region splitting — read the whole screen in one OCR pass.
     const frameImg = prepareFullFrame(img)
     if (!frameImg) return lastOcrForSamePng
 
     const framePng = frameImg.toPNG()
     if (!framePng || framePng.length < 80) return lastOcrForSamePng
 
-    const frameHash = getFastHash(Buffer.isBuffer(framePng) ? framePng : Buffer.from(framePng))
-    if (frameHash && frameHash === lastCompositeScreenHash && !bypassCd) {
-      return lastOcrForSamePng
-    }
+    const frameBuf = Buffer.isBuffer(framePng) ? framePng : Buffer.from(framePng)
+    const frameHash = pngSampleHash(frameBuf)
+    if (frameHash && frameHash === lastCompositeScreenHash && !bypassCd) return lastOcrForSamePng
     lastCompositeScreenHash = frameHash
 
     const processed = preprocessImageForOcr(frameImg)
@@ -338,7 +266,7 @@ async function captureScreenText(opts = {}) {
     if (!processedPng || processedPng.length < 40) return lastOcrForSamePng
 
     const buf = Buffer.isBuffer(processedPng) ? processedPng : Buffer.from(processedPng)
-    const rawText = (await ocrPngBuffer(buf, processedPng)).trim()
+    const rawText = (await ocrPngBuffer(buf)).trim()
 
     if (!rawText || scoreText(rawText) < MIN_FRAME_SCORE) {
       lastOcrForSamePng = ''
@@ -350,9 +278,15 @@ async function captureScreenText(opts = {}) {
     }
     lastOcrForSamePng = rawText
     return rawText
-  } finally {
-    if (ocrRunningUntil === lockToken) ocrRunningUntil = 0
   }
+
+  ocrInFlightPromise = run()
+    .catch(() => lastOcrForSamePng)
+    .finally(() => {
+      ocrInFlightPromise = null
+      if (ocrRunningUntil === lockToken) ocrRunningUntil = 0
+    })
+  return ocrInFlightPromise
 }
 
 /**
@@ -371,20 +305,8 @@ async function captureScreenForVision(opts = {}) {
   return prepared ? prepared.png.toString('base64') : null
 }
 
-async function terminateTesseract() {
-  if (ocrNodeWorker) {
-    try {
-      ocrNodeWorker.terminate()
-    } catch (_) {}
-    ocrNodeWorker = null
-  }
-  ocrPending.clear()
-  if (tesseractWorker) {
-    try {
-      await tesseractWorker.terminate()
-    } catch (_) {}
-    tesseractWorker = null
-  }
+async function terminateOcr() {
+  await rapidOcr.terminate()
 }
 
 /**
@@ -445,6 +367,7 @@ module.exports = {
   captureScreenForVision,
   getDesktopSourceId,
   getDisplayMediaLoopbackPayload,
-  initTesseract,
-  terminateTesseract,
+  initOcr: () => rapidOcr.warmup(),
+  terminateOcr,
+  /** @deprecated */ terminateTesseract: terminateOcr,
 }

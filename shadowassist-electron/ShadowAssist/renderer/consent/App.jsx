@@ -1,4 +1,4 @@
-// Copyright (c) 2026 ShadowAssist. All rights reserved.
+// Copyright (c) 2026 VeilAssist. All rights reserved.
 // Unauthorized copying or distribution is prohibited.
 
 import React, { useState, useMemo, useEffect } from 'react'
@@ -21,7 +21,7 @@ const CHECKS = [
   {
     key: 'c3',
     label:
-      'I understand screen text and meeting audio may be sent to the third-party AI provider I configure (e.g. Groq, OpenAI, NVIDIA) when I use those features. I use only my own API keys. ShadowAssist does not store meeting audio.',
+      'I understand screen text and meeting audio may be sent to the third-party AI provider I configure (e.g. Groq, OpenAI, NVIDIA) when I use those features. I use only my own API keys. VeilAssist does not store meeting audio.',
   },
   {
     key: 'c4',
@@ -56,7 +56,7 @@ export default function ConsentApp() {
     <AppWindowFrame>
       <div className="settings-root relative z-10 flex min-h-0 flex-1 flex-col overflow-hidden">
         <header className="relative z-20 shrink-0 border-b border-white/[0.06] bg-black/30 px-5 py-4 backdrop-blur-xl lg:px-8">
-          <p className="text-[10px] font-medium uppercase tracking-[0.2em] text-zinc-500">ShadowAssist</p>
+          <p className="text-[10px] font-medium uppercase tracking-[0.2em] text-zinc-500">VeilAssist</p>
           <h1 className="font-display mt-0.5 text-xl font-semibold tracking-tight text-white">Consent &amp; safety</h1>
           <p className="mt-1 max-w-xl text-[13px] leading-snug text-zinc-500">
             Read the legal documents, then confirm each statement. This matches the commitments in Settings → Privacy &amp; Data.

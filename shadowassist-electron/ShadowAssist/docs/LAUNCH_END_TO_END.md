@@ -1,11 +1,11 @@
-# ShadowAssist — launch from zero to live
+# VeilAssist — launch from zero to live
 
 This guide walks through shipping the Windows app and a small public site, in order.
 
 ## 1. Repository and versioning
 
 1. Put the project on GitHub (or another host) so you can point downloads and docs at stable URLs.
-2. Bump `version` in `package.json` before each public release. The NSIS installer filename includes that version (`ShadowAssist-Setup-<version>.exe`).
+2. Bump `version` in `package.json` before each public release. The NSIS installer filename includes that version (`VeilAssist-Setup-<version>.exe`).
 
 ## 2. Build artifacts locally
 
@@ -19,11 +19,11 @@ npm run dist:checksums
 
 Outputs in `dist/`:
 
-- `ShadowAssist.exe` — portable (no installer)
-- `ShadowAssist-Setup-<version>.exe` — installer (user can pick install folder)
+- `VeilAssist.exe` — portable (no installer)
+- `VeilAssist-Setup-<version>.exe` — installer (user can pick install folder)
 - `SHA256SUMS.txt` — SHA-256 of those `.exe` files (publish next to downloads)
 
-**Faster iteration:** `Launch-ShadowAssist-Fast.cmd` runs the existing portable exe without rebuilding. Use `npm run dist` when you only need the portable exe.
+**Faster iteration:** `Launch-VeilAssist-Fast.cmd` runs the existing portable exe without rebuilding. Use `npm run dist` when you only need the portable exe.
 
 ## 3. Code signing (optional, recommended for Windows)
 
@@ -39,8 +39,8 @@ Signing is not automated in this repo because it requires your secret material.
 
 The workflow `.github/workflows/release-windows.yml`:
 
-- On **push** to **`stag`** (and **workflow_dispatch**): builds NSIS + portable, uploads workflow artifacts, and creates/updates the prerelease **`latest-stag`** with **`ShadowAssist-Setup.exe`**, **`ShadowAssist.exe`**, and checksums. Direct installer URL:  
-  `https://github.com/<owner>/<repo>/releases/download/latest-stag/ShadowAssist-Setup.exe`
+- On **push** to **`stag`** (and **workflow_dispatch**): builds NSIS + portable, uploads workflow artifacts, and creates/updates the prerelease **`latest-stag`** with **`VeilAssist-Setup.exe`**, **`VeilAssist.exe`**, and checksums. Direct installer URL:  
+  `https://github.com/<owner>/<repo>/releases/download/latest-stag/VeilAssist-Setup.exe`
 - On **push** of a tag **`v*.*.*`**: builds and publishes a **versioned** GitHub Release (non-prerelease path) via `softprops/action-gh-release`.
 
 Versioned release (optional):
@@ -60,11 +60,11 @@ git push origin v1.0.1
    Copy-Item legal\*.txt landing\legal\
    ```
 
-3. **GitHub Pages:** Settings → **Pages** → Source: **GitHub Actions**. Pushes to **`stag`** run `.github/workflows/deploy-landing.yml`. Example URL: `https://shlok0095.github.io/ShadowAssist/`.
+3. **GitHub Pages:** Settings → **Pages** → Source: **GitHub Actions**. Pushes to **`stag`** run `.github/workflows/deploy-landing.yml`. Example URL: `https://shlok0095.github.io/VeilAssist/`.
 
 4. Or deploy **`landing/dist`** from any static host after `npm run build` inside `landing/`.
 
-**Stable download pattern:** Use **`releases/download/latest-stag/ShadowAssist-Setup.exe`** (and the portable name) so every stag push replaces the same URLs.
+**Stable download pattern:** Use **`releases/download/latest-stag/VeilAssist-Setup.exe`** (and the portable name) so every stag push replaces the same URLs.
 
 ## 6. Legal and policy
 

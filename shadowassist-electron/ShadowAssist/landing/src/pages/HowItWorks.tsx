@@ -4,7 +4,7 @@ import { MarkdownDocPage } from '@/pages/MarkdownDocPage'
 export function HowItWorks() {
   return (
     <MarkdownDocPage
-      title="How ShadowAssist works"
+      title="How VeilAssist works"
       lede="Full product guide — same content as the repository, rendered here."
       crumb="How it works"
       markdown={howItWorks}

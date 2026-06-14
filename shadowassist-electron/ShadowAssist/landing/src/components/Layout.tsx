@@ -8,7 +8,7 @@ export function Layout() {
     <div className="shell">
       <header className="glass-nav">
         <NavLink className="brand" to="/" end>
-          ShadowAssist
+          VeilAssist
         </NavLink>
         <nav className="nav-links" aria-label="Primary">
           <a href={homeSection('features')}>Product</a>
@@ -35,7 +35,7 @@ export function Layout() {
 
       <footer className="foot">
         <div className="foot-inner">
-          <span className="foot-brand">ShadowAssist</span>
+          <span className="foot-brand">VeilAssist</span>
           <span className="sep">·</span>
           <NavLink to="/legal/terms">Terms</NavLink>
           <NavLink to="/legal/privacy">Privacy</NavLink>

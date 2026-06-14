@@ -15,10 +15,30 @@ import {
   filterWhisperVerboseJson,
 } from '../shared/whisperTranscriptGate'
 import { captureScreenTextLocal, terminateLocalOcr, warmupLocalOcr } from './localOcr'
-import { startLocalStt, stopLocalStt, preloadLocalStt } from './localStt'
+import { parseTranscriptEchoForDisplay } from '../shared/formatTranscriptEcho'
+import { SpeakerTranscriptText } from '../shared/SpeakerTranscriptText'
 
 const ipc = createIpcShim()
-const COLLAPSED_H = 38
+/** Inner status row height (px) — matches StatusBar `h-10` */
+const NOTCH_INNER_H = 40
+/** `.crystal-pill` 1px top + 1px bottom border */
+const NOTCH_BORDER_H = 2
+/** Outer notch pill height — must match `.crystal-notch-shell` and collapsed window height */
+const PILL_H = NOTCH_INNER_H + NOTCH_BORDER_H
+/** Fixed notch width (CSS) — overlay window width stays at panel width always */
+const NOTCH_W = 252
+
+function formatPanelTranscriptLine(segments) {
+  const last = segments?.[segments.length - 1]
+  if (!last?.text) return ''
+  const who = last.speaker === 'me' ? 'Me' : 'Participant'
+  const text = String(last.text).trim()
+  const shown = text.length > 140 ? `…${text.slice(-138)}` : text
+  return `${who}: ${shown}`
+}
+const STACK_GAP = 10
+/** Collapsed overlay window height (pill + 1px slack so bottom radius isn't clipped) */
+const COLLAPSED_H = PILL_H + 1
 const MIN_ASK_GAP_MS = 2000
 /** Longer chunks give Whisper more phonetic context (fewer mid-phrase cuts); ~4–5s helps quiet BT / loopback. */
 const AUDIO_CHUNK_MS = 4600
@@ -161,9 +181,7 @@ function buildStructuredUserPrompt({ rawSpeech, micFallback, screenText, typedQu
       return 'The screen could not be read clearly. Please describe what you need help with.'
     }
     const body = [screenBlock, hasTyped ? `## QUESTION\n${typedQ}` : null].filter(Boolean).join('\n\n')
-    return looksLikeCodeScreen(screenCtx)
-      ? `${body}\n\nSolve the coding problem on screen. Include complete runnable code in a fenced block (e.g. \`\`\`python).`
-      : body
+    return body
   }
 
   if (mode === 'typed') {
@@ -312,32 +330,32 @@ function ResizeHandle({ edge, onResizeEnd }) {
 
   return (
     <div
-      className="absolute z-50 opacity-0 hover:opacity-100 transition-opacity rounded"
-      style={{ ...style, background: 'rgb(var(--accent-rgb) / 0.2)' }}
+      className="crystal-resize-handle absolute z-50 rounded"
+      style={{ ...style }}
       onMouseDown={handleMouseDown}
     />
   )
 }
 
-/** Outline eye — “visible in capture” */
+/** Outline eye — visible in screen capture */
 function EyeVisibleIcon() {
   return (
-    <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.9" strokeLinecap="round" strokeLinejoin="round" aria-hidden>
-      <path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z" />
-      <circle cx="12" cy="12" r="3" />
+    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.15" strokeLinecap="round" strokeLinejoin="round" aria-hidden>
+      <path d="M2 12s3.5-7 10-7 10 7 10 7-3.5 7-10 7-10-7-10-7z" />
+      <circle cx="12" cy="12" r="2.75" fill="currentColor" stroke="none" />
     </svg>
   )
 }
 
-/** Fedora + glasses — stealth / incognito */
+/** Glasses + brim — hidden from screen capture */
 function IncognitoGlyph() {
   return (
-    <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.9" strokeLinecap="round" strokeLinejoin="round" aria-hidden>
-      <path d="M4 10.5c2.8-.9 5.6-1.35 8-1.35s5.2.45 8 1.35" />
-      <path d="M7.5 10.2c.9-3.6 2.6-5.7 4.5-5.7s3.6 2.1 4.5 5.7" />
-      <ellipse cx="9.25" cy="16" rx="3.25" ry="2.4" />
-      <ellipse cx="14.75" cy="16" rx="3.25" ry="2.4" />
-      <path d="M12.5 16h-1" />
+    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.15" strokeLinecap="round" strokeLinejoin="round" aria-hidden>
+      <path d="M3.5 11.5c2.2-.8 4.4-1.2 8.5-1.2s6.3.4 8.5 1.2" />
+      <path d="M8 11.2c.6-2.8 1.8-4.2 4-4.2s3.4 1.4 4 4.2" />
+      <circle cx="9" cy="15.5" r="2.35" />
+      <circle cx="15" cy="15.5" r="2.35" />
+      <path d="M11.35 15.5h1.3" />
     </svg>
   )
 }
@@ -596,14 +614,6 @@ export default function App() {
   const [hiding, setHiding] = useState(false)
   const [stealthMode, setStealthMode] = useState(false)
   const [showAudioConsent, setShowAudioConsent] = useState(false)
-  const [sttMode, setSttMode] = useState('local')
-  /**
-   * False while Moonshine model/base is downloading on first launch (~68 MB).
-   * Becomes true once both mic and sys transcribers report onModelLoaded.
-   * Used to show a clear "downloading model…" banner so the user knows to wait.
-   */
-  const [localSttReady, setLocalSttReady] = useState(false)
-
   const panelRef = useRef(null)
   const audioSessionAcknowledgedRef = useRef(false)
   const streamRef = useRef(null)
@@ -650,7 +660,6 @@ export default function App() {
   const lastAskTimeRef = useRef(0)
   /** Latest renderer-local OCR text (same downstream integration as previous IPC flow). */
   const latestOcrTextRef = useRef('')
-  const localOcrRuntimeRef = useRef({})
   const localOcrTickRef = useRef(null)
   /** Last OCR text that produced a screen Assist trigger (dedupe). */
   const lastOcrTriggerRef = useRef('')
@@ -702,6 +711,20 @@ export default function App() {
     setLiveTranscriptSegments([])
   }, [])
 
+  const syncOverlayWindowSize = useCallback(async (w, h) => {
+    if (!ipc) return
+    const b = await ipc.invoke('get-window-bounds')
+    const safeW = Math.max(280, Math.min(860, Math.round(w)))
+    const safeH = Math.round(h)
+    if (b?.width != null && b?.x != null) {
+      const centerX = b.x + b.width / 2
+      const newX = Math.round(centerX - safeW / 2)
+      await ipc.invoke('resize-window', safeW, safeH, newX)
+      return
+    }
+    await ipc.invoke('resize-window', safeW, safeH)
+  }, [])
+
   const applySpeechSilenceWindow = useCallback(() => {
     const now = Date.now()
     if (lastSpeechTimeRef.current > 0 && now - lastSpeechTimeRef.current > MAX_SPEECH_WINDOW_MS) {
@@ -740,22 +763,13 @@ export default function App() {
     ipc.invoke('get-store', 'assistAutoTrigger').then((v) => {
       assistAutoTriggerRef.current = v === true
     })
-    ipc.invoke('get-store', 'sttMode').then((stt) => {
-      const mode = stt === 'cloud' ? 'cloud' : 'local'
-      setSttMode(mode)
-      if (mode !== 'local') {
-        setLocalSttReady(true)
-        return
-      }
-      preloadLocalStt({ onReady: () => setLocalSttReady(true) })
-    })
   }, [])
 
   const refreshLocalOcr = useCallback(
     async (opts = {}) => {
       if (!ipc) return { ok: false, reason: 'no_ipc' }
       try {
-        const text = await captureScreenTextLocal(ipc, opts, localOcrRuntimeRef.current)
+        const text = await captureScreenTextLocal(ipc, opts)
         if (typeof text === 'string') {
           latestOcrTextRef.current = text
           lastOcrUpdateRef.current = Date.now()
@@ -850,13 +864,28 @@ export default function App() {
         ...(screenContext ? { screenContext } : {}),
       }
       const echoRaw = meta && typeof meta === 'object' ? meta.transcriptEcho : null
-      const echo = typeof echoRaw === 'string' && echoRaw.trim() ? echoRaw.trim() : ''
+      const echoCtxRaw = meta && typeof meta === 'object' ? meta.transcriptEchoContext : null
+      let heardQuestion = ''
+      let heardContext = null
+      if (typeof echoRaw === 'string' && echoRaw.trim()) {
+        const parsed = parseTranscriptEchoForDisplay(echoRaw)
+        heardQuestion = parsed.question || echoRaw.trim()
+        heardContext = parsed.context
+      } else if (echoRaw) {
+        heardQuestion = String(echoRaw).trim()
+      }
+      if (typeof echoCtxRaw === 'string' && echoCtxRaw.trim()) {
+        heardContext = echoCtxRaw.trim()
+      }
       flushSync(() => {
         setIsThinking(true)
         setExpanded(true)
         setActiveAskSource(askSource)
-        if (echo) {
-          setMessages((m) => [...m, { role: 'heard', text: echo, id: ++msgId.current }])
+        if (heardQuestion) {
+          setMessages((m) => [
+            ...m,
+            { role: 'heard', text: heardQuestion, context: heardContext, id: ++msgId.current },
+          ])
         }
       })
       queueMicrotask(() => {
@@ -1007,8 +1036,8 @@ export default function App() {
     ipc.invoke('get-window-bounds').then((b) => {
       if (b && b.height > COLLAPSED_H) expandedSize.current = { w: b.width, h: b.height }
     })
-    ipc.invoke('resize-window', expandedSize.current.w, COLLAPSED_H)
-  }, [])
+    void syncOverlayWindowSize(expandedSize.current.w, COLLAPSED_H)
+  }, [syncOverlayWindowSize])
 
   useEffect(() => {
     if (!ipc) return
@@ -1038,9 +1067,11 @@ export default function App() {
 
   useEffect(() => {
     if (!ipc) return
-    if (expanded) ipc.invoke('resize-window', expandedSize.current.w, expandedSize.current.h)
-    else setTimeout(() => ipc.invoke('resize-window', expandedSize.current.w, COLLAPSED_H), 200)
-  }, [expanded])
+    const minExpandedH = PILL_H + STACK_GAP + 220 + 8
+    const w = expandedSize.current.w
+    const h = expanded ? Math.max(expandedSize.current.h, minExpandedH) : COLLAPSED_H
+    void syncOverlayWindowSize(w, h)
+  }, [expanded, syncOverlayWindowSize])
 
   useEffect(() => {
     if (!ipc) return
@@ -1048,11 +1079,12 @@ export default function App() {
       sessionOnRef.current = active
       setSessionOn(active)
       setStatus(active ? 'active' : 'idle')
-      if (active) startMicRef.current()
-      else {
+      if (active) {
+        startMicRef.current()
+        bypassCaptureOnceRef.current = true
+        setExpanded(true)
+      } else {
         stopMicRef.current()
-        // Session ended: return to initial compact panel state.
-        setExpanded(false)
       }
     }
     const unsub = ipc.on('session-status', onStatus)
@@ -1075,8 +1107,12 @@ export default function App() {
     if (!ipc) return
     const onPrompt = () => {
       if (audioSessionAcknowledgedRef.current) {
+        bypassCaptureOnceRef.current = true
+        setExpanded(true)
         ipc.invoke('session-start-confirmed')
       } else {
+        bypassCaptureOnceRef.current = true
+        setExpanded(true)
         setShowAudioConsent(true)
       }
     }
@@ -1146,8 +1182,6 @@ export default function App() {
   async function startMic() {
     if ((await ipc?.invoke('get-store', 'audioEnabled')) === false || isListening.current) return
     try {
-      const currentSttMode = (await ipc?.invoke('get-store', 'sttMode')) === 'cloud' ? 'cloud' : 'local'
-      setSttMode(currentSttMode)
       const sensRaw = await ipc?.invoke('get-store', 'micSensitivity')
       const captureProfile = resolveMicCaptureProfile(sensRaw)
       micCaptureProfileRef.current = captureProfile
@@ -1161,33 +1195,7 @@ export default function App() {
       } catch {}
       if (!mic && !sys) { emit('mic-error', { message: 'No audio' }); return }
 
-      // ── LOCAL: Moonshine streaming (built-in VAD, no MediaRecorder) ──────────
-      if (currentSttMode === 'local') {
-        isListening.current = true
-        streamRef._mic = mic
-        streamRef._sys = sys
-        startLocalStt(mic, sys, {
-          onMicText: (text) => {
-            if (!isListening.current) return
-            if (HALLUCINATIONS.some((r) => r.test(text))) return
-            processTranscribedText(text, 'mic')
-          },
-          onSysText: (text) => {
-            if (!isListening.current) return
-            if (HALLUCINATIONS.some((r) => r.test(text))) return
-            processTranscribedText(text, 'sys')
-          },
-        })
-        emit('mic-status', { active: true })
-        if (!localSttReady) {
-          emit('notify', {
-            message: '⏳ Downloading Moonshine model (~68 MB) — listening begins once ready. One-time download.',
-          })
-        }
-        return
-      }
-
-      // ── CLOUD: MediaRecorder chunks → Groq / OpenAI API ──────────────────────
+      // MediaRecorder chunks → cloud STT (Groq / OpenAI / NVIDIA, …)
       let ctx
       try {
         ctx = new AudioContext({ sampleRate: 48000 })
@@ -1348,8 +1356,6 @@ export default function App() {
 
   function stopMic() {
     isListening.current = false
-    // Stop Moonshine transcribers (local mode)
-    stopLocalStt()
     const r = recorderRef.current
     if (Array.isArray(r)) r.forEach((x) => x.state !== 'inactive' && x.stop())
     else r?.state !== 'inactive' && r?.stop()
@@ -1368,10 +1374,7 @@ export default function App() {
     latestTranscriptRef.current = ''
   }
 
-  /**
-   * Shared post-processing after text is obtained from either the local or cloud STT path.
-   * Handles speaker tagging, rolling buffer, live segments, and AI trigger.
-   */
+  /** Post-processing after cloud STT: speaker tagging, rolling buffer, live segments, AI trigger. */
   function processTranscribedText(text, audioPathKey) {
     const trimmedChunk = text.trim()
     const tChunk = Date.now()
@@ -1418,14 +1421,6 @@ export default function App() {
 
   async function transcribe(blob, mimeType, audioPathKey) {
     try {
-      // Local mode uses Moonshine streaming callbacks — MediaRecorder chunks never reach here.
-      // Must read sttMode from the store, not React state: setSttMode in startMic is async, so
-      // `sttMode` can still be "local" on the first cloud chunks and this would return early
-      // (no transcription) until a re-render — looked like "Groq / cloud not listening".
-      const mode = (await ipc?.invoke('get-store', 'sttMode')) === 'cloud' ? 'cloud' : 'local'
-      if (mode === 'local') return
-
-      // ── CLOUD path (Groq / OpenAI Whisper, NVIDIA Parakeet, …) ─────────────
       const cfg = await ipc?.invoke('get-transcription-config')
       if (!cfg?.apiKey) return
 
@@ -1909,102 +1904,137 @@ export default function App() {
   const onOpenSettings = useCallback(() => {
     ipc?.send('open-settings')
   }, [])
-  const onExpandPanel = useCallback(() => {
-    bypassCaptureOnceRef.current = true
-    setExpanded(true)
-  }, [])
 
   const onResizeEnd = useCallback((b) => {
     expandedSize.current = { w: b.width, h: b.height }
   }, [])
 
+  const audioConsentCard = showAudioConsent ? (
+    <div className="glass-modal-card w-full max-w-sm rounded-2xl p-5">
+      <p className="crystal-body-text text-[13px] leading-relaxed">
+        You are responsible for informing all participants that AI assistance is active in this session.
+      </p>
+      <div className="mt-4 flex flex-wrap justify-end gap-2">
+        <button
+          type="button"
+          onClick={() => setShowAudioConsent(false)}
+          className="glass-modal-btn cursor-default rounded-xl px-4 py-1.5 text-xs font-medium transition-colors"
+        >
+          Cancel
+        </button>
+        <button
+          type="button"
+          onClick={confirmAudioSession}
+          className="glass-modal-btn-primary cursor-default rounded-xl px-4 py-1.5 text-xs font-medium transition-colors"
+        >
+          I understand, start
+        </button>
+      </div>
+    </div>
+  ) : null
+
   return (
     <div
-      className="relative flex h-full w-full flex-col"
+      className="crystal-stack relative flex h-full w-full flex-col"
       style={{
         opacity: hiding ? 0 : 1,
         transform: hiding ? 'translateY(-6px) scale(0.98)' : 'translateY(0) scale(1)',
         transition: hiding ? 'opacity 0.18s ease, transform 0.18s ease' : 'none',
       }}
     >
-      {/* Main card */}
-      <div
-        className="relative flex min-h-0 w-full flex-1 flex-col overflow-hidden rounded-2xl border border-white/[0.09]"
-        style={{
-          background: `rgba(10,10,13,${opacity})`,
-          backdropFilter: 'blur(24px) saturate(1.3)',
-          boxShadow: '0 0 0 0.5px rgba(255,255,255,0.05) inset, 0 8px 40px -10px rgba(0,0,0,0.65)',
-        }}
-      >
-        <StatusBar
-          status={status}
-          sessionOn={sessionOn}
-          expanded={expanded}
-          onToggleSession={onToggleSession}
-          onOpenSettings={onOpenSettings}
-          onExpand={onExpandPanel}
-          onHide={hideOverlay}
-          onQuit={quitApp}
-        />
+      {/* ── Fixed-width notch — centered above panel ── */}
+      <div className="flex w-full shrink-0 justify-center">
+        <div className="crystal-pill crystal-notch-shell relative z-20 shrink-0 overflow-hidden">
+          <StatusBar
+            sessionOn={sessionOn}
+            onToggleSession={onToggleSession}
+            onOpenSettings={onOpenSettings}
+            onQuit={quitApp}
+          />
+        </div>
+      </div>
 
-        {/* Compact stealth toggle */}
+      {showAudioConsent && !expanded && (
         <div
-          className="flex shrink-0 items-center justify-between border-b border-white/[0.05] px-3 py-1.5"
+          className="relative z-[100] mt-2 flex shrink-0 justify-center px-3 pointer-events-auto"
           style={{ WebkitAppRegion: 'no-drag' }}
         >
-          <span className="text-[10px] text-zinc-700">
-            {stealthMode ? 'Hidden from capture' : 'Visible in capture'}
-          </span>
-          <div
-            role="group"
-            aria-label="Screen capture visibility"
-            className="flex items-center rounded-full border border-white/[0.08] bg-white/[0.03] p-0.5"
-          >
-            <button
-              type="button"
-              title="Visible — may appear in screen share"
-              aria-label="Visible mode"
-              aria-pressed={!stealthMode}
-              onClick={() => void setProtectionMode(false)}
-              className={[
-                'cursor-default flex h-5 w-6 items-center justify-center rounded-full transition-colors duration-150',
-                !stealthMode ? 'text-zinc-200' : 'text-zinc-700 hover:text-zinc-500',
-              ].join(' ')}
-            >
-              <EyeVisibleIcon />
-            </button>
-            <button
-              type="button"
-              title="Stealth — hidden from screen capture"
-              aria-label="Stealth mode"
-              aria-pressed={stealthMode}
-              onClick={() => void setProtectionMode(true)}
-              className={[
-                'cursor-default flex h-5 w-6 items-center justify-center rounded-full transition-colors duration-150',
-                stealthMode ? 'text-zinc-200' : 'text-zinc-700 hover:text-zinc-500',
-              ].join(' ')}
-            >
-              <IncognitoGlyph />
-            </button>
-          </div>
+          {audioConsentCard}
         </div>
+      )}
 
-        {/* Expandable content */}
-        <div
-          className="grid min-h-0 flex-1 w-full overflow-hidden"
-          style={{
-            gridTemplateRows: expanded ? 'minmax(0, 1fr)' : '0fr',
-            transition: 'grid-template-rows 0.28s cubic-bezier(0.4, 0, 0.2, 1)',
-          }}
-        >
-          <div className="flex h-full min-h-0 flex-col overflow-hidden">
-            <div
-              className="flex h-full min-h-0 flex-1 flex-col overflow-hidden"
-              style={{
-                opacity: expanded ? 1 : 0,
-                transition: 'opacity 0.18s ease',
-              }}
-            >
+      {expanded && (
+        <>
+          {/* ── Floating panel — separate crystal card below pill ── */}
+          <div
+            className="crystal-panel relative z-10 mt-[10px] flex min-h-0 flex-1 flex-col overflow-hidden"
+            style={{ WebkitAppRegion: 'no-drag' }}
+          >
+            <div className="crystal-panel-edge shrink-0" aria-hidden />
+
+            <div className="crystal-divider flex shrink-0 items-center gap-2 border-b px-3 py-2">
+              <div className="crystal-transcript-bar min-w-0 flex-1">
+                {(() => {
+                  if (!sessionOn) {
+                    return (
+                      <div className="crystal-transcript-idle truncate">
+                        <span className="crystal-transcript-idle-mark" aria-hidden />
+                        <span>Start Listen to capture meeting audio</span>
+                      </div>
+                    )
+                  }
+                  const line = formatPanelTranscriptLine(liveTranscriptSegments)
+                  if (line) {
+                    return (
+                      <p className="crystal-transcript-live truncate">
+                        <SpeakerTranscriptText line={line} bodyClassName="crystal-transcript-live-body" />
+                      </p>
+                    )
+                  }
+                  return (
+                    <div className="crystal-transcript-listening truncate">
+                      <span className="crystal-listening-dot" aria-hidden />
+                      <span className="crystal-listening-label">Listening</span>
+                      <span className="crystal-listening-sub">waiting for speech</span>
+                    </div>
+                  )
+                })()}
+              </div>
+              <div
+                role="group"
+                aria-label="Screen capture visibility"
+                className="crystal-stealth-track shrink-0"
+              >
+                <button
+                  type="button"
+                  title="Visible — may appear in screen share"
+                  aria-label="Visible mode"
+                  aria-pressed={!stealthMode}
+                  onClick={() => void setProtectionMode(false)}
+                  className={[
+                    'crystal-stealth-btn cursor-default transition-all duration-150 active:scale-95',
+                    !stealthMode ? 'crystal-stealth-btn-active' : 'crystal-stealth-btn-idle',
+                  ].join(' ')}
+                >
+                  <EyeVisibleIcon />
+                </button>
+                <button
+                  type="button"
+                  title="Stealth — hidden from screen capture"
+                  aria-label="Stealth mode"
+                  aria-pressed={stealthMode}
+                  onClick={() => void setProtectionMode(true)}
+                  className={[
+                    'crystal-stealth-btn cursor-default transition-all duration-150 active:scale-95',
+                    stealthMode ? 'crystal-stealth-btn-active' : 'crystal-stealth-btn-idle',
+                  ].join(' ')}
+                >
+                  <IncognitoGlyph />
+                </button>
+              </div>
+            </div>
+
+            <div className="relative z-10 flex min-h-0 flex-1 flex-col overflow-hidden">
               <ResponsePanel
                 ref={panelRef}
                 messages={messages}
@@ -2022,17 +2052,15 @@ export default function App() {
                 onRetry={onRetryLastAsk}
               />
 
-              {/* LiveTranscriptPanel — logic + data intact, not rendered per UI spec */}
-
-              <div className="shrink-0 border-t border-white/[0.07]">
+              <div className="crystal-divider shrink-0 border-t">
                 {overlayFocusMode && !focusInputOpen ? (
                   <button
                     type="button"
                     onClick={() => setFocusInputOpen(true)}
-                    className="flex w-full items-center justify-between px-4 py-3 text-left text-[12px] text-zinc-500 transition-colors hover:bg-white/[0.03] hover:text-zinc-300"
+                    className="crystal-muted flex w-full items-center justify-between px-4 py-3 text-left text-[12px] transition-colors hover:bg-[rgba(255,255,255,0.08)] hover:text-white/90"
                   >
                     <span>Tap to ask · Ctrl+Enter for help</span>
-                    <span className="text-zinc-600">▲</span>
+                    <span className="crystal-muted">▲</span>
                   </button>
                 ) : (
                   <InputBar
@@ -2048,68 +2076,25 @@ export default function App() {
                 )}
               </div>
             </div>
-          </div>
-        </div>
 
-        {expanded && (
-          <>
+            {showAudioConsent && (
+              <div
+                className="absolute inset-0 z-[100] flex items-center justify-center px-4 pointer-events-auto"
+                style={{ WebkitAppRegion: 'no-drag' }}
+              >
+                {audioConsentCard}
+              </div>
+            )}
+
             <ResizeHandle edge="left" onResizeEnd={onResizeEnd} />
             <ResizeHandle edge="right" onResizeEnd={onResizeEnd} />
             <ResizeHandle edge="bottom" onResizeEnd={onResizeEnd} />
             <ResizeHandle edge="sw" onResizeEnd={onResizeEnd} />
             <ResizeHandle edge="se" onResizeEnd={onResizeEnd} />
-          </>
-        )}
-      </div>
-
-      {/* Audio consent modal */}
-      {showAudioConsent && (
-        <div
-          className="pointer-events-auto fixed inset-0 z-[100] flex items-center justify-center bg-black/60 px-4"
-          style={{ WebkitAppRegion: 'no-drag' }}
-        >
-          <div className="w-full max-w-sm rounded-2xl border border-white/10 bg-zinc-950/98 p-5 shadow-2xl">
-            <p className="text-[13px] leading-relaxed text-zinc-300">
-              You are responsible for informing all participants that AI assistance is active in this session.
-            </p>
-            <div className="mt-4 flex flex-wrap justify-end gap-2">
-              <button
-                type="button"
-                onClick={() => setShowAudioConsent(false)}
-                className="cursor-default rounded-xl border border-white/10 px-4 py-1.5 text-xs font-medium text-zinc-400 transition-colors hover:bg-white/5 hover:text-zinc-200"
-              >
-                Cancel
-              </button>
-              <button
-                type="button"
-                onClick={confirmAudioSession}
-                className="cursor-default rounded-xl bg-accent/20 border border-accent/30 px-4 py-1.5 text-xs font-medium text-accent-light transition-colors hover:bg-accent/30"
-              >
-                I understand, start
-              </button>
-            </div>
           </div>
-        </div>
+        </>
       )}
 
-      {/* Collapse button */}
-      {expanded && (
-        <div
-          className="flex shrink-0 justify-start pt-1.5"
-          style={{ WebkitAppRegion: 'no-drag' }}
-        >
-          <button
-            type="button"
-            onClick={() => setExpanded(false)}
-            className="cursor-default flex items-center gap-1.5 rounded-full border border-white/[0.08] bg-black/70 px-3.5 py-1.5 text-[11px] font-medium text-zinc-500 transition-all duration-150 hover:border-white/15 hover:text-zinc-300 active:scale-95"
-          >
-            <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
-              <polyline points="18 15 12 9 6 15" />
-            </svg>
-            Collapse
-          </button>
-        </div>
-      )}
     </div>
   )
 }

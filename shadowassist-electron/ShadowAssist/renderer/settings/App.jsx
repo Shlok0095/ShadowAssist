@@ -1,28 +1,33 @@
-// Copyright (c) 2026 ShadowAssist. All rights reserved.
+// Copyright (c) 2026 VeilAssist. All rights reserved.
 // Unauthorized copying or distribution is prohibited.
 
 import React, { useState, useEffect, useMemo, useId, memo } from 'react'
-import { UI_ACCENT_THEMES, applyUiAccentTheme, normalizeUiAccentId } from '../shared/uiAccentThemes'
+import { applyUiAccentTheme, normalizeUiAccentId } from '../shared/uiAccentThemes'
 import { createIpcShim } from '../shared/ipcShim'
 import AppWindowFrame from '../shared/AppWindowFrame'
+import logoSrc from '../../logo.png'
 
 const ipc = createIpcShim()
 
-const RESUME_TEXT_MAX = 20000
-const JD_TEXT_MAX = 12000
+const CONTEXT_SECTION_MAX = 12000
+const CONTEXT_SECTIONS = [
+  { id: 'meeting', label: 'Meeting', sub: 'Background, projects, talking points', accent: 'accent' },
+  { id: 'interview', label: 'Interview', sub: 'STAR stories, stack, prep notes', accent: 'sky' },
+  { id: 'general', label: 'General', sub: 'Anything else the AI should know', accent: 'zinc' },
+]
+const CONTEXT_RETRIEVAL_OPTIONS = [
+  { id: 'auto', label: 'Auto (calendar hint)' },
+  { id: 'meeting', label: 'Meeting only' },
+  { id: 'interview', label: 'Interview only' },
+  { id: 'general', label: 'General only' },
+  { id: 'all', label: 'All sections' },
+]
 
 const GROQ_WHISPER = ['whisper-large-v3-turbo', 'whisper-large-v3']
 const TOGETHER_WHISPER_MODELS = ['openai/whisper-large-v3', 'openai/whisper-large-v3-turbo']
 const MISTRAL_STT_MODELS = ['voxtral-mini-latest', 'voxtral-mini-transcribe-realtime-2602']
 const FIREWORKS_STT_MODELS = ['whisper-v3-turbo', 'whisper-v3']
 const NVIDIA_STT_MODELS = ['parakeet-1.1b-rnnt-multilingual-asr']
-
-/** Empty prompt = backend uses built-in `DEFAULT_SYSTEM_PROMPT` (lib/defaultSystemPrompt.js). */
-const PROMPT_PRESETS = [
-  { id: 'builtin', label: 'ShadowAssist (built-in)', prompt: '' },
-  { id: 'meeting', label: 'Meeting', prompt: 'I am in a meeting. Help me understand, contribute, and summarize.' },
-  { id: 'sync', label: 'Stand-up / sync', prompt: 'I am in a team stand-up or sync. Keep suggestions brief and action-oriented.' },
-]
 
 const save = (k, v) => ipc?.invoke('set-store', k, v)
 
@@ -55,6 +60,15 @@ const HOTKEY_DEFS = [
   { action: 'moveRight', label: 'Nudge overlay right' },
   { action: 'scrollUp', label: 'Scroll answers up' },
   { action: 'scrollDown', label: 'Scroll answers down' },
+]
+
+const SETTINGS_TABS = [
+  { id: 'profile', label: 'Profile', sub: 'Indexed context' },
+  { id: 'display', label: 'Display', sub: 'Overlay layout' },
+  { id: 'meetings', label: 'Meetings', sub: 'Calendar & detection' },
+  { id: 'session', label: 'Session', sub: 'Chat, STT & capture' },
+  { id: 'privacy', label: 'Privacy', sub: 'Data on this device' },
+  { id: 'about', label: 'About', sub: 'Version & info' },
 ]
 
 function useFirstRunQuery() {
@@ -237,17 +251,13 @@ export default function Settings() {
   const [secretByProvider, setSecretByProvider] = useState({})
   const [sttSecretInput, setSttSecretInput] = useState('')
   const [keySetMap, setKeySetMap] = useState({})
-  const [systemPrompt, setSystemPrompt] = useState('')
   const [testByProvider, setTestByProvider] = useState({})
   const [testingProvider, setTestingProvider] = useState(null)
   const [activeTab, setActiveTab] = useState('profile')
   const [hasCompletedOnboarding, setHasCompletedOnboarding] = useState(true)
   const [ocrEnabled, setOcrEnabled] = useState(true)
   const [audioEnabled, setAudioEnabled] = useState(true)
-  const [micListenLanguage, setMicListenLanguage] = useState('en_hi_hinglish')
   const [micSensitivity, setMicSensitivity] = useState('standard')
-  const [sttMode, setSttMode] = useState('local')
-  const [assistAutoTrigger, setAssistAutoTrigger] = useState(false)
   const [googleCalendarClientId, setGoogleCalendarClientId] = useState('')
   const [googleCalendarClientSecret, setGoogleCalendarClientSecret] = useState('')
   const [googleCalendarConnectedEmail, setGoogleCalendarConnectedEmail] = useState('')
@@ -263,11 +273,11 @@ export default function Settings() {
   const [meetingForegroundDetectionEnabled, setMeetingForegroundDetectionEnabled] = useState(true)
   const [listenSummaries, setListenSummaries] = useState([])
   const [selectedSummaryId, setSelectedSummaryId] = useState('')
-  const [resumeContext, setResumeContext] = useState('')
-  const [resumeSourceName, setResumeSourceName] = useState('')
-  const [jdContext, setJdContext] = useState('')
-  const [resumeParsing, setResumeParsing] = useState(false)
-  const [resumeError, setResumeError] = useState(null)
+  const [contextProfiles, setContextProfiles] = useState({ meeting: '', interview: '', general: '' })
+  const [contextProfileTab, setContextProfileTab] = useState('meeting')
+  const [contextRetrievalMode, setContextRetrievalMode] = useState('auto')
+  const [contextIndexStats, setContextIndexStats] = useState(null)
+  const [contextIndexing, setContextIndexing] = useState(false)
 
   const [modelCatalog, setModelCatalog] = useState({})
   const [sttPolicy, setSttPolicy] = useState(null)
@@ -284,8 +294,9 @@ export default function Settings() {
   const [overlayFocusModeUi, setOverlayFocusModeUi] = useState(false)
   const [overlayW, setOverlayW] = useState(400)
   const [overlayH, setOverlayH] = useState(540)
-  const [uiAccentThemeId, setUiAccentThemeId] = useState('neon')
   const [hotkeysMap, setHotkeysMap] = useState(() => ({ ...DEFAULT_HOTKEYS_MAP }))
+  const [stealthModeUi, setStealthModeUi] = useState(false)
+  const [appVersion, setAppVersion] = useState('')
 
   const sttCapableMeta = useMemo(() => {
     const ids = sttPolicy?.nativeSttProviderIds || ['groq', 'openai', 'together', 'mistral', 'fireworks', 'nvidia']
@@ -305,15 +316,10 @@ export default function Settings() {
         const chatProv = s.provider || 'groq'
         setProvider(chatProv)
         setSttProvider(s.sttProvider || s.provider || 'groq')
-        setSystemPrompt(s.systemPrompt || '')
         setHasCompletedOnboarding(!!s.hasCompletedOnboarding)
         setOcrEnabled(s.ocrEnabled !== false)
         setAudioEnabled(s.audioEnabled !== false)
-        const ml = s.micListenLanguage
-        setMicListenLanguage(ml === 'en' || ml === 'hi' || ml === 'en_hi_hinglish' ? ml : 'en_hi_hinglish')
         setMicSensitivity(s.micSensitivity === 'boost' ? 'boost' : 'standard')
-        setSttMode(s.sttMode === 'cloud' ? 'cloud' : 'local')
-        setAssistAutoTrigger(s.assistAutoTrigger === true)
         setGoogleCalendarClientId(s.googleCalendarClientId || '')
         setGoogleCalendarClientSecret(s.googleCalendarClientSecret ? '••••••••' : '')
         setGoogleCalendarConnectedEmail(s.googleCalendarConnectedEmail || '')
@@ -324,9 +330,17 @@ export default function Settings() {
             ? Math.max(0, Number(s.calendarReminderMinutes))
             : 5,
         )
-        setResumeContext(s.resumeContext || '')
-        setResumeSourceName(s.resumeSourceName || '')
-        setJdContext(s.jdContext || '')
+        setContextProfiles({
+          meeting: s.contextProfiles?.meeting || '',
+          interview: s.contextProfiles?.interview || '',
+          general: s.contextProfiles?.general || '',
+        })
+        setContextRetrievalMode(
+          CONTEXT_RETRIEVAL_OPTIONS.some((o) => o.id === s.contextRetrievalMode)
+            ? s.contextRetrievalMode
+            : 'auto',
+        )
+        setContextIndexStats(s.contextIndexMeta || null)
         const ob = s.overlayBounds || {}
         setOverlayOpacityUi(typeof s.overlayOpacity === 'number' ? s.overlayOpacity : 0.92)
         setOverlayFontUi(s.overlayFontSize || 'medium')
@@ -337,8 +351,8 @@ export default function Settings() {
         setOverlayW(ob.width || 480)
         setOverlayH(ob.height || 580)
         const accentId = normalizeUiAccentId(s.uiAccentTheme)
-        setUiAccentThemeId(accentId)
         applyUiAccentTheme(document.documentElement, accentId)
+        setStealthModeUi(s.stealth_mode === true)
         setKeySetMap({
           apiKey: !!s.apiKey,
           groqKey: !!s.groqKey,
@@ -361,6 +375,11 @@ export default function Settings() {
         }
       })
       .catch(console.error)
+    ipc.invoke('get-app-info')
+      .then((info) => {
+        if (info?.version) setAppVersion(String(info.version))
+      })
+      .catch(() => {})
   }, [])
 
   useEffect(() => {
@@ -417,9 +436,7 @@ export default function Settings() {
   useEffect(() => {
     if (!ipc) return
     const onUiAccent = (_, id) => {
-      const next = normalizeUiAccentId(id)
-      setUiAccentThemeId(next)
-      applyUiAccentTheme(document.documentElement, next)
+      applyUiAccentTheme(document.documentElement, normalizeUiAccentId(id))
     }
     const unsub = ipc.on('ui-accent-update', onUiAccent)
     return () => unsub?.()
@@ -444,6 +461,19 @@ export default function Settings() {
   useEffect(() => {
     void refreshListenSummaries()
   }, [])
+
+  useEffect(() => {
+    if (!ipc) return
+    const onStealth = (_, v) => setStealthModeUi(!!v)
+    const unsub = ipc.on('stealth-mode-update', onStealth)
+    return () => unsub?.()
+  }, [])
+
+  useEffect(() => {
+    if (isFirstRunWindow && snap && !hasCompletedOnboarding) {
+      setActiveTab('session')
+    }
+  }, [isFirstRunWindow, snap, hasCompletedOnboarding])
 
   const showSetupBanner = isFirstRunWindow && !hasCompletedOnboarding
 
@@ -514,42 +544,51 @@ export default function Settings() {
     setTestingProvider(null)
   }
 
+  const refreshContextStats = async () => {
+    if (!ipc) return
+    try {
+      const stats = await ipc.invoke('context:stats')
+      setContextIndexStats(stats)
+    } catch {
+      /* ignore */
+    }
+  }
+
+  const reindexContext = async () => {
+    if (!ipc) return
+    setContextIndexing(true)
+    try {
+      const r = await ipc.invoke('context:index')
+      setContextIndexStats(r)
+    } finally {
+      setContextIndexing(false)
+    }
+  }
+
+  const saveContextProfiles = async (next) => {
+    setContextProfiles(next)
+    await save('contextProfiles', next)
+    void refreshContextStats()
+  }
+
+  const updateContextSection = (sectionId, text) => {
+    const trimmed = text.slice(0, CONTEXT_SECTION_MAX)
+    setContextProfiles((prev) => ({ ...prev, [sectionId]: trimmed }))
+  }
+
+  useEffect(() => {
+    if (activeTab === 'profile') void refreshContextStats()
+  }, [activeTab])
+
   const launchFromSetup = async () => {
     try {
-      await save('systemPrompt', systemPrompt)
-      await save('jdContext', jdContext.slice(0, JD_TEXT_MAX))
+      await save('contextProfiles', contextProfiles)
       await save('hasCompletedOnboarding', true)
       setHasCompletedOnboarding(true)
     } catch (e) {
       console.error(e)
     }
     ipc?.send('complete-onboarding')
-  }
-
-  const pickResumeFile = async () => {
-    if (!ipc) return
-    setResumeError(null)
-    const { canceled, filePaths } = await ipc.invoke('show-open-dialog', {
-      properties: ['openFile'],
-      filters: [{ name: 'Resume', extensions: ['pdf', 'txt'] }],
-    })
-    if (canceled || !filePaths?.[0]) return
-    setResumeParsing(true)
-    try {
-      const raw = await ipc.invoke('parse-playbook', filePaths[0])
-      const text = (raw || '').trim()
-      if (!text) throw new Error('No text extracted — try another PDF or use .txt')
-      const truncated = text.slice(0, RESUME_TEXT_MAX)
-      await save('resumeContext', truncated)
-      const base = (await ipc.invoke('path-basename', filePaths[0])) || 'resume'
-      await save('resumeSourceName', base)
-      setResumeContext(truncated)
-      setResumeSourceName(base)
-    } catch (e) {
-      setResumeError(e.message || 'Could not parse file')
-    } finally {
-      setResumeParsing(false)
-    }
   }
 
   const syncRemoteModelsFor = async (pId) => {
@@ -585,22 +624,8 @@ export default function Settings() {
     // eslint-disable-next-line react-hooks/exhaustive-deps -- hydrate model list when provider/key ready
   }, [snap, provider, providerMeta.length])
 
-  const clearResume = async () => {
-    await save('resumeContext', '')
-    await save('resumeSourceName', '')
-    setResumeContext('')
-    setResumeSourceName('')
-    setResumeError(null)
-  }
-
-  const tabs = [
-    { id: 'profile', label: 'Profile', sub: 'Prompt & context' },
-    { id: 'display', label: 'Display', sub: 'Overlay layout' },
-    { id: 'meetings', label: 'Meetings', sub: 'Calendar & detection' },
-    { id: 'session', label: 'Session', sub: 'Chat, STT & capture' },
-    { id: 'privacy', label: 'Privacy', sub: 'Data on this device' },
-    { id: 'about', label: 'About', sub: 'Version & info' },
-  ]
+  const activeContextSection = CONTEXT_SECTIONS.find((s) => s.id === contextProfileTab) || CONTEXT_SECTIONS[0]
+  const activeContextText = contextProfiles[contextProfileTab] || ''
 
   const connectGoogleCalendar = async () => {
     if (!ipc) return
@@ -725,17 +750,15 @@ export default function Settings() {
     await ipc?.invoke('apply-overlay-display', { overlayFocusMode: !!v })
   }
 
+  const applyStealthMode = async (v) => {
+    setStealthModeUi(!!v)
+    patchSnap('stealth_mode', !!v)
+    await ipc?.invoke('protection:set', !!v)
+  }
+
   const applyOpacityPreset = async (pct) => {
     const v = Math.min(1, Math.max(0.35, pct / 100))
     await applyOverlayOpacity(v)
-  }
-
-  const applyUiAccent = async (id) => {
-    const next = normalizeUiAccentId(id)
-    setUiAccentThemeId(next)
-    applyUiAccentTheme(document.documentElement, next)
-    patchSnap('uiAccentTheme', next)
-    await save('uiAccentTheme', next)
   }
 
   const applyOverlaySize = async () => {
@@ -813,15 +836,16 @@ export default function Settings() {
       <AmbientOrbs />
 
       <header className="relative z-20 shrink-0 border-b border-white/[0.06] bg-black/30 px-5 py-4 backdrop-blur-xl lg:px-8">
-        <div className="flex flex-wrap items-start justify-between gap-3">
-          <div>
+        <div className="flex min-w-0 items-start gap-3">
+          <img src={logoSrc} alt="" className="h-10 w-10 shrink-0 object-contain" draggable={false} />
+          <div className="min-w-0">
             <p className="text-[10px] font-medium uppercase tracking-[0.2em] text-zinc-500">Settings</p>
-            <h1 className="font-display mt-0.5 text-xl font-semibold tracking-tight text-white md:text-2xl">ShadowAssist</h1>
-            <p className="mt-1 max-w-xl text-[13px] leading-snug text-zinc-500">
-              {showSetupBanner
-                ? 'Finish first-time setup under Session: chat provider, API key, and model.'
-                : 'Profile, display, meetings, session, and privacy.'}
-            </p>
+            <h1 className="font-display mt-0.5 text-xl font-semibold tracking-tight text-white md:text-2xl">VeilAssist</h1>
+            {showSetupBanner ? (
+              <p className="mt-1 max-w-xl text-[13px] leading-snug text-zinc-500">
+                Finish first-time setup under Session: chat provider, API key, and model.
+              </p>
+            ) : null}
           </div>
         </div>
       </header>
@@ -836,19 +860,17 @@ export default function Settings() {
 
       <div className="relative z-20 flex min-h-0 min-w-0 flex-1 overflow-hidden">
         <nav className="flex w-[188px] shrink-0 flex-col border-r border-white/[0.06] bg-black/20 py-4">
-          {tabs.map((t) => (
+          {SETTINGS_TABS.map((t) => (
             <button
               key={t.id}
               type="button"
               onClick={() => setActiveTab(t.id)}
-              className={`group mx-2 mb-0.5 rounded-lg px-3 py-2.5 text-left transition-colors duration-150 ${
-                activeTab === t.id
-                  ? 'border border-white/[0.08] bg-white/[0.06] text-white'
-                  : 'border border-transparent text-zinc-500 hover:bg-white/[0.04] hover:text-zinc-300'
+              className={`settings-nav-btn group mx-2 mb-0.5 rounded-lg px-3 py-2.5 text-left ${
+                activeTab === t.id ? 'settings-nav-btn-active' : 'text-zinc-500'
               }`}
             >
               <span className="block text-[13px] font-medium">{t.label}</span>
-              <span className="mt-0.5 block text-[10px] text-zinc-600 group-hover:text-zinc-500">{t.sub}</span>
+              <span className="settings-nav-sub mt-0.5 block text-[10px] text-zinc-600 group-hover:text-zinc-500">{t.sub}</span>
             </button>
           ))}
         </nav>
@@ -856,108 +878,109 @@ export default function Settings() {
         <main className="settings-scroll-outer min-h-0 min-w-0 flex-1 overflow-y-auto overflow-x-hidden p-6 lg:p-8">
           {activeTab === 'profile' && (
             <div className="mx-auto max-w-[1600px] animate-fade-in space-y-5">
-              <div>
-                <h2 className="font-display text-xl font-bold text-white">Profile</h2>
-                <p className="mt-1 max-w-3xl text-sm text-mist-500">
-                  <strong className="text-gray-300">Persona</strong> defines how the AI sounds. <strong className="text-gray-300">Profile</strong> + <strong className="text-gray-300">notes / JD</strong> ground suggestions in your background and team context for meetings.
-                </p>
-              </div>
-
               <section className="glass-panel p-6">
-                <h3 className="font-display text-sm font-bold uppercase tracking-[0.2em] text-gray-300">System prompt</h3>
-                <p className="mt-1 text-xs text-gray-500">
-                  How the AI should behave — merged with resume/JD on every ask. Leave empty or choose <strong className="text-gray-400">ShadowAssist (built-in)</strong> to use the{' '}
-                  <span className="font-mono text-mist-400">lib/defaultSystemPrompt.js</span> base prompt. Override here for your own use case.
-                </p>
-                <div className="mt-4 flex flex-wrap gap-2">
-                  {PROMPT_PRESETS.map((p) => (
+                <div className="mb-4 flex flex-wrap items-start justify-between gap-3">
+                  <div>
+                    <h3 className="font-display text-sm font-bold uppercase tracking-widest text-phantom-300">
+                      Context index
+                    </h3>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={reindexContext}
+                    disabled={contextIndexing}
+                    className="btn-glow px-4 py-2 text-sm"
+                  >
+                    {contextIndexing ? 'Indexing…' : 'Re-index now'}
+                  </button>
+                </div>
+
+                <div className="flex flex-wrap items-center gap-3 text-xs text-gray-500">
+                  <span>
+                    Chunks:{' '}
+                    <span className="font-mono text-gray-300">{contextIndexStats?.chunkCount ?? '—'}</span>
+                  </span>
+                  {contextIndexStats?.indexedAt && (
+                    <span>
+                      Last indexed:{' '}
+                      <span className="font-mono text-gray-400">
+                        {new Date(contextIndexStats.indexedAt).toLocaleString()}
+                      </span>
+                    </span>
+                  )}
+                  {contextIndexStats?.tags && (
+                    <span className="font-mono text-[10px] text-gray-600">
+                      meeting {contextIndexStats.tags.meeting || 0} · interview{' '}
+                      {contextIndexStats.tags.interview || 0} · general {contextIndexStats.tags.general || 0}
+                    </span>
+                  )}
+                </div>
+
+                <div className="mt-5">
+                  <label className="mb-1.5 block text-[10px] font-semibold uppercase tracking-wider text-zinc-500">
+                    Retrieval mode
+                  </label>
+                  <div className="flex flex-wrap gap-2">
+                    {CONTEXT_RETRIEVAL_OPTIONS.map((o) => (
+                      <button
+                        key={o.id}
+                        type="button"
+                        onClick={() => {
+                          setContextRetrievalMode(o.id)
+                          save('contextRetrievalMode', o.id)
+                        }}
+                        className={`settings-chip settings-chip-sm !normal-case ${
+                          contextRetrievalMode === o.id ? 'settings-chip-active' : ''
+                        }`}
+                      >
+                        {o.label}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+
+                <div className="mt-5 flex flex-wrap gap-2">
+                  {CONTEXT_SECTIONS.map((s) => (
                     <button
-                      key={p.id}
+                      key={s.id}
                       type="button"
-                      onClick={() => setSystemPrompt(p.prompt)}
-                      className={`settings-chip settings-chip-sm !normal-case ${systemPrompt === p.prompt ? 'settings-chip-active' : ''}`}
+                      onClick={() => setContextProfileTab(s.id)}
+                      className={`settings-chip settings-chip-sm !normal-case ${
+                        contextProfileTab === s.id ? 'settings-chip-active' : ''
+                      }`}
                     >
-                      {p.label}
+                      {s.label}
                     </button>
                   ))}
                 </div>
+
+                <p className="mt-3 text-xs text-gray-500">{activeContextSection.sub}</p>
+
                 <textarea
-                  value={systemPrompt}
-                  onChange={(e) => setSystemPrompt(e.target.value)}
-                  onBlur={() => save('systemPrompt', systemPrompt)}
-                  rows={8}
-                  className="input-shadow mt-4 min-h-[160px] w-full resize-y px-3 py-3 font-mono text-xs leading-relaxed"
-                  placeholder="Leave empty for the built-in ShadowAssist prompt, or describe your persona."
+                  value={activeContextText}
+                  onChange={(e) => updateContextSection(contextProfileTab, e.target.value)}
+                  onBlur={(e) => {
+                    const next = {
+                      ...contextProfiles,
+                      [contextProfileTab]: e.target.value.slice(0, CONTEXT_SECTION_MAX),
+                    }
+                    void saveContextProfiles(next)
+                  }}
+                  rows={16}
+                  className="input-shadow mt-3 min-h-[320px] w-full resize-y px-3 py-3 text-sm leading-relaxed"
+                  placeholder={
+                    contextProfileTab === 'meeting'
+                      ? 'Resume bullets, current role, projects, team context…'
+                      : contextProfileTab === 'interview'
+                        ? 'STAR stories, tech stack, companies, interview prep…'
+                        : 'Anything else you want the AI to remember…'
+                  }
                 />
-                <p className="mt-2 text-[10px] text-gray-600">Saved when you leave this field.</p>
+                <p className="mt-2 text-[10px] text-gray-600">
+                  {activeContextText.length.toLocaleString()} / {CONTEXT_SECTION_MAX.toLocaleString()} — saved and
+                  re-indexed on blur.
+                </p>
               </section>
-
-              <div className="grid grid-cols-1 gap-5 lg:grid-cols-2">
-                <section className="glass-panel p-6">
-                  <div className="mb-4 flex items-start justify-between gap-3">
-                    <div>
-                      <h3 className="font-display text-sm font-bold uppercase tracking-widest text-phantom-300">Resume</h3>
-                      <p className="mt-1 text-xs text-gray-500">PDF or plain text — parsed locally until you send a question to the AI.</p>
-                    </div>
-                    <span className="rounded-full border border-accent/30 bg-accent/10 px-2 py-1 font-mono text-[9px] uppercase tracking-wider text-accent">CV</span>
-                  </div>
-
-                  <div className="flex flex-wrap gap-2">
-                    <button type="button" onClick={pickResumeFile} disabled={resumeParsing} className="btn-glow px-5 py-2.5 text-sm">
-                      {resumeParsing ? 'Parsing…' : 'Upload resume'}
-                    </button>
-                    {(resumeContext || resumeSourceName) && (
-                      <button type="button" onClick={clearResume} className="btn-ghost border-rose-500/20 px-4 py-2.5 text-sm text-rose-300 hover:bg-rose-500/10">
-                        Clear
-                      </button>
-                    )}
-                  </div>
-
-                  {resumeError && <p className="mt-3 text-sm text-rose-400">{resumeError}</p>}
-
-                  <div className="mt-5 rounded-xl border border-white/[0.06] bg-black/40 p-4">
-                    <div className="flex flex-wrap items-center justify-between gap-2 text-xs">
-                      <span className="text-gray-500">Source</span>
-                      <span className="font-mono text-accent/90">{resumeSourceName || '— none —'}</span>
-                    </div>
-                    <div className="mt-2 flex flex-wrap items-center justify-between gap-2 text-xs">
-                      <span className="text-gray-500">Characters stored</span>
-                      <span className="font-mono text-gray-300">
-                        {resumeContext.length.toLocaleString()} / {RESUME_TEXT_MAX.toLocaleString()}
-                      </span>
-                    </div>
-                    {resumeContext ? (
-                      <pre className="settings-scroll mt-4 max-h-48 overflow-auto rounded-lg border border-white/5 bg-void-950/80 p-3 font-mono text-[10px] leading-relaxed text-gray-500">
-                        {resumeContext.slice(0, 1200)}
-                        {resumeContext.length > 1200 ? '\n…' : ''}
-                      </pre>
-                    ) : (
-                      <p className="mt-4 text-xs italic text-gray-600">No profile loaded — upload for stronger meeting context (optional).</p>
-                    )}
-                  </div>
-                </section>
-
-                <section className="glass-panel p-6">
-                  <div className="mb-4 flex items-start justify-between gap-3">
-                    <div>
-                      <h3 className="font-display text-sm font-bold uppercase tracking-widest text-sky-300/90">Role / JD / focus</h3>
-                      <p className="mt-1 text-xs text-gray-500">Job description, stack, or notes — optional alone, best with resume.</p>
-                    </div>
-                    <span className="rounded-full border border-sky-500/30 bg-sky-500/10 px-2 py-1 font-mono text-[9px] uppercase tracking-wider text-sky-300">JD</span>
-                  </div>
-                  <textarea
-                    value={jdContext}
-                    onChange={(e) => setJdContext(e.target.value.slice(0, JD_TEXT_MAX))}
-                    onBlur={() => save('jdContext', jdContext.slice(0, JD_TEXT_MAX))}
-                    rows={14}
-                    className="input-shadow min-h-[280px] w-full resize-y px-3 py-3 text-sm leading-relaxed"
-                    placeholder="e.g. Senior backend at FinCo — Kotlin, Kafka, AWS…"
-                  />
-                  <p className="mt-2 text-[10px] text-gray-600">
-                    {jdContext.length.toLocaleString()} / {JD_TEXT_MAX.toLocaleString()} — saved on blur.
-                  </p>
-                </section>
-              </div>
             </div>
           )}
 
@@ -965,52 +988,8 @@ export default function Settings() {
             <div className="mx-auto max-w-3xl animate-fade-in space-y-5">
               <section className="glass-panel p-6">
                 <h2 className="text-base font-semibold text-white">Overlay</h2>
-                <p className="mt-1 text-[13px] text-zinc-500">
-                  Appearance, size, position, and global shortcuts. Changes apply while the overlay is open.
-                </p>
 
                 <div className="mt-6 space-y-7">
-                  <div>
-                    <label className="mb-1.5 block text-[10px] font-semibold uppercase tracking-wider text-zinc-500">
-                      Accent
-                    </label>
-                    <p className="mb-2 text-[11px] text-zinc-600">Overlay highlights (mic, code chrome, accents).</p>
-                    <div className="flex flex-wrap gap-2">
-                      {UI_ACCENT_THEMES.map((t) => {
-                        const [r, g, b] = t.main
-                        const [lr, lg, lb] = t.light
-                        const active = uiAccentThemeId === t.id
-                        return (
-                          <button
-                            key={t.id}
-                            type="button"
-                            title={t.label}
-                            onClick={() => applyUiAccent(t.id)}
-                            className={`group flex flex-col items-center gap-1 rounded-lg border px-1.5 py-1.5 text-center transition-colors duration-150 ${
-                              active
-                                ? 'border-accent/40 bg-accent/10'
-                                : 'border-white/[0.08] bg-white/[0.03] hover:border-white/15 hover:bg-white/[0.05]'
-                            }`}
-                          >
-                            <span
-                              className="h-6 w-6 shrink-0 rounded-full ring-1 ring-white/10"
-                              style={{
-                                background: `linear-gradient(145deg, rgb(${lr},${lg},${lb}), rgb(${r},${g},${b}))`,
-                              }}
-                            />
-                            <span
-                              className={`max-w-[4.5rem] truncate text-[9px] font-medium leading-tight ${
-                                active ? 'text-accent-light' : 'text-zinc-500 group-hover:text-zinc-400'
-                              }`}
-                            >
-                              {t.label}
-                            </span>
-                          </button>
-                        )
-                      })}
-                    </div>
-                  </div>
-
                   <div>
                     <div className="mb-2 flex flex-wrap items-center justify-between gap-2">
                       <label className="text-[10px] font-semibold uppercase tracking-[0.2em] text-mist-400">Window opacity</label>
@@ -1116,21 +1095,6 @@ export default function Settings() {
                   </div>
 
                   <div>
-                    <label className="mb-2 block text-[10px] font-semibold uppercase tracking-[0.2em] text-mist-400">Answer preview</label>
-                    <div className="rounded-xl border border-white/[0.08] bg-black/40 p-4">
-                      <div className="rounded-lg border border-accent/15 bg-accent/[0.06] px-3 py-2">
-                        <p className="text-[10px] font-semibold uppercase tracking-wider text-accent/70">Takeaway</p>
-                        <p className="mt-1 text-[13px] font-medium text-gray-100">
-                          Lead with this line in the meeting — the core point in plain language.
-                        </p>
-                      </div>
-                      <p className="mt-3 text-[12px] leading-relaxed text-gray-400">
-                        Explanation paragraphs follow with depth. Code stays visible; lists tuck under &quot;Show lists &amp; steps&quot;.
-                      </p>
-                    </div>
-                  </div>
-
-                  <div>
                     <label className="mb-2 block text-[10px] font-semibold uppercase tracking-[0.2em] text-mist-400">Answer panel view</label>
                     <p className="mb-2 text-[11px] text-zinc-600">
                       Latest shows only the current Q&amp;A during a call. History keeps the full thread.
@@ -1150,6 +1114,25 @@ export default function Settings() {
                         </button>
                       ))}
                     </div>
+                  </div>
+
+                  <div>
+                    <label className="mb-2 block text-[10px] font-semibold uppercase tracking-[0.2em] text-mist-400">Stealth mode</label>
+                    <label className="settings-row-tile flex cursor-pointer items-center justify-between gap-4">
+                      <div>
+                        <span className="font-medium text-gray-200">Hide from screen capture</span>
+                        <p className="text-xs text-gray-600">
+                          Uses OS content protection so the overlay is harder to pick up in screen shares and recordings.
+                          Also toggled from the overlay visibility control.
+                        </p>
+                      </div>
+                      <input
+                        type="checkbox"
+                        checked={stealthModeUi}
+                        onChange={(e) => applyStealthMode(e.target.checked)}
+                        className="h-5 w-5 rounded border-white/20 accent-accent"
+                      />
+                    </label>
                   </div>
 
                   <div>
@@ -1250,13 +1233,6 @@ export default function Settings() {
 
           {activeTab === 'session' && (
             <div className="mx-auto max-w-3xl animate-fade-in space-y-5">
-              <div>
-                <h2 className="font-display text-xl font-bold text-white">Session</h2>
-                <p className="mt-1 text-sm text-zinc-500">
-                  Chat model for answers, transcription for Listen, and screen or mic capture.
-                </p>
-              </div>
-
               <details className="glass-panel group p-0 open" open>
                 <summary className="cursor-pointer list-none px-6 py-4 font-display text-sm font-bold uppercase tracking-[0.15em] text-gray-300 [&::-webkit-details-marker]:hidden">
                   <span className="flex items-center justify-between gap-2">
@@ -1271,8 +1247,8 @@ export default function Settings() {
                     <div>
                       <span className="font-medium text-gray-200">Screen reading (OCR)</span>
                       <p className="text-xs text-gray-600">
-                        When Listen is on, screen text is captured when you trigger the assistant (hotkey or typed ask),
-                        or when Assist mode runs an intent check — not continuously in the background.
+                        When Listen is on, screen text is captured when you trigger the assistant (hotkey or typed ask)
+                        — not continuously in the background.
                       </p>
                     </div>
                     <input
@@ -1302,34 +1278,6 @@ export default function Settings() {
                   </label>
                   <div className="settings-row-tile flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
                     <div className="min-w-0 flex-1">
-                      <span className="font-medium text-gray-200">Mic language</span>
-                      <p className="mt-1 text-xs text-gray-600">
-                        English + Hindi + Hinglish uses auto language detection. Forcing English or Hindi sets a single
-                        language code — best for single-language sessions.
-                      </p>
-                    </div>
-                    <select
-                      value={micListenLanguage}
-                      onChange={(e) => {
-                        const v = e.target.value
-                        setMicListenLanguage(v)
-                        save('micListenLanguage', v)
-                      }}
-                      className="input-shadow w-full shrink-0 px-3 py-2 text-sm sm:w-64"
-                    >
-                      <option value="en_hi_hinglish" className="bg-void-900">
-                        English + Hindi + Hinglish (auto)
-                      </option>
-                      <option value="en" className="bg-void-900">
-                        English only (forced)
-                      </option>
-                      <option value="hi" className="bg-void-900">
-                        Hindi only (forced)
-                      </option>
-                    </select>
-                  </div>
-                  <div className="settings-row-tile flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
-                    <div className="min-w-0 flex-1">
                       <span className="font-medium text-gray-200">Mic sensitivity</span>
                       <p className="mt-1 text-xs text-gray-600">
                         Boost helps quiet mics; restart Listen after changing. Shortcut keys are under Display → Keyboard
@@ -1353,24 +1301,6 @@ export default function Settings() {
                       </option>
                     </select>
                   </div>
-                  <label className="settings-row-tile flex cursor-pointer items-center justify-between gap-4">
-                    <div>
-                      <span className="font-medium text-gray-200">Assist mode (auto AI)</span>
-                      <p className="text-xs text-gray-600">
-                        Off (default): Listen — speech is context only; use hotkey or type to ask. On: Assist — AI may run
-                        when intent is clear (question or strong speech + screen).
-                      </p>
-                    </div>
-                    <input
-                      type="checkbox"
-                      checked={assistAutoTrigger}
-                      onChange={(e) => {
-                        setAssistAutoTrigger(e.target.checked)
-                        save('assistAutoTrigger', e.target.checked)
-                      }}
-                      className="h-5 w-5 rounded border-white/20 accent-accent"
-                    />
-                  </label>
                 </div>
               </details>
 
@@ -1563,30 +1493,7 @@ export default function Settings() {
                   Transcription
                 </summary>
                 <div className="space-y-6 border-t border-white/[0.06] px-6 pb-6 pt-2">
-                  <div className="settings-row-tile flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-                    <div>
-                      <span className="font-medium text-gray-200">Mode</span>
-                      <p className="mt-1 text-xs text-gray-600">Local runs on-device; cloud uses your STT vendor API key.</p>
-                    </div>
-                    <select
-                      value={sttMode}
-                      onChange={(e) => {
-                        const v = e.target.value === 'cloud' ? 'cloud' : 'local'
-                        setSttMode(v)
-                        save('sttMode', v)
-                      }}
-                      className="input-shadow w-full shrink-0 px-3 py-2 text-sm sm:w-48"
-                    >
-                      <option value="local" className="bg-void-900">
-                        Local
-                      </option>
-                      <option value="cloud" className="bg-void-900">
-                        Cloud
-                      </option>
-                    </select>
-                  </div>
-
-                  {sttMode === 'cloud' && snap && (
+                  {snap && (
                     <>
                       <div className="settings-row-tile">
                         <div className="mb-2 flex items-center justify-between gap-2">
@@ -1713,17 +1620,12 @@ export default function Settings() {
                       )}
                     </>
                   )}
-                  {sttMode === 'local' && (
-                    <p className="text-xs text-zinc-500">
-                      Local transcription runs on-device (Moonshine). No cloud API key required.
-                    </p>
-                  )}
                 </div>
               </details>
 
               {showSetupBanner && (
                 <button type="button" onClick={launchFromSetup} className="btn-glow w-full py-4 text-base">
-                  Launch ShadowAssist
+                  Launch VeilAssist
                 </button>
               )}
             </div>
@@ -1733,10 +1635,6 @@ export default function Settings() {
             <div className="mx-auto max-w-3xl animate-fade-in space-y-5">
               <section className="glass-panel p-8">
                 <h2 className="font-display text-lg font-bold text-white">Meeting detection</h2>
-                <p className="mt-1 text-sm text-gray-500">
-                  When enabled, ShadowAssist watches the foreground window on Windows and can notify you when Google
-                  Meet or Microsoft Teams is active (desktop app or browser tab).
-                </p>
                 <label className="settings-row-tile mt-6 flex cursor-pointer items-center justify-between gap-4">
                   <div>
                     <span className="font-medium text-gray-200">Detect Meet & Teams</span>
@@ -1861,7 +1759,7 @@ export default function Settings() {
                     </p>
                     {googleCalendarUsingEmbeddedOAuth && (
                       <p className="mt-1 text-[11px] text-zinc-500">
-                        OAuth client is configured by ShadowAssist. Only Google sign-in is required.
+                        OAuth client is configured by VeilAssist. Only Google sign-in is required.
                       </p>
                     )}
                     {calendarConnectBusy && (
@@ -2096,27 +1994,30 @@ export default function Settings() {
 
           {activeTab === 'privacy' && (
             <div className="mx-auto max-w-3xl animate-fade-in space-y-5">
-              <section className="glass-panel p-8">
-                <h2 className="font-display text-lg font-bold text-white">Privacy &amp; Data</h2>
-                <p className="mt-1 text-sm text-indigo-200/70">Local meeting assistant data stays on this device. Disclose use where policies or participants require it.</p>
-                <p className="mt-4 text-sm leading-relaxed text-zinc-400">
-                  Audio is never stored. Transcripts and OCR text used during a session are cleared automatically when your session ends or after extended inactivity. Session buffers stay in memory only.
+              <section className="glass-panel p-6">
+                <h3 className="text-sm font-semibold text-white">What stays on this device</h3>
+                <ul className="mt-4 space-y-2 text-sm leading-relaxed text-zinc-400">
+                  <li className="flex gap-2">
+                    <span className="text-accent">·</span>
+                    <span>Profile notes, preferences, and encrypted API keys (Windows DPAPI).</span>
+                  </li>
+                  <li className="flex gap-2">
+                    <span className="text-accent">·</span>
+                    <span>Session transcripts and OCR text in memory only — cleared when the session ends.</span>
+                  </li>
+                  <li className="flex gap-2">
+                    <span className="text-accent">·</span>
+                    <span>Audio is never stored. Only text sent to your chosen AI provider when you ask.</span>
+                  </li>
+                </ul>
+              </section>
+
+              <section className="glass-panel p-6">
+                <h3 className="text-sm font-semibold text-white">Your data</h3>
+                <p className="mt-2 text-xs text-zinc-500">
+                  Export includes profile text, consent record, and preferences — not API keys, raw audio, or live buffers.
                 </p>
-                <p className="mt-4 text-xs leading-relaxed text-zinc-500">
-                  Your API keys are encrypted using Windows DPAPI (OS-level security) and never leave your device except when you call your chosen AI provider directly.
-                </p>
-                <div className="mt-8 flex flex-wrap gap-3">
-                  <button
-                    type="button"
-                    onClick={async () => {
-                      if (!ipc) return
-                      if (!window.confirm('Delete all local ShadowAssist data and restart? This cannot be undone.')) return
-                      await ipc.invoke('delete-all-data-relaunch')
-                    }}
-                    className="rounded-xl border border-rose-500/40 bg-rose-500/10 px-5 py-2.5 text-sm font-semibold text-rose-200 hover:bg-rose-500/20"
-                  >
-                    Delete All My Data
-                  </button>
+                <div className="mt-5 flex flex-wrap gap-3">
                   <button
                     type="button"
                     onClick={async () => {
@@ -2128,12 +2029,20 @@ export default function Settings() {
                     }}
                     className="rounded-xl border border-indigo-500/40 bg-indigo-500/10 px-5 py-2.5 text-sm font-semibold text-indigo-100 hover:bg-indigo-500/20"
                   >
-                    Export My Data
+                    Export my data
+                  </button>
+                  <button
+                    type="button"
+                    onClick={async () => {
+                      if (!ipc) return
+                      if (!window.confirm('Delete all local VeilAssist data and restart? This cannot be undone.')) return
+                      await ipc.invoke('delete-all-data-relaunch')
+                    }}
+                    className="rounded-xl border border-rose-500/40 bg-rose-500/10 px-5 py-2.5 text-sm font-semibold text-rose-200 hover:bg-rose-500/20"
+                  >
+                    Delete all my data
                   </button>
                 </div>
-                <p className="mt-4 text-[10px] text-zinc-600">
-                  Export includes profile text, consent record, and preferences — not API keys, raw audio, or live transcript buffers.
-                </p>
               </section>
             </div>
           )}
@@ -2141,15 +2050,16 @@ export default function Settings() {
           {activeTab === 'about' && (
             <div className="mx-auto max-w-xl animate-fade-in text-center">
               <section className="glass-panel p-10">
-                <div className="mx-auto mb-6 flex h-16 w-16 items-center justify-center rounded-2xl border border-phantom-500/30 bg-gradient-to-br from-phantom-600/20 to-accent/10 shadow-glow">
-                  <span className="font-display text-2xl font-bold text-white">S</span>
-                </div>
-                <h2 className="font-display text-2xl font-bold text-white">ShadowAssist</h2>
-                <p className="mt-2 text-xs text-indigo-300/80">AI overlay for live meetings</p>
-                <p className="mt-3 text-sm text-gray-400">On-screen assistant for calls and live meetings. Disclosure is your responsibility where required.</p>
-                <p className="mt-6 text-xs text-gray-600">
-                  Groq, OpenAI, Anthropic, DeepSeek, Kimi, Mistral, xAI, OpenRouter, Together, Perplexity, Gemini, Fireworks, Cerebras, NVIDIA NIM, or any OpenAI-compatible URL.
-                </p>
+                <img
+                  src={logoSrc}
+                  alt="VeilAssist"
+                  className="mx-auto mb-5 h-16 w-16 object-contain"
+                  draggable={false}
+                />
+                <h2 className="font-display text-2xl font-bold text-white">VeilAssist</h2>
+                {appVersion ? (
+                  <p className="mt-1 font-mono text-xs text-zinc-500">v{appVersion}</p>
+                ) : null}
               </section>
             </div>
           )}

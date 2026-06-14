@@ -1,4 +1,4 @@
-// Copyright (c) 2026 ShadowAssist. All rights reserved.
+// Copyright (c) 2026 VeilAssist. All rights reserved.
 // Meeting toast — dark, sharp card; platform marks (SVG).
 
 const root = document.getElementById('root')
@@ -64,7 +64,7 @@ function render(data) {
     <div class="wrap">
       <div class="top">
         <button type="button" class="close" aria-label="Close">×</button>
-        <span class="brand">ShadowAssist</span>
+        <span class="brand">VeilAssist</span>
       </div>
       <div class="row">
         <div class="logo-wrap">${logo}</div>

@@ -6,7 +6,7 @@ import { SITE } from '@/config/site'
 const steps = [
   {
     title: 'Install',
-    body: 'Run the Windows installer. ShadowAssist lives in the system tray with a standard uninstall entry.',
+    body: 'Run the Windows installer. VeilAssist lives in the system tray with a standard uninstall entry.',
   },
   {
     title: 'Add your API key and model',

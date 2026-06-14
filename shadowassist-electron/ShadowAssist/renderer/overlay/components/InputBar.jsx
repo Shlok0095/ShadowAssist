@@ -3,6 +3,17 @@
 
 import React, { useState, useRef, memo } from 'react'
 
+/** Paper-plane send glyph — shape from reference; drawn in white on the red button. */
+function SendIcon() {
+  return (
+    <svg width="17" height="17" viewBox="0 0 24 24" fill="none" aria-hidden>
+      <path fill="#ffffff" d="M21 12 3 7.25 3 12Z" />
+      <path fill="#ffffff" d="M21 12 3 12 3 16.75Z" />
+      <path d="M3 12h18" stroke="rgba(127, 29, 29, 0.42)" strokeWidth="0.7" strokeLinecap="round" />
+    </svg>
+  )
+}
+
 function InputBar({ onAsk, onAbort, isThinking, sessionOn = false, focusMode = false }) {
   const [value, setValue] = useState('')
   const textRef = useRef(null)
@@ -42,10 +53,8 @@ function InputBar({ onAsk, onAbort, isThinking, sessionOn = false, focusMode = f
         placeholder={placeholder}
         rows={1}
         className={[
-          'flex-1 min-h-[34px] max-h-[72px] resize-none rounded-xl px-3 py-2',
-          'bg-white/[0.05] border border-white/[0.09] text-[12.5px] text-gray-200',
-          'placeholder-zinc-600 focus:outline-none focus:border-accent/30 focus:bg-white/[0.07]',
-          'transition-colors duration-150',
+          'crystal-input flex-1 min-h-[34px] max-h-[72px] resize-none rounded-xl px-3 py-2',
+          'text-[12.5px] transition-colors duration-150',
         ].join(' ')}
         style={{ scrollbarWidth: 'none', msOverflowStyle: 'none' }}
       />
@@ -54,7 +63,7 @@ function InputBar({ onAsk, onAbort, isThinking, sessionOn = false, focusMode = f
           type="button"
           onClick={() => onAbort?.()}
           title="Stop generating"
-          className="cursor-default flex h-[34px] shrink-0 items-center justify-center rounded-xl border border-rose-500/25 bg-rose-500/10 px-3 text-[11px] font-medium text-rose-300 hover:bg-rose-500/20"
+          className="cursor-default flex h-[34px] shrink-0 items-center justify-center rounded-xl border border-rose-400/30 bg-rose-500/10 px-3 text-[11px] font-medium text-rose-200 hover:bg-rose-500/20"
         >
           Stop
         </button>
@@ -63,17 +72,14 @@ function InputBar({ onAsk, onAbort, isThinking, sessionOn = false, focusMode = f
           type="button"
           onClick={submitText}
           disabled={isThinking && !value.trim()}
+          title="Send"
+          aria-label="Send"
           className={[
-            'cursor-default flex h-[34px] w-[34px] shrink-0 items-center justify-center rounded-xl transition-all duration-150 active:scale-95',
-            isThinking && !value.trim()
-              ? 'bg-amber-500/10 text-amber-400/70'
-              : 'border border-accent/25 bg-accent/10 text-accent hover:bg-accent/20 hover:border-accent/40',
+            'crystal-send-btn cursor-default flex h-[34px] w-[34px] shrink-0 items-center justify-center rounded-full transition-all duration-150 active:scale-95',
+            isThinking && !value.trim() ? 'opacity-50' : '',
           ].join(' ')}
         >
-          <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-            <line x1="22" y1="2" x2="11" y2="13" />
-            <polygon points="22 2 15 22 11 13 2 9 22 2" />
-          </svg>
+          <SendIcon />
         </button>
       )}
     </div>

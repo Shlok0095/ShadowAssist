@@ -6,10 +6,10 @@ Everything below is served on this site — no GitHub wiki or raw files to open.
 
 Use **Download** in the header or the home page. It points at the rolling **stag** build on GitHub (tag **`latest-stag`**), not the generic “Latest” release (GitHub ignores prereleases there).
 
-- **Installer (`ShadowAssist-Setup.exe`)** — stable filename from CI; classic wizard: license, folder, Start menu entry, optional desktop shortcut on the last page.
-- **Portable (`ShadowAssist.exe`)** — one file, no install. Good for USB or locked-down machines.
+- **Installer (`VeilAssist-Setup.exe`)** — stable filename from CI; classic wizard: license, folder, Start menu entry, optional desktop shortcut on the last page.
+- **Portable (`VeilAssist.exe`)** — one file, no install. Good for USB or locked-down machines.
 
-Assets and **SHA256SUMS.txt** for that build: [latest-stag release](https://github.com/Shlok0095/ShadowAssist/releases/tag/latest-stag). Verify hashes when SmartScreen or AV makes you nervous.
+Assets and **SHA256SUMS.txt** for that build: [VeilAssist releases (latest-stag)](https://github.com/Shlok0095/ShadowAssist/releases/tag/latest-stag). Verify hashes when SmartScreen or AV makes you nervous.
 
 ## First launch
 
@@ -29,8 +29,8 @@ Closing the overlay does **not** quit the app. Right-click the tray icon → **Q
 
 ## Uninstall
 
-- **Installer build** — Settings → Apps → ShadowAssist, or `Uninstall ShadowAssist` from the install folder.
-- **Portable** — Delete `ShadowAssist.exe` and optionally remove `%AppData%\ShadowAssist-v2` for a clean slate.
+- **Installer build** — Settings → Apps → VeilAssist, or `Uninstall VeilAssist` from the install folder.
+- **Portable** — Delete `VeilAssist.exe` and optionally remove `%AppData%\VeilAssist-v2` for a clean slate.
 
 ## Where to read more
 

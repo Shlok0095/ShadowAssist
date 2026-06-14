@@ -1,20 +1,20 @@
-# How ShadowAssist Works
+# How VeilAssist Works
 
-ShadowAssist is an **undetectable AI assistant for live meetings**: it stays on your screen, listens when you enable it, reads on-screen content when you allow it, and answers in a compact floating panel so you can follow meetings without switching apps. It is **positioned for meetings only** (not hiring interviews); you must still disclose AI use wherever your organization or participants require it.
+VeilAssist is an **undetectable AI assistant for live meetings**: it stays on your screen, listens when you enable it, reads on-screen content when you allow it, and answers in a compact floating panel so you can follow meetings without switching apps. It is **positioned for meetings only** (not hiring interviews); you must still disclose AI use wherever your organization or participants require it.
 
 ---
 
 ## Task Manager shows “Electron” (development)
 
-If you start the app with **`npm start`** or **`npm run dev`**, Windows runs **`electron.exe`** from `node_modules`. Task Manager will list **Electron** (often several processes) and the **Electron logo**. That is normal: you are running the generic Electron runtime, not the packaged ShadowAssist binary.
+If you start the app with **`npm start`** or **`npm run dev`**, Windows runs **`electron.exe`** from `node_modules`. Task Manager will list **Electron** (often several processes) and the **Electron logo**. That is normal: you are running the generic Electron runtime, not the packaged VeilAssist binary.
 
-To see **ShadowAssist** with **your icon** in Task Manager:
+To see **VeilAssist** with **your icon** in Task Manager:
 
-1. Build the Windows app: **`npm run dist`** (portable `dist\ShadowAssist.exe`) or **`npm run dist:dir`** (unpacked `dist\win-unpacked\ShadowAssist.exe`).
+1. Build the Windows app: **`npm run dist`** (portable `dist\VeilAssist.exe`) or **`npm run dist:dir`** (unpacked `dist\win-unpacked\VeilAssist.exe`).
 2. **Quit** any dev session (`npm run kill-electron`).
-3. Run **`dist\ShadowAssist.exe`** (or **`npm run open:portable`** after a portable build), or **`dist\win-unpacked\ShadowAssist.exe`** (or **`npm run open:unpacked`** after `dist:dir`).
+3. Run **`dist\VeilAssist.exe`** (or **`npm run open:portable`** after a portable build), or **`dist\win-unpacked\VeilAssist.exe`** (or **`npm run open:unpacked`** after `dist:dir`).
 
-The tray build uses **`ShadowAssist.exe`**; use **`npm run kill-shadowassist`** if you need to force-close that process.
+The tray build uses **`VeilAssist.exe`**; use **`npm run kill-veilassist`** if you need to force-close that process.
 
 ---
 
@@ -26,7 +26,7 @@ When you launch the app, it places an icon near the system clock (notification a
 
 On a **new install** (or after a consent- or data-epoch update), you must complete a **legal consent** screen (all checkboxes) before anything else runs. Use **Open Terms / Privacy / License** to view the bundled text files in your default app. Then **onboarding** opens: you choose a provider, paste **your own** API key (nothing is bundled), run **Test** until it succeeds, acknowledge **BYOK** statements, and only then can you start the overlay.
 
-The **NSIS installer** shows **Terms** from `legal/terms.txt`, lets you pick the install folder and **per-user vs all users**, then creates **Start menu** and **desktop** shortcuts. **`runAfterFinish` is off** — the wizard closes when you click Finish; you start ShadowAssist from the shortcut (not auto-launched). The **portable** `ShadowAssist.exe` has **no** wizard and opens the app as soon as you run it. Keys live under your Windows user profile (`AppData`); they are never downloaded from GitHub—only you paste them.
+The **NSIS installer** shows **Terms** from `legal/terms.txt`, lets you pick the install folder and **per-user vs all users**, then creates **Start menu** and **desktop** shortcuts. **`runAfterFinish` is off** — the wizard closes when you click Finish; you start VeilAssist from the shortcut (not auto-launched). The **portable** `VeilAssist.exe` has **no** wizard and opens the app as soon as you run it. Keys live under your Windows user profile (`AppData`); they are never downloaded from GitHub—only you paste them.
 
 If you still see old keys after an update, the app may have run a one-time **data migration** that clears secrets—otherwise uninstall / delete app data in Settings to reset.
 
@@ -58,9 +58,9 @@ If your chosen connection does not support microphone transcription on the same 
 
 In **Settings → Meetings** you can:
 
-- **Connect Google Calendar (OAuth)** — after you add Google Cloud desktop-app credentials, ShadowAssist can list **upcoming accepted meetings** (the same kind you see in Calendar after you accept an invite from email).
+- **Connect Google Calendar (OAuth)** — after you add Google Cloud desktop-app credentials, VeilAssist can list **upcoming accepted meetings** (the same kind you see in Calendar after you accept an invite from email).
 - **Reminders** — optional Windows notifications a few minutes before a meeting (or at start time, depending on your setting).
-- **Meeting summary** — when you end a Listen session with **Stop**, ShadowAssist can generate a **short bullet summary** of what was captured in that session (transcript, asks, and overlay activity in the app). The summary is **stored on your computer** in app settings, so it remains available after you close or restart the app. If a full model request cannot run (for example, no API key is configured for your active provider, or the provider call fails), the app falls back to a **simple text recap** built from the captured session so you still get bullets instead of an empty “error” state.
+- **Meeting summary** — when you end a Listen session with **Stop**, VeilAssist can generate a **short bullet summary** of what was captured in that session (transcript, asks, and overlay activity in the app). The summary is **stored on your computer** in app settings, so it remains available after you close or restart the app. If a full model request cannot run (for example, no API key is configured for your active provider, or the provider call fails), the app falls back to a **simple text recap** built from the captured session so you still get bullets instead of an empty “error” state.
 
 This path does **not** require calendar integration: summaries come from the Listen session only. Calendar is an optional convenience layer for seeing scheduled meetings in one place.
 

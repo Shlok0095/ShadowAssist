@@ -1,4 +1,4 @@
-// Copyright (c) 2026 ShadowAssist. All rights reserved.
+// Copyright (c) 2026 VeilAssist. All rights reserved.
 // Google Calendar OAuth + accepted-events fetch.
 
 const crypto = require('crypto')
@@ -68,8 +68,8 @@ function validateClientConfig(clientId, clientSecret) {
 }
 
 function resolveOAuthClientConfig(storeGet) {
-  const envId = String(process.env.SHADOWASSIST_GOOGLE_CAL_CLIENT_ID || '').trim()
-  const envSecret = String(process.env.SHADOWASSIST_GOOGLE_CAL_CLIENT_SECRET || '').trim()
+  const envId = String(process.env.VeilAssist_GOOGLE_CAL_CLIENT_ID || '').trim()
+  const envSecret = String(process.env.VeilAssist_GOOGLE_CAL_CLIENT_SECRET || '').trim()
   const storeId = String(storeGet('googleCalendarClientId') || '').trim()
   const storeSecret = String(storeGet('googleCalendarClientSecret') || '').trim()
   const id = envId || storeId
@@ -238,7 +238,7 @@ async function completeGoogleOAuthWithLoopback(storeGet, storeSet) {
     server.on('error', finish(reject))
     activeOauthSession = {
       cancel: () => {
-        finish(reject)(new Error('Google sign-in cancelled from ShadowAssist.'))
+        finish(reject)(new Error('Google sign-in cancelled from VeilAssist.'))
       },
     }
     server.listen(0, '127.0.0.1', async () => {

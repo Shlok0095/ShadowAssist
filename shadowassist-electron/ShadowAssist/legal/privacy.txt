@@ -6,10 +6,10 @@ Last updated: 2026
    The application may store on your device: your consent record, settings, encrypted API keys, profile text you enter (such as persona and optional resume or job notes), and similar preferences. Anonymous usage counts may be recorded only if explicitly implemented in a future version; the current focus is local configuration.
 
 2. What we do not collect on our servers
-   ShadowAssist does not operate a central server that receives your conversations. Audio recordings are not stored for replay. Transcript text and OCR-derived text used during a session are not written to persistent app storage for long-term retention as part of the session pipeline described in the app.
+   VeilAssist does not operate a central server that receives your conversations. Audio recordings are not stored for replay. Transcript text and OCR-derived text used during a session are not written to persistent app storage for long-term retention as part of the session pipeline described in the app.
 
 3. Third-party AI (e.g. Groq and others you choose)
-   When you send a request, text context (and, for supported providers, an optional screen image) is sent directly from your device to the AI provider you configured using your own key. That provider’s privacy policy applies to that transmission. ShadowAssist does not route that data through a ShadowAssist-owned cloud in the default configuration.
+   When you send a request, text context (and, for supported providers, an optional screen image) is sent directly from your device to the AI provider you configured using your own key. That provider’s privacy policy applies to that transmission. VeilAssist does not route that data through a VeilAssist-owned cloud in the default configuration.
 
 4. Retention
    Session-oriented buffers are cleared on session end or after prolonged inactivity. Settings and profile data remain until you delete them or uninstall.

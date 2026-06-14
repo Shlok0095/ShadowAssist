@@ -6,7 +6,7 @@ import { cn } from '@/components/ui/cn'
 const USER_PROMPT = 'Contrast RAG with fine-tuning at scale'
 
 const AI_FIRST =
-  'Retrieval injects fresh evidence at inference time—higher p95 latency, materially lower factual drift when your corpus is curated. Fine-tuning reshapes the prior inside weights: capex-heavy to revise, excellent for tone and format. Production systems usually compose both. ShadowAssist keeps routing explicit: model + base URL in Settings, and only modalities you enable join the payload—no silent intermediary.'
+  'Retrieval injects fresh evidence at inference time—higher p95 latency, materially lower factual drift when your corpus is curated. Fine-tuning reshapes the prior inside weights: capex-heavy to revise, excellent for tone and format. Production systems usually compose both. VeilAssist keeps routing explicit: model + base URL in Settings, and only modalities you enable join the payload—no silent intermediary.'
 
 const OCR_SNIPPET = `Q3_GTM_Brief.pdf · viewport
 ─────────────────────────────
@@ -148,7 +148,7 @@ export function HeroLiveMock({ className }: HeroLiveMockProps) {
         </div>
         <div className="min-w-0 flex-1">
           <p className="font-mono text-[0.6rem] font-semibold uppercase tracking-[0.2em] text-zinc-400">Live capture</p>
-          <p className="truncate text-[0.6875rem] font-medium text-[#a1a1aa]">ShadowAssist · {modeLabel}</p>
+          <p className="truncate text-[0.6875rem] font-medium text-[#a1a1aa]">VeilAssist · {modeLabel}</p>
         </div>
         <span className="rounded-md border border-[#2a2a2a] bg-[#1a1a1a] px-2 py-1 text-[0.65rem] font-mono text-[#a1a1aa]">REC</span>
       </div>

@@ -205,7 +205,6 @@ function resolveSttConfigForProvider(sttProvider, get) {
  * @returns {{ cfg: object | null, sttVendor: string | null }}
  */
 function resolveSttConfigAndVendor(get) {
-  if (get('sttMode') !== 'cloud') return { cfg: null, sttVendor: null }
   const sttProvider = getEffectiveSttProvider(get)
   return resolveSttConfigForProvider(sttProvider, get)
 }

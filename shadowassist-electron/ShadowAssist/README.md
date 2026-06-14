@@ -1,7 +1,7 @@
-# ShadowAssist v2
+# VeilAssist v2
 
-[![Latest release](https://img.shields.io/github/v/release/Shlok0095/ShadowAssist?label=release)](https://github.com/Shlok0095/ShadowAssist/releases/latest)
-[![Landing site](https://img.shields.io/badge/site-landing-7c6cf0)](https://shlok0095.github.io/ShadowAssist/)
+[![Latest release](https://img.shields.io/github/v/release/Shlok0095/VeilAssist?label=release)](https://github.com/Shlok0095/VeilAssist/releases/latest)
+[![Landing site](https://img.shields.io/badge/site-landing-7c6cf0)](https://shlok0095.github.io/VeilAssist/)
 
 Undetectable AI for live meetings — discreet on-screen meeting assistant (React, Tailwind, Electron).
 
@@ -9,12 +9,12 @@ Undetectable AI for live meetings — discreet on-screen meeting assistant (Reac
 
 **Option A — double-click**
 
-`Launch-ShadowAssist.cmd` (in this folder)
+`Launch-VeilAssist.cmd` (in this folder)
 
 **Option B — terminal**
 
 ```powershell
-cd shadowassist-v2
+cd VeilAssist-v2
 npm install
 npm start
 ```
@@ -23,7 +23,7 @@ npm start
 
 The app often **stays in the system tray** after you close the overlay. Either:
 
-- Tray **^** → ShadowAssist icon → **Show** or **Quit**
+- Tray **^** → VeilAssist icon → **Show** or **Quit**
 - Or: `npm run start:force` (kills all `electron.exe`, then starts fresh)
 
 ## Scripts
@@ -35,8 +35,8 @@ The app often **stays in the system tray** after you close the overlay. Either:
 | `npm run dev` | Build + run with extra logging |
 | `npm run kill-electron` | Force-stop all `electron.exe` (also closes other Electron apps) |
 | `npm run start:force` | Kill electron + `npm start` |
-| `npm run dist` | Portable `ShadowAssist.exe` in `dist/` |
-| `npm run dist:release` | Portable + NSIS installer (`ShadowAssist-Setup-<version>.exe`) |
+| `npm run dist` | Portable `VeilAssist.exe` in `dist/` |
+| `npm run dist:release` | Portable + NSIS installer (`VeilAssist-Setup-<version>.exe`) |
 | `npm run dist:checksums` | Writes `dist/SHA256SUMS.txt` for `.exe` files (after a dist) |
 
 ## Go live (website & releases)
@@ -47,7 +47,7 @@ End-to-end checklist: [docs/LAUNCH_END_TO_END.md](docs/LAUNCH_END_TO_END.md).
 
 1. Repo **Settings** → **Pages** → **Build and deployment** → Source: **GitHub Actions**.
 2. Merge/push to **`stag`** (or run workflow **Deploy landing to GitHub Pages** manually). Workflow: `.github/workflows/deploy-landing.yml`.
-3. Public URL (this repo): **https://shlok0095.github.io/ShadowAssist/** — download buttons work after you publish a **Release** with the `.exe` assets (see below).
+3. Public URL (this repo): **https://shlok0095.github.io/VeilAssist/** — download buttons work after you publish a **Release** with the `.exe` assets (see below).
 
 ### Windows release binaries
 
@@ -70,7 +70,7 @@ The remote may still use **`main`** as default. To match this repo’s workflow:
 
    ```powershell
    gh auth login
-   gh repo edit Shlok0095/ShadowAssist --default-branch stag
+   gh repo edit Shlok0095/VeilAssist --default-branch stag
    ```
 
 2. **Or** a **personal access token** with repo admin (classic `repo`, or fine-grained **Administration** write on this repo):
@@ -100,7 +100,7 @@ The remote may still use **`main`** as default. To match this repo’s workflow:
 ## Structure
 
 ```
-shadowassist-v2/
+VeilAssist-v2/
 ├── main/           # Electron main process
 ├── lib/            # Store, AI client, hotkeys, screen capture
 ├── renderer/       # React + Tailwind
@@ -110,7 +110,7 @@ shadowassist-v2/
 ├── out/            # Vite build (generated)
 ├── landing/        # Static marketing page (deploy as-is)
 ├── docs/           # Launch & ops notes
-└── Launch-ShadowAssist.cmd
+└── Launch-VeilAssist.cmd
 ```
 
 ## Providers
@@ -120,4 +120,4 @@ Groq (default), OpenAI, NVIDIA NIM — keys in onboarding or Settings.
 ## Notes
 
 - **Do not** add a strict `Content-Security-Policy` meta that uses `script-src 'self'` with `file://` — it blocks bundled scripts. CSP was removed for that reason.
-- Single-instance lock: only one ShadowAssist v2 at a time; a second launch shows a dialog if the first is still in the tray.
+- Single-instance lock: only one VeilAssist v2 at a time; a second launch shows a dialog if the first is still in the tray.

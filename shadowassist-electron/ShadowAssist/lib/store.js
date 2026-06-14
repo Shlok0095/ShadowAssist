@@ -91,7 +91,7 @@ const schema = {
   customOpenaiModel: { type: 'string', default: 'gpt-4o' },
   audioFallbackKey: { type: 'string', default: '' },
   audioFallbackProvider: { type: 'string', default: 'openai' },
-  /** Empty = use built-in prompt from lib/defaultSystemPrompt.js (ShadowAssist base). */
+  /** Empty = use built-in prompt from lib/defaultSystemPrompt.js (VeilAssist base). */
   systemPrompt: { type: 'string', default: '' },
   // x/y optional — main seeds top-right when missing or off-screen
   overlayBounds: { type: 'object', default: { width: 480, height: 580 } },
@@ -126,12 +126,8 @@ const schema = {
   },
   playbooks: { type: 'array', default: [] },
   audioEnabled: { type: 'boolean', default: true },
-  /**
-   * 'local'  → Moonshine on-device STT (~68 MB, English-leaning, streaming + VAD). Multilingual: use Cloud.
-   * 'cloud'  → Groq / OpenAI Whisper API (requires key).
-   * Default 'local' for zero-config active listening.
-   */
-  sttMode: { type: 'string', default: 'local' },
+  /** 'cloud' → Groq / OpenAI Whisper API (requires key). Legacy 'local' migrated to cloud. */
+  sttMode: { type: 'string', default: 'cloud' },
   /**
    * Mic STT language hint for Whisper-style APIs.
    * en_hi_hinglish: auto-detect + prompt bias (English, Hindi, Hinglish).
@@ -144,12 +140,21 @@ const schema = {
   assistAutoTrigger: { type: 'boolean', default: false },
   ocrEnabled: { type: 'boolean', default: true },
   hasCompletedOnboarding: { type: 'boolean', default: false },
-  /** Extracted resume/profile text for optional meeting context (PDF/TXT upload) */
+  /** Extracted resume/profile text for optional meeting context (PDF/TXT upload) — legacy; migrated to contextProfiles */
   resumeContext: { type: 'string', default: '' },
-  /** Job description or role-specific instructions for the model */
+  /** Job description or role-specific instructions for the model — legacy; migrated to contextProfiles */
   jdContext: { type: 'string', default: '' },
-  /** Original filename for UI display */
+  /** Original filename for UI display — legacy */
   resumeSourceName: { type: 'string', default: '' },
+  /** Cluely-style tagged profile sections indexed for retrieval */
+  contextProfiles: {
+    type: 'object',
+    default: { meeting: '', interview: '', general: '' },
+  },
+  /** auto = calendar hint; all = search every tag */
+  contextRetrievalMode: { type: 'string', default: 'auto' },
+  /** Last index stats { chunkCount, indexedAt, tags } */
+  contextIndexMeta: { type: 'object', default: {} },
   /** Stealth Mode: true = hidden from screen capture (setContentProtection / WDA_EXCLUDEFROMCAPTURE on Windows) */
   stealth_mode: { type: 'boolean', default: false },
   /** Quick flag; authoritative record is consentRecord */
@@ -191,6 +196,14 @@ function getAll() {
 
 function clear() { store.clear() }
 
+function migrateSttModeFromLocal() {
+  try {
+    if (get('sttMode') === 'local') set('sttMode', 'cloud')
+  } catch {
+    set('sttMode', 'cloud')
+  }
+}
+
 function migrateSttProviderFromLegacy() {
   try {
     const cur = store.get('sttProvider')
@@ -225,9 +238,35 @@ function migrateLegacySystemPrompt() {
   }
 }
 
+function migrateContextProfilesFromLegacy() {
+  try {
+    const cur = get('contextProfiles')
+    const hasAny =
+      cur &&
+      typeof cur === 'object' &&
+      (String(cur.meeting || '').trim() ||
+        String(cur.interview || '').trim() ||
+        String(cur.general || '').trim())
+    if (hasAny) return
+
+    const resume = String(get('resumeContext') || '').trim()
+    const jd = String(get('jdContext') || '').trim()
+    if (!resume && !jd) {
+      set('contextProfiles', { meeting: '', interview: '', general: '' })
+      return
+    }
+    const meeting = [resume, jd].filter(Boolean).join('\n\n---\n\n')
+    set('contextProfiles', { meeting, interview: '', general: '' })
+  } catch {
+    set('contextProfiles', { meeting: '', interview: '', general: '' })
+  }
+}
+
 function runDataMigration() {
   migrateLegacySystemPrompt()
+  migrateSttModeFromLocal()
   migrateSttProviderFromLegacy()
+  migrateContextProfilesFromLegacy()
   const epoch = typeof get('dataEpoch') === 'number' ? get('dataEpoch') : 0
   if (epoch >= DATA_EPOCH) return
   for (const k of ENCRYPTED_KEYS) {

@@ -37,6 +37,13 @@
 html {
   height: 100%;
   background: transparent;
+  scrollbar-width: none;
+}
+
+html::-webkit-scrollbar {
+  width: 0;
+  height: 0;
+  display: none;
 }
 
 .settings-body {
@@ -46,6 +53,13 @@ html {
   font-family: 'Outfit', system-ui, sans-serif;
   background: transparent;
   color: #e2e8f0;
+  scrollbar-width: none;
+}
+
+.settings-body::-webkit-scrollbar {
+  width: 0;
+  height: 0;
+  display: none;
 }
 
 #root {
@@ -80,13 +94,14 @@ html {
  * Outer scroll (main column): minimal width + low-opacity thumb (Chromium honors 3px; Firefox: thin).
  */
 .settings-scroll-outer {
-  scrollbar-gutter: stable;
+  scrollbar-gutter: auto;
   scrollbar-width: thin;
-  scrollbar-color: rgba(148, 163, 184, 0.22) transparent;
+  scrollbar-color: rgb(var(--accent-rgb) / 0.28) transparent;
+  padding-right: 2px;
 }
 .settings-scroll-outer::-webkit-scrollbar {
-  width: 3px;
-  height: 3px;
+  width: 4px;
+  height: 4px;
 }
 .settings-scroll-outer::-webkit-scrollbar-button {
   display: none;
@@ -98,15 +113,15 @@ html {
   margin: 1px 0;
 }
 .settings-scroll-outer::-webkit-scrollbar-thumb {
-  background: rgba(148, 163, 184, 0.22);
+  background: rgb(var(--accent-rgb) / 0.28);
   border-radius: 999px;
   border: none;
 }
 .settings-scroll-outer::-webkit-scrollbar-thumb:hover {
-  background: rgba(196, 181, 253, 0.32);
+  background: rgb(var(--accent-rgb) / 0.45);
 }
 .settings-scroll-outer::-webkit-scrollbar-thumb:active {
-  background: rgba(196, 181, 253, 0.42);
+  background: rgb(var(--accent-rgb) / 0.55);
 }
 .settings-scroll-outer::-webkit-scrollbar-corner {
   background: transparent;
@@ -236,5 +251,25 @@ html {
 }
 .settings-row-tile:hover {
   border-color: rgba(255, 255, 255, 0.12);
+}
+
+.settings-nav-btn {
+  border: 1px solid transparent;
+  border-left-width: 2px;
+  border-left-color: transparent;
+  transition: background-color 0.15s ease, color 0.15s ease, border-color 0.15s ease;
+}
+.settings-nav-btn:hover {
+  background: rgba(255, 255, 255, 0.04);
+  color: rgb(212, 212, 216);
+}
+.settings-nav-btn-active {
+  border-color: rgba(255, 255, 255, 0.08);
+  border-left-color: rgb(var(--accent-rgb) / 1);
+  background: rgba(255, 255, 255, 0.06);
+  color: white;
+}
+.settings-nav-btn-active .settings-nav-sub {
+  color: rgb(161, 161, 170);
 }
 

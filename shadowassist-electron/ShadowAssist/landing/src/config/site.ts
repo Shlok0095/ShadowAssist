@@ -1,6 +1,6 @@
 /**
  * Build-time config (GitHub Actions / local .env / Vercel).
- * Fallbacks match the primary ShadowAssist repo when env is unset.
+ * Fallbacks match the primary VeilAssist repo when env is unset.
  */
 const repoOwner = import.meta.env.VITE_REPO_OWNER ?? 'Shlok0095'
 const repoName = import.meta.env.VITE_REPO_NAME ?? 'ShadowAssist'
@@ -28,7 +28,7 @@ function vanityDownloadPath(pathname: string) {
 }
 
 export const SITE = {
-  name: 'ShadowAssist',
+  name: 'VeilAssist',
   repoOwner,
   repoName,
   rollingTag,
@@ -53,10 +53,10 @@ export const SITE = {
   },
   /** Direct GitHub fallback (stable stag rolling release). */
   get downloadSetupExeDirectUrl() {
-    return releaseAssetUrl('ShadowAssist-Setup.exe')
+    return releaseAssetUrl('VeilAssist-Setup.exe')
   },
   get downloadPortableExeUrl() {
-    return releaseAssetUrl('ShadowAssist.exe')
+    return releaseAssetUrl('VeilAssist.exe')
   },
   get checksumsTxtUrl() {
     return releaseAssetUrl('SHA256SUMS.txt')

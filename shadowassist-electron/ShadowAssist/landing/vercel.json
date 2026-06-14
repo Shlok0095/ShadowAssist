@@ -1,15 +1,20 @@
 {
   "buildCommand": "npm run build",
   "outputDirectory": "dist",
+  "installCommand": "npm ci",
+  "framework": "vite",
+  "env": {
+    "VITE_SITE_ORIGIN": "https://veilassist.vercel.app"
+  },
   "redirects": [
     {
       "source": "/download",
-      "destination": "https://github.com/Shlok0095/ShadowAssist/releases/download/latest/ShadowAssist-Setup.exe",
+      "destination": "https://github.com/Shlok0095/ShadowAssist/releases/download/latest/VeilAssist-Setup.exe",
       "permanent": false
     },
     {
       "source": "/download/beta",
-      "destination": "https://github.com/Shlok0095/ShadowAssist/releases/download/latest-stag/ShadowAssist-Setup.exe",
+      "destination": "https://github.com/Shlok0095/ShadowAssist/releases/download/latest-stag/VeilAssist-Setup.exe",
       "permanent": false
     }
   ]

@@ -4,6 +4,7 @@
 import React, { useCallback, useEffect, useMemo, useRef, memo, useState } from 'react'
 import { createIpcShim } from '../../shared/ipcShim'
 import { inferResponseIntent } from '../../shared/responseIntent'
+import { SpeakerTranscriptBlock } from '../../shared/SpeakerTranscriptText'
 
 const panelIpc = createIpcShim()
 
@@ -275,9 +276,9 @@ function escapeHtml(s) {
 
 function renderInline(text) {
   return escapeHtml(text)
-    .replace(/\*\*(.+?)\*\*/g, '<strong class="font-semibold text-gray-100">$1</strong>')
-    .replace(/\*([^*]+)\*/g, '<em class="italic text-gray-300">$1</em>')
-    .replace(/`([^`]+)`/g, '<code class="rounded bg-white/10 px-1 py-0.5 text-[0.85em] text-accent-light/90 font-mono">$1</code>')
+    .replace(/\*\*(.+?)\*\*/g, '<strong class="font-semibold" style="color:rgba(220,238,248,0.95)">$1</strong>')
+    .replace(/\*([^*]+)\*/g, '<em class="italic" style="color:rgba(200,225,240,0.75)">$1</em>')
+    .replace(/`([^`]+)`/g, '<code class="rounded px-1 py-0.5 text-[0.85em] font-mono" style="background:rgba(160,210,238,0.12);color:rgba(200,235,255,0.90)">$1</code>')
 }
 
 function CodeBlock({ lang, content, suppressHighlight }) {
@@ -311,29 +312,31 @@ function CodeBlock({ lang, content, suppressHighlight }) {
   }
 
   return (
-    <div className="my-3 w-full overflow-hidden rounded-xl border border-accent/15 bg-[#0d1117]/95 shadow-[inset_0_1px_0_rgba(255,255,255,0.04)]">
-      <div className="flex items-center justify-between border-b border-white/[0.06] bg-black/30 px-3 py-1.5">
-        <span className="font-mono text-[10px] font-medium uppercase tracking-wider text-accent-mid/90">
+    <div className="crystal-code-block my-3 w-full overflow-hidden rounded-xl shadow-[inset_0_1px_0_rgba(255,255,255,0.06)]">
+      <div className="crystal-code-header flex items-center justify-between px-3 py-1.5">
+        <span className="font-mono text-[10px] font-medium uppercase tracking-wider crystal-muted">
           {normalizeLang(lang) || 'code'}
         </span>
         <button
           type="button"
           onClick={copy}
-          className={`min-w-[3.25rem] cursor-default text-right text-[10px] font-medium transition-colors ${
-            copied ? 'text-accent-light' : 'text-accent-mid/90 hover:text-accent-light'
+          className={`min-w-[3.25rem] cursor-default text-right text-[10px] font-medium transition-colors crystal-muted hover:text-white/90 ${
+            copied ? 'text-[rgba(200,235,255,0.92)]' : ''
           }`}
         >
           {copied ? 'Copied' : 'Copy'}
         </button>
       </div>
       <pre
-        className="code-scroll-x max-w-full overflow-x-auto p-3 font-mono text-[12.5px] leading-[1.65]"
+        className="code-scroll-x max-w-full overflow-x-auto p-3 font-mono text-[12.5px] leading-[1.65] crystal-answer-text"
         style={{ tabSize: 2 }}
       >
         {html ? (
           <code className="hljs !bg-transparent block text-left" dangerouslySetInnerHTML={{ __html: html }} />
         ) : (
-          <code className="block whitespace-pre text-gray-300">{content}</code>
+          <code className="block whitespace-pre" style={{ color: 'rgba(200,225,240,0.82)' }}>
+            {content}
+          </code>
         )}
       </pre>
     </div>
@@ -342,15 +345,16 @@ function CodeBlock({ lang, content, suppressHighlight }) {
 
 function MarkdownNodes({ nodes, proseClass = '' }) {
   return (
-    <div className={`space-y-1.5 text-left text-gray-200 [&_p]:leading-[1.65] [&_li]:leading-relaxed ${proseClass}`}>
+    <div className={`space-y-1.5 text-left crystal-answer-text [&_p]:leading-[1.65] [&_li]:leading-relaxed ${proseClass}`}>
       {nodes.map((n, i) => {
                 if (n.type === 'code') return <CodeBlock key={i} lang={n.lang} content={n.content} />
-                if (n.type === 'hr') return <hr key={i} className="my-3 border-white/10" />
+                if (n.type === 'hr') return <hr key={i} className="crystal-divider my-3 border-t" />
                 if (n.type === 'h1')
                   return (
                     <h1
                       key={i}
-                      className="mb-1.5 mt-3 border-b border-white/10 pb-1 text-base font-bold text-gray-50 first:mt-0"
+                      className="mb-1.5 mt-3 crystal-divider border-b pb-1 text-base font-bold first:mt-0"
+                      style={{ color: 'rgba(225, 240, 250, 0.95)' }}
                       dangerouslySetInnerHTML={{ __html: renderInline(n.content) }}
                     />
                   )
@@ -358,7 +362,8 @@ function MarkdownNodes({ nodes, proseClass = '' }) {
                   return (
                     <h2
                       key={i}
-                      className="mb-1 mt-2 text-sm font-bold text-gray-100 first:mt-0"
+                      className="mb-1 mt-2 text-sm font-bold first:mt-0"
+                      style={{ color: 'rgba(215, 232, 245, 0.92)' }}
                       dangerouslySetInnerHTML={{ __html: renderInline(n.content) }}
                     />
                   )
@@ -366,13 +371,14 @@ function MarkdownNodes({ nodes, proseClass = '' }) {
                   return (
                     <h3
                       key={i}
-                      className="mb-0.5 mt-2 text-[13px] font-semibold text-accent-mid first:mt-0"
+                      className="mb-0.5 mt-2 text-[13px] font-semibold first:mt-0"
+                      style={{ color: 'rgba(200, 230, 248, 0.88)' }}
                       dangerouslySetInnerHTML={{ __html: renderInline(n.content) }}
                     />
                   )
                 if (n.type === 'blockquote')
                   return (
-                    <blockquote key={i} className="my-1.5 border-l-2 border-accent/40 pl-3 text-[13px] text-gray-400 italic">
+                    <blockquote key={i} className="my-1.5 border-l-2 pl-3 text-[13px] italic crystal-muted" style={{ borderColor: 'rgba(180,225,255,0.35)' }}>
                       {n.items.map((x, j) => (
                         <p key={j} dangerouslySetInnerHTML={{ __html: renderInline(x) }} />
                       ))}
@@ -384,14 +390,14 @@ function MarkdownNodes({ nodes, proseClass = '' }) {
                       {n.items.map((item, j) => (
                         <li key={j} className="flex flex-col gap-0.5">
                           <span className="flex gap-1.5">
-                            <span className="mt-[0.4em] h-1.5 w-1.5 shrink-0 rounded-full bg-accent/60" />
+                            <span className="mt-[0.4em] h-1.5 w-1.5 shrink-0 rounded-full" style={{ background: 'rgba(180,225,255,0.45)' }} />
                             <span dangerouslySetInnerHTML={{ __html: renderInline(item.text) }} />
                           </span>
                           {item.subs?.length > 0 && (
                             <ul className="mt-0.5 space-y-0.5 pl-5">
                               {item.subs.map((s, k) => (
-                                <li key={k} className="flex gap-1.5 text-[12px] text-gray-400">
-                                  <span className="mt-[0.45em] h-1 w-1 shrink-0 rounded-full bg-white/20" />
+                                <li key={k} className="flex gap-1.5 text-[12px] crystal-muted">
+                                  <span className="mt-[0.45em] h-1 w-1 shrink-0 rounded-full" style={{ background: 'rgba(180,225,255,0.25)' }} />
                                   <span dangerouslySetInnerHTML={{ __html: renderInline(s) }} />
                                 </li>
                               ))}
@@ -407,14 +413,14 @@ function MarkdownNodes({ nodes, proseClass = '' }) {
                       {n.items.map((item, j) => (
                         <li key={j} className="flex flex-col gap-0.5">
                           <span className="flex gap-1.5">
-                            <span className="min-w-[1.1rem] shrink-0 text-right text-[11px] font-semibold text-accent/70">{j + 1}.</span>
+                            <span className="min-w-[1.1rem] shrink-0 text-right text-[11px] font-semibold crystal-muted">{j + 1}.</span>
                             <span dangerouslySetInnerHTML={{ __html: renderInline(item.text) }} />
                           </span>
                           {item.subs?.length > 0 && (
                             <ul className="mt-0.5 space-y-0.5 pl-7">
                               {item.subs.map((s, k) => (
-                                <li key={k} className="flex gap-1.5 text-[12px] text-gray-400">
-                                  <span className="mt-[0.45em] h-1 w-1 shrink-0 rounded-full bg-white/20" />
+                                <li key={k} className="flex gap-1.5 text-[12px] crystal-muted">
+                                  <span className="mt-[0.45em] h-1 w-1 shrink-0 rounded-full" style={{ background: 'rgba(180,225,255,0.25)' }} />
                                   <span dangerouslySetInnerHTML={{ __html: renderInline(s) }} />
                                 </li>
                               ))}
@@ -424,7 +430,7 @@ function MarkdownNodes({ nodes, proseClass = '' }) {
                       ))}
                     </ol>
                   )
-        return <p key={i} className="text-[13px] leading-[1.65]" dangerouslySetInnerHTML={{ __html: renderInline(n.content) }} />
+        return <p key={i} className="text-[13px] leading-[1.65] crystal-answer-text" dangerouslySetInnerHTML={{ __html: renderInline(n.content) }} />
       })}
     </div>
   )
@@ -461,7 +467,7 @@ const BriefAnswer = memo(function BriefAnswer({ text, teleprompter = false, allo
   if (fallback) {
     return (
       <p
-        className={tp ? 'text-[17px] leading-[1.85] text-gray-50' : 'text-[15px] leading-[1.8] text-gray-100'}
+        className={`crystal-answer-text ${tp ? 'text-[17px] leading-[1.85]' : 'text-[15px] leading-[1.8]'}`}
         dangerouslySetInnerHTML={{ __html: renderInline(text) }}
       />
     )
@@ -470,31 +476,31 @@ const BriefAnswer = memo(function BriefAnswer({ text, teleprompter = false, allo
   return (
     <div className={`mx-auto w-full space-y-4 text-left ${tp ? 'max-w-[46rem]' : 'max-w-[44rem]'}`}>
       {takeaway ? (
-        <div className="rounded-xl border border-accent/15 bg-accent/[0.06] px-3.5 py-3">
+        <div className="crystal-takeaway rounded-xl px-3.5 py-3">
           <div className="mb-1.5 flex items-center justify-between gap-2">
-            <p className="text-[10px] font-semibold uppercase tracking-wider text-accent/70">Takeaway</p>
+            <p className="crystal-sublabel text-[10px] font-semibold uppercase tracking-wider normal-case">Takeaway</p>
             <button
               type="button"
               onClick={() => doCopy('takeaway', takeaway)}
-              className="text-[10px] font-medium text-accent/80 hover:text-accent-light"
+              className="text-[10px] font-medium crystal-muted hover:text-white/90"
             >
               {copied === 'takeaway' ? 'Copied' : 'Copy'}
             </button>
           </div>
           <p
-            className={`font-medium leading-[1.65] text-gray-50 ${tp ? 'text-[17px]' : 'text-[15px]'}`}
+            className={`crystal-answer-text font-medium leading-[1.65] ${tp ? 'text-[17px]' : 'text-[15px]'}`}
             dangerouslySetInnerHTML={{ __html: renderInline(takeaway) }}
           />
         </div>
       ) : null}
       {prose.length > 0 ? (
-        <div className={`space-y-3 text-gray-200 ${tp ? 'text-[16px] leading-[1.85]' : 'text-[15px] leading-[1.8]'}`}>
+        <div className={`space-y-3 crystal-answer-text ${tp ? 'text-[16px] leading-[1.85]' : 'text-[15px] leading-[1.8]'}`}>
           <MarkdownNodes
             nodes={prose}
             proseClass={
               tp
-                ? '[&_p]:text-[16px] [&_p]:leading-[1.85] [&_p]:text-gray-100'
-                : '[&_p]:text-[15px] [&_p]:leading-[1.8] [&_p]:text-gray-200'
+                ? '[&_p]:text-[16px] [&_p]:leading-[1.85]'
+                : '[&_p]:text-[15px] [&_p]:leading-[1.8]'
             }
           />
         </div>
@@ -502,11 +508,11 @@ const BriefAnswer = memo(function BriefAnswer({ text, teleprompter = false, allo
       {code.length > 0 ? (
         <div className="space-y-2">
           <div className="flex items-center justify-between gap-2">
-            <p className="text-[10px] font-semibold uppercase tracking-wider text-zinc-500">Solution</p>
+            <p className="crystal-sublabel text-[10px] font-semibold uppercase tracking-wider normal-case">Solution</p>
             <button
               type="button"
               onClick={() => doCopy('code', codeText)}
-              className="text-[10px] font-medium text-accent/80 hover:text-accent-light"
+              className="text-[10px] font-medium crystal-muted hover:text-white/90"
             >
               {copied === 'code' ? 'Copied' : 'Copy code'}
             </button>
@@ -519,13 +525,13 @@ const BriefAnswer = memo(function BriefAnswer({ text, teleprompter = false, allo
           <button
             type="button"
             onClick={() => setDetailsOpen((o) => !o)}
-            className="flex w-full items-center justify-between rounded-lg border border-white/[0.08] bg-white/[0.03] px-3 py-2 text-left text-[11px] font-medium text-zinc-400 transition-colors hover:bg-white/[0.05] hover:text-zinc-200"
+            className="crystal-panel-inset flex w-full items-center justify-between rounded-lg px-3 py-2 text-left text-[11px] font-medium crystal-muted transition-colors hover:text-white/90"
           >
             <span>{detailsOpen ? 'Hide lists & steps' : 'Show lists & steps'}</span>
-            <span className="text-zinc-600">{detailsOpen ? '▲' : '▼'}</span>
+            <span>{detailsOpen ? '▲' : '▼'}</span>
           </button>
           {detailsOpen ? (
-            <div className="mt-2 border-t border-white/[0.06] pt-2">
+            <div className="crystal-divider mt-2 border-t pt-2">
               <MarkdownNodes nodes={details} />
             </div>
           ) : null}
@@ -572,12 +578,12 @@ const MessageBubble = memo(function MessageBubble({
       <div
         className={
           isUser
-            ? 'max-w-[86%] rounded-xl border border-accent/20 bg-accent/8 px-3 py-2 text-left text-[12.5px] text-gray-100'
+            ? 'crystal-user-bubble max-w-[86%] rounded-xl px-3 py-2 text-left text-[12.5px]'
             : isError
               ? 'w-full text-left'
               : isBriefAi
-                ? `w-full text-left ${animateIn ? 'animate-answer-in' : ''}`
-                : `w-full text-left text-[12.5px] text-gray-200 ${animateIn ? 'animate-answer-in' : ''}`
+                ? `w-full text-left crystal-answer-shell px-3.5 py-3 ${animateIn ? 'animate-answer-in' : ''}`
+                : `crystal-answer-text w-full text-left text-[12.5px] crystal-answer-shell px-3.5 py-3 ${animateIn ? 'animate-answer-in' : ''}`
         }
       >
         {role === 'error' ? (
@@ -608,14 +614,17 @@ function ComposingShell({ onAbort, teleprompter = false }) {
 
   return (
     <div
-      className={`mx-auto w-full min-h-[7rem] rounded-2xl border border-white/[0.08] bg-white/[0.04] px-4 py-5 ${
+      className={`crystal-panel-inset mx-auto w-full min-h-[7rem] rounded-2xl px-4 py-5 ${
         teleprompter ? 'max-w-[46rem]' : 'max-w-[44rem]'
       }`}
     >
       <div className="flex items-center justify-between gap-3">
-        <div className="flex items-center gap-2 text-accent/85">
-          <span className="h-2 w-2 animate-pulse rounded-full bg-accent/80" />
-          <span className={`font-medium ${teleprompter ? 'text-[15px]' : 'text-[13px]'}`}>
+        <div className="flex items-center gap-2" style={{ color: 'rgba(200,235,255,0.88)' }}>
+          <span
+            className="h-2 w-2 animate-pulse rounded-full"
+            style={{ background: 'rgba(180,225,255,0.65)', boxShadow: '0 0 8px rgba(160,215,245,0.45)' }}
+          />
+          <span className={`crystal-answer-text font-medium ${teleprompter ? 'text-[15px]' : 'text-[13px]'}`}>
             {slow ? 'Still composing…' : 'Composing answer…'}
           </span>
         </div>
@@ -623,13 +632,13 @@ function ComposingShell({ onAbort, teleprompter = false }) {
           <button
             type="button"
             onClick={onAbort}
-            className="rounded-lg border border-white/10 bg-white/[0.04] px-2.5 py-1 text-[10px] font-medium text-zinc-400 hover:bg-white/[0.08] hover:text-zinc-200"
+            className="crystal-panel-inset rounded-lg px-2.5 py-1 text-[10px] font-medium crystal-muted hover:text-white/90"
           >
             Stop
           </button>
         ) : null}
       </div>
-      <p className="mt-3 text-[12px] leading-relaxed text-zinc-500">
+      <p className="crystal-muted mt-3 text-[12px] leading-relaxed">
         Your answer will appear fully formatted when ready — no raw draft on screen.
       </p>
     </div>
@@ -646,18 +655,18 @@ function DetailedStreamPreview({ streamPreview, onAbort, teleprompter = false })
   return (
     <div className={`mx-auto w-full space-y-2 ${teleprompter ? 'max-w-[46rem]' : 'max-w-[44rem]'}`}>
       <div className="flex items-center justify-between gap-2">
-        <span className="text-[10px] text-accent/75">Draft preview</span>
+        <span className="crystal-sublabel text-[10px] normal-case">Draft preview</span>
         {onAbort ? (
           <button
             type="button"
             onClick={onAbort}
-            className="rounded-lg border border-white/10 px-2 py-0.5 text-[10px] text-zinc-500 hover:text-zinc-300"
+            className="crystal-panel-inset rounded-lg px-2 py-0.5 text-[10px] crystal-muted hover:text-white/90"
           >
             Stop
           </button>
         ) : null}
       </div>
-      <div className="rounded-xl border border-white/[0.06] bg-white/[0.02] px-3.5 py-3 opacity-90">
+      <div className="crystal-panel-inset rounded-xl px-3.5 py-3 opacity-90">
         <MarkdownNodes nodes={nodes} />
       </div>
     </div>
@@ -670,8 +679,8 @@ function AnswerPanelToolbar({ answerStyle, overlayAnswerView, onViewChange }) {
     void panelIpc?.invoke('set-store', 'overlayAnswerView', v)
   }
   return (
-    <div className="mb-3 flex flex-wrap items-center justify-between gap-2 border-b border-white/[0.06] pb-2">
-      <div className="flex items-center gap-1 rounded-lg border border-white/[0.08] bg-white/[0.03] p-0.5">
+    <div className="crystal-divider mb-3 flex flex-wrap items-center justify-between gap-2 border-b pb-2">
+      <div className="flex items-center gap-1.5">
         {[
           { id: 'latest', label: 'Latest' },
           { id: 'history', label: 'History' },
@@ -680,17 +689,20 @@ function AnswerPanelToolbar({ answerStyle, overlayAnswerView, onViewChange }) {
             key={opt.id}
             type="button"
             onClick={() => setView(opt.id)}
-            className={`rounded-md px-2.5 py-1 text-[10px] font-medium transition-colors ${
+            className={[
+              'crystal-tab-btn cursor-default transition-all duration-150 active:scale-95',
               overlayAnswerView === opt.id
-                ? 'bg-accent/15 text-accent-light'
-                : 'text-zinc-500 hover:text-zinc-300'
-            }`}
+                ? opt.id === 'history'
+                  ? 'crystal-tab-btn-history-active'
+                  : 'crystal-tab-btn-latest-active'
+                : 'crystal-tab-btn-idle',
+            ].join(' ')}
           >
             {opt.label}
           </button>
         ))}
       </div>
-      <span className="text-[10px] text-zinc-600">
+      <span className="crystal-sublabel text-[10px] normal-case">
         {answerStyle === 'brief' ? 'Brief · summary layout' : 'Detailed · full markdown'}
       </span>
     </div>
@@ -839,23 +851,26 @@ const ResponsePanelInner = React.forwardRef(function ResponsePanel(
           />
         )}
         {messages.length === 0 && !isThinking && (
-          <div className="flex flex-1 flex-col items-center justify-center px-4 py-8 text-center text-gray-500">
-            <div className="mb-3 flex h-12 w-12 items-center justify-center rounded-full border-2 border-white/10">
+          <div className="crystal-muted flex flex-1 flex-col items-center justify-center px-4 py-8 text-center">
+            <div
+              className="mb-3 flex h-12 w-12 items-center justify-center rounded-full border-2"
+              style={{ borderColor: 'rgba(180,225,255,0.22)' }}
+            >
               <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5">
                 <path d="M12 2a3 3 0 0 0-3 3v7a3 3 0 0 0 6 0V5a3 3 0 0 0-3-3z" />
                 <path d="M19 10v2a7 7 0 0 1-14 0v-2" />
               </svg>
             </div>
-            <p className="text-sm font-medium">Start Listen, then ask for help</p>
-            <p className="mt-2 max-w-[18rem] text-xs leading-relaxed opacity-90">
-              <strong className="font-medium text-zinc-400">Ctrl+Enter</strong> — help from screen or audio
+            <p className="crystal-label text-sm font-medium">Start Listen, then ask for help</p>
+            <p className="mt-2 max-w-[18rem] text-xs leading-relaxed crystal-sub">
+              <strong className="font-medium text-white/75">Ctrl+Enter</strong> — help from screen or audio
               <br />
-              <strong className="font-medium text-zinc-400">Enter</strong> in the box — read screen
+              <strong className="font-medium text-white/75">Enter</strong> in the box — read screen
               <br />
               Type a question for a direct answer
             </p>
             {!sessionOn && (
-              <p className="mt-3 text-[11px] text-zinc-600">Turn on Listen in the bar above to capture meeting audio.</p>
+              <p className="crystal-sublabel mt-3 text-[11px] normal-case">Turn on Listen in the bar above to capture meeting audio.</p>
             )}
           </div>
         )}
@@ -875,16 +890,18 @@ const ResponsePanelInner = React.forwardRef(function ResponsePanel(
                 screen: turn.screenContext || '',
               }) === 'coding'
             return (
-              <div key={turn.id} className={idx > 0 ? 'mt-8 pt-8 border-t border-white/[0.06]' : ''}>
+              <div key={turn.id} className={idx > 0 ? 'crystal-divider mt-8 border-t pt-8' : ''}>
                 {!overlayTeleprompter && (
                   <div className="mb-3 flex items-center gap-2">
-                    <span className={`text-[10px] font-medium ${highlightLatest ? 'text-accent/80' : 'text-zinc-600'}`}>
+                    <span
+                      className={`text-[10px] font-medium ${highlightLatest ? 'crystal-label' : 'crystal-muted'}`}
+                    >
                       {highlightLatest ? 'Latest reply' : answerView === 'history' ? `Exchange ${exchangeNum}` : 'Current'}
                     </span>
                     {ribbonSource && (
                       <>
-                        <span className="h-px flex-1 bg-white/[0.05]" />
-                        <span className="text-[10px] text-zinc-700">{labelForAskSource(ribbonSource)}</span>
+                        <span className="h-px flex-1" style={{ background: 'rgba(180,225,255,0.10)' }} />
+                        <span className="crystal-sublabel text-[10px] normal-case">{labelForAskSource(ribbonSource)}</span>
                       </>
                     )}
                   </div>
@@ -893,21 +910,38 @@ const ResponsePanelInner = React.forwardRef(function ResponsePanel(
                 <div className="space-y-4">
                   {turn.user && !overlayTeleprompter && (
                     <div>
-                      <p className="mb-1 text-[10px] text-zinc-600">You</p>
+                      <p className="crystal-sublabel mb-1 text-[10px] normal-case">You</p>
                       <MessageBubble role="user" text={turn.user.text} />
                     </div>
                   )}
-                  {turn.heard && !overlayTeleprompter && (
+                  {turn.heard && !overlayTeleprompter && !(isLatestTurn && hasActiveReply) && (
                     <div>
-                      <p className="mb-1 text-[10px] text-zinc-600">Question</p>
-                      <p className="whitespace-pre-wrap text-[13px] leading-relaxed text-zinc-300">
-                        {turn.heard.text}
+                      <p className="crystal-sublabel mb-1 text-[10px] normal-case">From conversation</p>
+                      <p className="whitespace-pre-wrap text-[13px] font-medium leading-relaxed">
+                        <SpeakerTranscriptBlock
+                          text={turn.heard.text}
+                          bodyClassName="crystal-answer-text"
+                        />
                       </p>
+                      {turn.heard.context && (
+                        <div className="mt-2 whitespace-pre-wrap text-[11px] leading-relaxed opacity-80">
+                          <span className="crystal-sublabel mb-0.5 block text-[9px] normal-case">Earlier</span>
+                          <SpeakerTranscriptBlock
+                            text={turn.heard.context}
+                            bodyClassName="crystal-muted"
+                            lineClassName="block"
+                          />
+                        </div>
+                      )}
                     </div>
                   )}
                   {turn.replies.length > 0 && (
                     <div>
-                      {!overlayTeleprompter && <p className="mb-2 text-[10px] text-accent/70">Answer</p>}
+                      {!overlayTeleprompter && (
+                        <p className="crystal-sublabel mb-2 text-[10px] normal-case">
+                          Answer
+                        </p>
+                      )}
                       <div className="space-y-2">
                         {turn.replies.map((m) => (
                           <MessageBubble
@@ -931,9 +965,9 @@ const ResponsePanelInner = React.forwardRef(function ResponsePanel(
         </div>
 
         {hasActiveReply && isThinking && (
-          <div className={`mx-auto w-full max-w-full ${messages.length > 0 ? 'mt-6 pt-6 border-t border-white/[0.06]' : 'mt-2'}`}>
+          <div className={`mx-auto w-full max-w-full ${messages.length > 0 ? 'crystal-divider mt-6 border-t pt-6' : 'mt-2'}`}>
             {!overlayTeleprompter && activeAskSource && (
-              <p className="mb-2 text-[10px] text-zinc-600">{labelForAskSource(activeAskSource)}</p>
+              <p className="crystal-sublabel mb-2 text-[10px] normal-case">{labelForAskSource(activeAskSource)}</p>
             )}
             {answerStyle === 'brief' ? (
               <ComposingShell onAbort={onAbort} teleprompter={overlayTeleprompter} />

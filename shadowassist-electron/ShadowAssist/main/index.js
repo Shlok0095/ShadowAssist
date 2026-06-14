@@ -1,4 +1,4 @@
-// Copyright (c) 2026 ShadowAssist. All rights reserved.
+// Copyright (c) 2026 VeilAssist. All rights reserved.
 // Unauthorized copying or distribution is prohibited.
 
 const { app, BrowserWindow, ipcMain, globalShortcut, Tray, nativeImage, screen, dialog, Menu, clipboard, shell, Notification } = require('electron')
@@ -6,14 +6,14 @@ const path = require('path')
 const fs = require('fs')
 const fsPromises = require('fs').promises
 
-app.setPath('userData', path.join(app.getPath('appData'), 'ShadowAssist-v2'))
+app.setPath('userData', path.join(app.getPath('appData'), 'VeilAssist-v2'))
 app.commandLine.appendSwitch('disable-gpu-shader-disk-cache')
 /** Skip default menu work when using frameless windows (Electron performance checklist). */
 Menu.setApplicationMenu(null)
 
 /** Windows: taskbar / Task Manager identity for the packaged app (not the generic Electron entry). */
 if (process.platform === 'win32') {
-  app.setAppUserModelId('com.local.shadowassist.v2')
+  app.setAppUserModelId('com.local.veilassist.v2')
 }
 
 const gotLock = app.requestSingleInstanceLock()
@@ -23,11 +23,11 @@ if (!gotLock) {
     try {
       dialog.showMessageBoxSync({
         type: 'info',
-        title: 'ShadowAssist',
-        message: 'ShadowAssist is already running.',
+        title: 'VeilAssist',
+        message: 'VeilAssist is already running.',
         detail:
           'Hiding the overlay does not quit the app — it stays in the system tray.\n\n' +
-          '• Tray (near the clock): right-click the ShadowAssist icon → Open or Quit\n' +
+          '• Tray (near the clock): right-click the VeilAssist icon → Open or Quit\n' +
           '• In the overlay: use Quit (fully exit) next to Hide\n' +
           '• Or press Ctrl+\\ to show the overlay\n\n' +
           'To fully exit: tray → Quit, or Quit in the overlay title bar.',
@@ -39,7 +39,14 @@ if (!gotLock) {
 const store = require('../lib/store')
 const { resolveSystemPrompt } = require('../lib/defaultSystemPrompt')
 const { getAnswerStyleSuffix } = require('../lib/answerStyle')
-const { looksLikeCodeScreen } = require('../lib/responseIntent')
+const contextVectorStore = require('../lib/contextVectorStore')
+const {
+  inferContextTagFromCalendar,
+  extractRetrievalQuery,
+  CONTEXT_RETRIEVAL_MODES,
+} = require('../lib/contextProfiles')
+const googleCalendar = require('../lib/googleCalendar')
+const rapidOcr = require('../lib/rapidOcrMain')
 store.runDataMigration()
 const hotkeys = require('../lib/hotkeys')
 const screenCapture = require('../lib/screenCapture')
@@ -51,8 +58,8 @@ const {
 const { transcribeLinearPcm } = require('../lib/nvidiaRivaStt')
 const sessionMemory = require('../lib/sessionMemory')
 const listenSessionSummaries = require('../lib/listenSessionSummaries')
+const { parseTranscriptEchoForDisplay } = require('../lib/transcriptEchoDisplay')
 const { detectMeetingForegroundOrScan, MEETING_POLL_MS } = require('../lib/meetingForegroundWindows')
-const googleCalendar = require('../lib/googleCalendar')
 
 listenSessionSummaries.initPersistence({
   load: () => store.get('listenSessionSummaries'),
@@ -279,7 +286,7 @@ async function runCalendarReminderTick() {
       const body = `${String(m.title || 'Upcoming meeting').slice(0, 120)}`
       sendToOverlay('notify', { message: `📅 ${title}: ${body}` })
       try {
-        new Notification({ title: 'ShadowAssist', body: `${title}: ${body}` }).show()
+        new Notification({ title: 'VeilAssist', body: `${title}: ${body}` }).show()
       } catch (_) {}
     }
   } catch (_) {}
@@ -512,7 +519,7 @@ function showMeetingToastFromMain(payload) {
     if (visible) return
     try {
       new Notification({
-        title: 'ShadowAssist',
+        title: 'VeilAssist',
         body: headline.slice(0, 80),
       }).show()
       console.log('[meeting-toast] native notification fallback shown')
@@ -665,7 +672,7 @@ function quitApplication() {
     sessionMemory.shutdown()
   } catch (_) {}
   try {
-    screenCapture.terminateTesseract()
+    screenCapture.terminateOcr()
   } catch (_) {}
   stopMeetingForegroundPoll()
   closeMeetingToastWindow()
@@ -698,18 +705,14 @@ function finalizeBootstrap() {
   if (appCoreStarted) return
   appCoreStarted = true
   initApp().catch((err) => {
-    console.error('[ShadowAssist-v2] initApp failed:', err)
+    console.error('[VeilAssist-v2] initApp failed:', err)
     app.quit()
   })
 }
 
-/** After legal consent: run onboarding (BYOK + API test) or start tray/overlay. */
+/** After legal consent: start tray/overlay (API keys & prompt live in Settings). */
 function continueAfterConsent() {
   if (appCoreStarted) return
-  if (!hasCompletedOnboardingFlag()) {
-    createOnboardingWindow()
-    return
-  }
   finalizeBootstrap()
 }
 
@@ -839,7 +842,7 @@ function createSettingsWindow() {
 
 function setupTray() {
   tray = new Tray(createTrayIcon(false))
-  tray.setToolTip('ShadowAssist — tray: Open / Hide, Quit to fully exit')
+  tray.setToolTip('VeilAssist — tray: Open / Hide, Quit to fully exit')
   const updateTrayMenu = () => {
     tray.setContextMenu(Menu.buildFromTemplate([
       { label: overlayVisible ? 'Hide' : 'Open', click: toggleOverlay },
@@ -897,6 +900,38 @@ const CONTEXT_ROUTING_RULES = `
 - Use both when present; if one is empty, answer from the other and any image.
 - If the screenshot may include this assistant's overlay, do not repeat a prior answer unless the user asks again.
 - When ## QUESTION is present, treat it as the primary ask.`
+
+let contextReindexTimer = null
+function scheduleContextReindex() {
+  clearTimeout(contextReindexTimer)
+  contextReindexTimer = setTimeout(async () => {
+    try {
+      const profiles = store.get('contextProfiles') || {}
+      const stats = await contextVectorStore.indexProfiles(profiles, app.getPath('userData'))
+      store.set('contextIndexMeta', stats)
+    } catch (e) {
+      console.warn('[context] reindex failed:', e?.message || e)
+    }
+  }, 800)
+}
+
+async function buildProfileContextBlock({ userQ, structured, transcript, cleanScreen }) {
+  try {
+    await contextVectorStore.loadIndex(app.getPath('userData'))
+    const query = extractRetrievalQuery({ userQ, structured, transcript, cleanScreen })
+    if (!query.trim()) return ''
+    let tag = store.get('contextRetrievalMode') || 'auto'
+    if (tag === 'auto') {
+      tag = await inferContextTagFromCalendar((k) => store.get(k), (k, v) => store.set(k, v), googleCalendar)
+    } else if (tag === 'all') {
+      tag = null
+    }
+    return contextVectorStore.formatContextBlock(query, { tag })
+  } catch (e) {
+    console.warn('[context] retrieval failed:', e?.message || e)
+    return ''
+  }
+}
 
 /** Labels the overlay by what was actually included in the model request (session audio often arrives only on the main process). */
 function deriveDisplayAskSource({ hasQuestion, hasAudio, includeScreen, hasVision }) {
@@ -961,30 +996,29 @@ async function handleAskAI(userQuestion, audioTranscript, _askMeta = {}) {
   /** Route between transcribing (audio) and screen mode — structured user-turn routing. */
   const isScreenMode = _askMeta?.mode === 'screen' || _askMeta?.assistTrigger === 'screen'
   const cleanScreen = String(screenOcrText || '').trim()
-  const resumeCtx = (store.get('resumeContext') || '').trim()
-  const jdCtx = (store.get('jdContext') || '').trim()
+  const overlayAudioEarly = audioTranscript || ''
+  const userQEarly = (userQuestion || '').trim()
+  const structuredEarly =
+    typeof _askMeta?.structuredUserPrompt === 'string' ? _askMeta.structuredUserPrompt.trim() : ''
+  const profileBlock = await buildProfileContextBlock({
+    userQ: userQEarly,
+    structured: structuredEarly,
+    transcript: overlayAudioEarly,
+    cleanScreen,
+  })
   const playbookText = (store.get('playbooks') || []).filter(p => p.enabled).map(p => p.content).join('\n\n')
-  const profileParts = []
-  if (resumeCtx) profileParts.push(`## YOUR BACKGROUND (from uploaded profile)\nUse this to align meeting suggestions with your real experience, skills, and history. Do not invent employers or dates beyond this text.\n\n${resumeCtx}`)
-  if (jdCtx) profileParts.push(`## ROLE / MEETING CONTEXT (notes or JD)\nTailor talking points to this team, product, or role when relevant.\n\n${jdCtx}`)
-  const profileBlock = profileParts.length ? `\n\n---\n${profileParts.join('\n\n---\n')}` : ''
   let fullSystem = `${systemPrompt}${profileBlock}${CONTEXT_ROUTING_RULES}`
   if (playbookText) fullSystem = `${fullSystem}\n\n---\n## REFERENCE PLAYBOOKS\n${playbookText}`
 
   const structured =
     typeof _askMeta?.structuredUserPrompt === 'string' ? _askMeta.structuredUserPrompt.trim() : ''
   if (structured) {
-    const screenCoding = looksLikeCodeScreen(cleanScreen)
     const segmentedTranscript = structured.includes('## ACTIVE QUESTION')
     fullSystem = `${fullSystem}\n\n---\n${isScreenMode
-      ? screenCoding
-        ? 'Analyze the SCREEN section — it shows a coding problem. Solve it and you MUST include complete runnable code in fenced blocks.'
-        : 'Analyze the SCREEN section and solve the visible problem. Use QUESTION only if present.'
+      ? 'Analyze the SCREEN section and solve the visible problem. Use QUESTION only if present.'
       : segmentedTranscript
         ? 'Answer ONLY the ACTIVE QUESTION in the user message. RECENT CONTEXT is optional clarification — do not merge unrelated earlier questions.'
-        : screenCoding
-          ? 'If the SCREEN shows a coding problem, solve it with complete fenced code.'
-          : 'Respond ONLY to the last question in TRANSCRIPT. Use SCREEN only if essential.'
+        : 'Respond ONLY to the last question in TRANSCRIPT. Use SCREEN only if essential.'
     }`
   }
 
@@ -1066,14 +1100,18 @@ async function handleAskAI(userQuestion, audioTranscript, _askMeta = {}) {
     hasVision,
   })
   const MAX_TRANSCRIPT_ECHO = 8000
-  const transcriptEcho =
+  const transcriptEchoParsed =
     hasAudio && audioCombined
       ? (() => {
           const t = String(audioCombined).trim()
           if (!t) return null
-          return t.length > MAX_TRANSCRIPT_ECHO ? `${t.slice(0, MAX_TRANSCRIPT_ECHO)}\n\n… (truncated)` : t
+          const clipped =
+            t.length > MAX_TRANSCRIPT_ECHO ? `${t.slice(0, MAX_TRANSCRIPT_ECHO)}\n\n… (truncated)` : t
+          return parseTranscriptEchoForDisplay(clipped)
         })()
       : null
+  const transcriptEcho = transcriptEchoParsed?.question?.trim() || null
+  const transcriptEchoContext = transcriptEchoParsed?.context?.trim() || null
 
   const askSummaryId = listenSessionSummaries.beginAsk({
     question: userQ || _askMeta?.typedQuestion || '',
@@ -1086,7 +1124,12 @@ async function handleAskAI(userQuestion, audioTranscript, _askMeta = {}) {
       ? _askMeta.screenContext.trim()
       : null
 
-  sendToOverlay('ai-start', { askSource: displayAskSource, transcriptEcho, screenContext: screenContextForUi })
+  sendToOverlay('ai-start', {
+    askSource: displayAskSource,
+    transcriptEcho,
+    transcriptEchoContext,
+    screenContext: screenContextForUi,
+  })
   llmResponseInFlight = true
 
   let sawFirstToken = false
@@ -1223,9 +1266,15 @@ function setupIPC() {
     store.set('stealth_mode', v)
     applyContentProtectionAllWindows()
     sendToOverlay('stealth-mode-update', v)
+    sendToSettingsWindow('stealth-mode-update', v)
     return v
   })
   ipcMain.handle('protection:get', () => !!store.get('stealth_mode'))
+  ipcMain.handle('get-app-info', () => ({
+    name: app.getName(),
+    version: app.getVersion(),
+    productName: 'VeilAssist',
+  }))
 
   ipcMain.handle('meeting-toast:show', (_, payload) => {
     try {
@@ -1300,13 +1349,16 @@ function setupIPC() {
   })
   ipcMain.handle('export-user-data', async () => {
     const { canceled, filePath } = await dialog.showSaveDialog({
-      defaultPath: 'shadowassist_data_export.json',
+      defaultPath: 'veilassist_data_export.json',
       filters: [{ name: 'JSON', extensions: ['json'] }],
     })
     if (canceled || !filePath) return { ok: false, canceled: true }
     const payload = {
       exportedAt: new Date().toISOString(),
       systemPrompt: store.get('systemPrompt'),
+      contextProfiles: store.get('contextProfiles'),
+      contextRetrievalMode: store.get('contextRetrievalMode'),
+      contextIndexMeta: store.get('contextIndexMeta'),
       resumeContext: store.get('resumeContext'),
       jdContext: store.get('jdContext'),
       resumeSourceName: store.get('resumeSourceName'),
@@ -1345,6 +1397,24 @@ function setupIPC() {
       (k, v) => store.set(k, v),
     )
     return { ok: true, ...out }
+  })
+  ipcMain.handle('context:index', async () => {
+    const profiles = store.get('contextProfiles') || {}
+    const stats = await contextVectorStore.indexProfiles(profiles, app.getPath('userData'))
+    store.set('contextIndexMeta', stats)
+    return { ok: true, ...stats }
+  })
+  ipcMain.handle('context:stats', async () => {
+    await contextVectorStore.loadIndex(app.getPath('userData'))
+    return contextVectorStore.getStats()
+  })
+  ipcMain.handle('context:search-preview', async (_, query, tag) => {
+    await contextVectorStore.loadIndex(app.getPath('userData'))
+    const results = contextVectorStore.search(String(query || ''), {
+      tag: tag && tag !== 'all' ? tag : null,
+      topK: 5,
+    })
+    return { ok: true, results }
   })
   ipcMain.handle('set-store', (_, key, value) => {
     let stored = value
@@ -1386,6 +1456,22 @@ function setupIPC() {
     }
     if (key === 'uiAccentTheme') {
       stored = isValidUiAccentThemeId(value) ? value : store.schema.uiAccentTheme.default
+    }
+    if (key === 'contextProfiles') {
+      const incoming = value && typeof value === 'object' ? value : {}
+      stored = {
+        meeting: String(incoming.meeting || '').slice(0, 12000),
+        interview: String(incoming.interview || '').slice(0, 12000),
+        general: String(incoming.general || '').slice(0, 12000),
+      }
+      store.set('contextProfiles', stored)
+      scheduleContextReindex()
+      return true
+    }
+    if (key === 'contextRetrievalMode') {
+      stored = CONTEXT_RETRIEVAL_MODES.includes(value) ? value : 'auto'
+      store.set('contextRetrievalMode', stored)
+      return true
     }
     store.set(key, stored)
     if (key === 'uiAccentTheme') {
@@ -1450,6 +1536,32 @@ function setupIPC() {
   ipcMain.handle('update-hotkey', (_, action, acc) => hotkeys.updateHotkey(action, acc))
   ipcMain.handle('clear-all-data', () => { store.clear(); hotkeys.registerAll() })
   ipcMain.handle('get-desktop-source-id', () => screenCapture.getDesktopSourceId())
+  ipcMain.handle('ocr:warmup', async () => {
+    await screenCapture.initOcr()
+    return { ok: true }
+  })
+  ipcMain.handle('ocr:terminate', async () => {
+    await screenCapture.terminateOcr()
+    return { ok: true }
+  })
+  ipcMain.handle('ocr:capture-screen-text', async (_, opts) => {
+    try {
+      const text = await screenCapture.captureScreenText(opts || {})
+      return { ok: true, text: String(text || '') }
+    } catch (e) {
+      console.warn('[ocr:capture-screen-text]', e?.message || e)
+      return { ok: false, text: '', error: e?.message || String(e) }
+    }
+  })
+  ipcMain.handle('ocr:recognize-png-dataurl', async (_, dataUrl) => {
+    try {
+      const text = await rapidOcr.recognizePngDataUrl(dataUrl)
+      return { ok: true, text }
+    } catch (e) {
+      console.warn('[ocr:recognize-png-dataurl]', e?.message || e)
+      return { ok: false, text: '', error: e?.message || String(e) }
+    }
+  })
   ipcMain.handle('show-open-dialog', (_, opts) => dialog.showOpenDialog(opts))
   ipcMain.handle('parse-playbook', (_, p) => require('../lib/playbookParser').parsePlaybookFile(p))
   ipcMain.handle('get-window-bounds', () => overlayWindow ? overlayWindow.getBounds() : store.get('overlayBounds'))
@@ -1460,9 +1572,10 @@ function setupIPC() {
     const b = overlayWindow.getBounds()
     const safeW = Math.max(280, Math.min(860, Math.round(w)))
     const useX = typeof xOpt === 'number' && !Number.isNaN(xOpt)
-    if (h <= 40) {
+    /** Collapsed notch-only mode (~42px pill incl. borders) */
+    if (h <= 44) {
       overlayWindow.setMinimumSize(safeW, 1)
-      const safeH = Math.max(35, Math.min(940, Math.round(h)))
+      const safeH = Math.max(43, Math.min(940, Math.round(h)))
       if (useX) {
         overlayWindow.setBounds({ x: Math.round(xOpt), y: b.y, width: safeW, height: safeH })
       } else {
@@ -1552,7 +1665,7 @@ function setupIPC() {
         store.set('overlayBounds', { ...prev, width: w, height: h })
         if (overlayWindow && !overlayWindow.isDestroyed()) {
           const curH = overlayWindow.getSize()[1]
-          // Collapsed bar (~38px) — only change width so we don't pop the panel open
+          // Collapsed notch (~43px window) — only change width so we don't pop the panel open
           if (curH <= 48) overlayWindow.setSize(w, curH)
           else overlayWindow.setSize(w, h)
         }
@@ -1631,6 +1744,18 @@ async function initApp() {
   startMeetingForegroundPoll()
   startCalendarReminderPoll()
   setupAutoUpdater()
+  try {
+    const profiles = store.get('contextProfiles') || {}
+    const hasText = ['meeting', 'interview', 'general'].some((t) => String(profiles[t] || '').trim())
+    if (hasText) {
+      const stats = await contextVectorStore.indexProfiles(profiles, app.getPath('userData'))
+      store.set('contextIndexMeta', stats)
+    } else {
+      await contextVectorStore.loadIndex(app.getPath('userData'))
+    }
+  } catch (e) {
+    console.warn('[context] startup index:', e?.message || e)
+  }
 }
 
 function readUpdateReleaseChannel() {
@@ -1668,7 +1793,7 @@ function setupAutoUpdater() {
   autoUpdater.on('update-available', (info) => {
     try {
       new Notification({
-        title: 'ShadowAssist Update',
+        title: 'VeilAssist Update',
         body: `Version ${info.version} is downloading in the background…`,
       }).show()
     } catch (e) {
@@ -1681,7 +1806,7 @@ function setupAutoUpdater() {
       .showMessageBox({
         type: 'info',
         title: 'Update Ready',
-        message: `ShadowAssist ${info.version} has been downloaded.`,
+        message: `VeilAssist ${info.version} has been downloaded.`,
         detail: 'Restart now to apply the update, or it will be applied next time you launch.',
         buttons: ['Restart Now', 'Later'],
         defaultId: 0,
@@ -1698,20 +1823,8 @@ function setupAutoUpdater() {
 }
 
 app.whenReady().then(() => {
-  // ── Cross-Origin Isolation headers ─────────────────────────────────────────
-  // Moonshine uses onnxruntime-web (WASM) for on-device inference.
-  // ONNX Runtime WASM multi-threading requires SharedArrayBuffer, which Chromium
-  // only exposes when the page is cross-origin isolated.  In the packaged .exe
-  // Electron loads the renderer from file:// with no isolation headers, causing
-  // SharedArrayBuffer to be undefined → ONNX falls back to a broken single-
-  // threaded path → model outputs garbage ("completely different words").
-  //
-  // Fix: inject COOP + COEP headers on every response so Chromium treats all
-  // renderer pages as cross-origin isolated.
-  //
-  // COEP "credentialless" (not "require-corp") is used so that CDN subresources
-  // (Moonshine model weights, Silero VAD WASM from jsDelivr) keep loading
-  // without needing explicit Cross-Origin-Resource-Policy headers on the CDN.
+  // Cross-origin isolation headers for renderer pages (SharedArrayBuffer / WASM if needed).
+  // COEP "credentialless" allows CDN subresources without CORP headers.
   const { session } = require('electron')
   session.defaultSession.webRequest.onHeadersReceived((details, callback) => {
     callback({
@@ -1727,7 +1840,7 @@ app.whenReady().then(() => {
   if (!hasValidConsent()) createConsentWindow()
   else continueAfterConsent()
 }).catch((err) => {
-  console.error('[ShadowAssist-v2] bootstrap failed:', err)
+  console.error('[VeilAssist-v2] bootstrap failed:', err)
   app.quit()
 })
 

@@ -38,7 +38,7 @@ export function MarketingBuiltForLive() {
             <p className="font-mono text-xs font-medium uppercase tracking-[0.24em] text-cyan-400/70">Product</p>
             <h1 className="mt-3 font-display text-3xl font-semibold tracking-[-0.02em] sm:text-4xl">Built for live work</h1>
             <p className="mt-3 font-mono text-sm leading-relaxed tracking-wide text-zinc-500">
-              ShadowAssist is a Windows-native co-pilot layer: synchronous meetings, live document reviews, and any session
+              VeilAssist is a Windows-native co-pilot layer: synchronous meetings, live document reviews, and any session
               where latency and situational awareness beat batch chat.
             </p>
           </ScrollReveal>

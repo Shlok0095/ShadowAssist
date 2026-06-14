@@ -1,4 +1,4 @@
-# ShadowAssist landing
+# VeilAssist landing
 
 Vite + React + React Router + Framer Motion + react-markdown. Marketing home plus on-site docs (no GitHub redirects for reading).
 

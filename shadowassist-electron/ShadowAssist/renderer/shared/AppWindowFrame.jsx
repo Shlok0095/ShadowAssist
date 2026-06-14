@@ -1,4 +1,4 @@
-// Copyright (c) 2026 ShadowAssist. All rights reserved.
+// Copyright (c) 2026 VeilAssist. All rights reserved.
 
 import React, { useCallback, useState } from 'react'
 /** Repo-root logo.png (Vite root is renderer/; fs.allow includes parent). */
@@ -23,7 +23,7 @@ function TitleBarButton({ onClick, title, children, danger }) {
   )
 }
 
-/** Frameless window: violet border, compact title strip (ShadowAssist + window controls). */
+/** Frameless window: violet border, compact title strip (VeilAssist + window controls). */
 export default function AppWindowFrame({ children }) {
   const api = typeof window !== 'undefined' ? window.shadowAPI : null
   const [maximized, setMaximized] = useState(false)
@@ -57,7 +57,7 @@ export default function AppWindowFrame({ children }) {
             className="pointer-events-none h-5 w-5 shrink-0 rounded-md object-contain"
             aria-hidden
           />
-          <span className="truncate text-[12px] font-medium text-zinc-400">ShadowAssist</span>
+          <span className="truncate text-[12px] font-medium text-zinc-400">VeilAssist</span>
         </div>
 
         <div className="flex shrink-0 items-stretch" style={noDrag}>
