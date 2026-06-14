@@ -131,6 +131,35 @@ function prepareFullFrame(img) {
   return img
 }
 
+/** Reject black/white thumbnails — common when capture races DWM or returns an empty dup frame. */
+function isMostlyUniformFrame(img) {
+  if (!img || img.isEmpty()) return true
+  try {
+    const { width, height } = img.getSize()
+    if (width < 8 || height < 8) return true
+    const bmp = img.toBitmap()
+    const stride = width * 4
+    let dark = 0
+    let bright = 0
+    let n = 0
+    const yStep = Math.max(1, Math.floor(height / 24))
+    const xStep = Math.max(1, Math.floor(width / 24))
+    for (let y = 0; y < height; y += yStep) {
+      for (let x = 0; x < width; x += xStep) {
+        const i = y * stride + x * 4
+        const g = bmp[i + 1]
+        if (g < 15) dark++
+        if (g > 240) bright++
+        n++
+      }
+    }
+    if (!n) return true
+    return dark / n > 0.88 || bright / n > 0.9
+  } catch (_) {
+    return false
+  }
+}
+
 /** Grayscale + contrast stretch + ~1.5× scale before Tesseract (no new deps). */
 function preprocessImageForOcr(img) {
   if (img.isEmpty()) return img
@@ -252,6 +281,10 @@ async function captureScreenText(opts = {}) {
 
     const frameImg = prepareFullFrame(img)
     if (!frameImg) return lastOcrForSamePng
+    if (isMostlyUniformFrame(frameImg)) {
+      console.warn('[screenCapture] uniform/blank frame — skip OCR')
+      return lastOcrForSamePng
+    }
 
     const framePng = frameImg.toPNG()
     if (!framePng || framePng.length < 80) return lastOcrForSamePng

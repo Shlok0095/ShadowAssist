@@ -591,7 +591,11 @@ function startMeetingForegroundPoll() {
  */
 async function withOverlayExcludedFromScreenCapture(fn) {
   if (!overlayWindow || overlayWindow.isDestroyed()) return fn()
-  if (isStealthModeEnabled()) return fn()
+  /** Stealth uses content protection (overlay excluded) — still wait for a fresh DWM frame. */
+  if (isStealthModeEnabled()) {
+    await new Promise((resolve) => setTimeout(resolve, 100))
+    return fn()
+  }
 
   if (overlayVisible) {
     try {
@@ -1549,7 +1553,8 @@ function setupIPC() {
       const text = await withOverlayExcludedFromScreenCapture(() =>
         screenCapture.captureScreenText(opts || {}),
       )
-      return { ok: true, text: String(text || '') }
+      const out = String(text || '')
+      return { ok: true, text: out, empty: !out.trim() }
     } catch (e) {
       console.warn('[ocr:capture-screen-text]', e?.message || e)
       return { ok: false, text: '', error: e?.message || String(e) }

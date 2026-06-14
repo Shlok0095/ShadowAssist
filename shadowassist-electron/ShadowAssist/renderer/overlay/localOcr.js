@@ -5,8 +5,10 @@ export async function captureScreenTextLocal(ipc, opts = {}) {
   if (!ipc) return ''
   try {
     const out = await ipc.invoke('ocr:capture-screen-text', opts)
+    if (!out?.ok && out?.error) console.warn('[localOcr]', out.error)
     return String(out?.text ?? '')
-  } catch (_) {
+  } catch (e) {
+    console.warn('[localOcr]', e?.message || e)
     return ''
   }
 }

@@ -255,6 +255,19 @@ function isOcrQualityGood(text) {
   return lower.some((w) => COMMON_EN_WORDS.has(w))
 }
 
+/** Gate auto screen assist — raw OCR length alone is not enough (packaged builds can return noise/empty). */
+function screenOcrUsableForAssist(rawText) {
+  const ocrText = String(rawText || '').trim()
+  if (ocrText.length < MIN_OCR_TRIGGER_CHARS) return false
+  const structured = structureScreenOcr(ocrText)
+  const filtered = structured.promptText || structured.displayText || ocrText
+  return (
+    isOcrQualityGood(filtered) ||
+    looksLikeCodeScreen(filtered) ||
+    structured.confidence >= 3
+  )
+}
+
 function isSemanticallySameScreen(a, b) {
   if (!a || !b) return false
   const na = normalizeOcrDedupe(a)
@@ -773,7 +786,7 @@ export default function App() {
         if (typeof text === 'string') {
           latestOcrTextRef.current = text
           lastOcrUpdateRef.current = Date.now()
-          if (opts.allowAutoTrigger === true && text.trim()) {
+          if (opts.allowAutoTrigger === true && screenOcrUsableForAssist(text)) {
             maybeTriggerFromScreenRef.current?.()
           }
         }
@@ -1601,8 +1614,8 @@ export default function App() {
         let screenSnapshot = ''
         if (assistSource === 'screen') {
           screenSnapshot = String(latestOcrTextRef.current || '')
+          if (!screenOcrUsableForAssist(screenSnapshot)) return
           if (isSemanticallySameScreen(screenSnapshot, lastOcrTriggerRef.current)) return
-          if (screenSnapshot.trim().length < MIN_OCR_TRIGGER_CHARS) return
           if (Date.now() - lastScreenTriggerTimeRef.current < SCREEN_ASSIST_COOLDOWN_MS) return
           if (Date.now() - lastGlobalTriggerTimeRef.current < GLOBAL_TRIGGER_COOLDOWN_MS) return
           lastGlobalTriggerTimeRef.current = Date.now()
@@ -1687,6 +1700,12 @@ export default function App() {
             structuredOcr.confidence >= 3
               ? String(filteredScreenText).slice(0, MAX_SCREEN_CONTEXT_CHARS)
               : ''
+
+          if (isAuto && promptModeEarly === 'screen' && !screenLimited && !trimmed) {
+            isProcessingAskRef.current = false
+            console.log('BLOCKED: no usable screen OCR for auto assist')
+            return
+          }
 
           const promptMode = promptModeEarly
 
