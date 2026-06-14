@@ -3,10 +3,18 @@
 
 const path = require('path')
 const fs = require('fs')
-const sharp = require('sharp')
+
+let sharp = null
+function getSharp() {
+  if (!sharp) {
+    sharp = require('sharp')
+  }
+  return sharp
+}
 
 let ocrInstance = null
 let initPromise = null
+let lastInitError = ''
 
 /** Native onnxruntime cannot read inside app.asar — models live in app.asar.unpacked. */
 function toAsarUnpacked(fsPath) {
@@ -16,9 +24,33 @@ function toAsarUnpacked(fsPath) {
   return fsPath.split(asarSeg).join(`${path.sep}app.asar.unpacked${path.sep}`)
 }
 
-function getRepeatoOcrModelPaths() {
+function isPackagedApp() {
+  try {
+    return require('electron').app?.isPackaged === true
+  } catch (_) {
+    return false
+  }
+}
+
+function getRepeatoOcrRoot() {
+  if (isPackagedApp() && process.resourcesPath) {
+    const unpackedRoot = path.join(
+      process.resourcesPath,
+      'app.asar.unpacked',
+      'node_modules',
+      '@repeato',
+      'ocr',
+    )
+    if (fs.existsSync(path.join(unpackedRoot, 'build', 'node', 'index.cjs'))) {
+      return unpackedRoot
+    }
+  }
   const pkgJson = toAsarUnpacked(require.resolve('@repeato/ocr/package.json'))
-  const assetsDir = path.join(path.dirname(pkgJson), 'build', 'node', 'assets')
+  return path.dirname(pkgJson)
+}
+
+function getRepeatoOcrModelPaths() {
+  const assetsDir = path.join(getRepeatoOcrRoot(), 'build', 'node', 'assets')
   const models = {
     detectionPath: path.join(assetsDir, 'ch_PP-OCRv4_det_infer.onnx'),
     recognitionPath: path.join(assetsDir, 'ch_PP-OCRv4_rec_infer.onnx'),
@@ -34,6 +66,10 @@ function getRepeatoOcrModelPaths() {
 }
 
 function getOcrModule() {
+  if (isPackagedApp() && process.resourcesPath) {
+    const cjs = path.join(getRepeatoOcrRoot(), 'build', 'node', 'index.cjs')
+    if (fs.existsSync(cjs)) return require(cjs)
+  }
   return require('@repeato/ocr')
 }
 
@@ -41,12 +77,17 @@ async function getOcr() {
   if (ocrInstance) return ocrInstance
   if (initPromise) return initPromise
   initPromise = (async () => {
+    lastInitError = ''
     const Ocr = getOcrModule()
     ocrInstance = await Ocr.create({ models: getRepeatoOcrModelPaths() })
     return ocrInstance
   })()
   try {
     return await initPromise
+  } catch (e) {
+    lastInitError = e?.message || String(e)
+    console.error('[rapidOcr] init failed:', lastInitError)
+    throw e
   } finally {
     initPromise = null
   }
@@ -65,7 +106,7 @@ async function recognizePngBuffer(pngBuffer) {
   const buf = Buffer.isBuffer(pngBuffer) ? pngBuffer : null
   if (!buf || buf.length < 40) return ''
   const ocr = await getOcr()
-  const { data, info } = await sharp(buf).ensureAlpha().raw().toBuffer({ resolveWithObject: true })
+  const { data, info } = await getSharp()(buf).ensureAlpha().raw().toBuffer({ resolveWithObject: true })
   const result = await ocr.detect({
     data,
     width: info.width,
@@ -99,9 +140,29 @@ async function terminate() {
   }
 }
 
+function getDiagnostics() {
+  const root = getRepeatoOcrRoot()
+  const assetsDir = path.join(root, 'build', 'node', 'assets')
+  let models = null
+  try {
+    models = getRepeatoOcrModelPaths()
+  } catch (e) {
+    models = { error: e?.message || String(e) }
+  }
+  return {
+    packaged: isPackagedApp(),
+    repeatoRoot: root,
+    assetsDir,
+    modelsOk: models && !models.error,
+    modelsError: models?.error || lastInitError || '',
+    ocrReady: !!ocrInstance,
+  }
+}
+
 module.exports = {
   recognizePngBuffer,
   recognizePngDataUrl,
   warmup,
   terminate,
+  getDiagnostics,
 }

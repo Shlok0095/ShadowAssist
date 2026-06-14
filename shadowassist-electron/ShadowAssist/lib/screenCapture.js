@@ -131,8 +131,8 @@ function prepareFullFrame(img) {
   return img
 }
 
-/** Reject black/white thumbnails — common when capture races DWM or returns an empty dup frame. */
-function isMostlyUniformFrame(img) {
+/** Reject failed captures (nearly all black). Do NOT reject bright pages (LeetCode, docs). */
+function isMostlyBlackFrame(img) {
   if (!img || img.isEmpty()) return true
   try {
     const { width, height } = img.getSize()
@@ -140,21 +140,18 @@ function isMostlyUniformFrame(img) {
     const bmp = img.toBitmap()
     const stride = width * 4
     let dark = 0
-    let bright = 0
     let n = 0
     const yStep = Math.max(1, Math.floor(height / 24))
     const xStep = Math.max(1, Math.floor(width / 24))
     for (let y = 0; y < height; y += yStep) {
       for (let x = 0; x < width; x += xStep) {
         const i = y * stride + x * 4
-        const g = bmp[i + 1]
-        if (g < 15) dark++
-        if (g > 240) bright++
+        if (bmp[i + 1] < 15) dark++
         n++
       }
     }
     if (!n) return true
-    return dark / n > 0.88 || bright / n > 0.9
+    return dark / n > 0.92
   } catch (_) {
     return false
   }
@@ -281,8 +278,8 @@ async function captureScreenText(opts = {}) {
 
     const frameImg = prepareFullFrame(img)
     if (!frameImg) return lastOcrForSamePng
-    if (isMostlyUniformFrame(frameImg)) {
-      console.warn('[screenCapture] uniform/blank frame — skip OCR')
+    if (isMostlyBlackFrame(frameImg)) {
+      console.warn('[screenCapture] black/empty frame — skip OCR')
       return lastOcrForSamePng
     }
 

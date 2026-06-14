@@ -16,8 +16,14 @@ export async function captureScreenTextLocal(ipc, opts = {}) {
 export async function warmupLocalOcr() {
   try {
     const ipc = typeof window !== 'undefined' ? window.shadowAPI : null
-    if (ipc?.invoke) await ipc.invoke('ocr:warmup')
-  } catch (_) {}
+    if (!ipc?.invoke) return { ok: false, error: 'no_ipc' }
+    const out = await ipc.invoke('ocr:warmup')
+    if (!out?.ok) console.warn('[localOcr] warmup failed:', out?.error || 'unknown')
+    return out || { ok: false }
+  } catch (e) {
+    console.warn('[localOcr] warmup:', e?.message || e)
+    return { ok: false, error: e?.message || String(e) }
+  }
 }
 
 export async function terminateLocalOcr() {

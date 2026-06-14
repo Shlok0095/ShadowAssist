@@ -1541,8 +1541,21 @@ function setupIPC() {
   ipcMain.handle('clear-all-data', () => { store.clear(); hotkeys.registerAll() })
   ipcMain.handle('get-desktop-source-id', () => screenCapture.getDesktopSourceId())
   ipcMain.handle('ocr:warmup', async () => {
-    await screenCapture.initOcr()
-    return { ok: true }
+    try {
+      await screenCapture.initOcr()
+      return { ok: true }
+    } catch (e) {
+      const msg = e?.message || String(e)
+      console.warn('[ocr:warmup]', msg)
+      return { ok: false, error: msg }
+    }
+  })
+  ipcMain.handle('ocr:diagnose', () => {
+    try {
+      return { ok: true, ...rapidOcr.getDiagnostics() }
+    } catch (e) {
+      return { ok: false, error: e?.message || String(e) }
+    }
   })
   ipcMain.handle('ocr:terminate', async () => {
     await screenCapture.terminateOcr()
