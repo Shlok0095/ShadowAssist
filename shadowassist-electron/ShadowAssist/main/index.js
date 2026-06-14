@@ -1546,7 +1546,9 @@ function setupIPC() {
   })
   ipcMain.handle('ocr:capture-screen-text', async (_, opts) => {
     try {
-      const text = await screenCapture.captureScreenText(opts || {})
+      const text = await withOverlayExcludedFromScreenCapture(() =>
+        screenCapture.captureScreenText(opts || {}),
+      )
       return { ok: true, text: String(text || '') }
     } catch (e) {
       console.warn('[ocr:capture-screen-text]', e?.message || e)
@@ -1699,10 +1701,9 @@ function setupIPC() {
 async function initApp() {
   const { session } = require('electron')
   /** Packaged `file://` overlay: Chromium checks permissions before requesting; without this, mic/desktop capture can fail silently (dev often still works). */
-  session.defaultSession.setPermissionCheckHandler((_wc, permission) => permission === 'media')
-  session.defaultSession.setPermissionRequestHandler((_, permission, cb) =>
-    cb(['media', 'display-capture', 'screen', 'speaker-selection'].includes(permission)),
-  )
+  const capturePermissions = new Set(['media', 'display-capture', 'screen', 'speaker-selection'])
+  session.defaultSession.setPermissionCheckHandler((_wc, permission) => capturePermissions.has(permission))
+  session.defaultSession.setPermissionRequestHandler((_, permission, cb) => cb(capturePermissions.has(permission)))
   session.defaultSession.setDisplayMediaRequestHandler((request, callback) => {
     screenCapture
       .getDisplayMediaLoopbackPayload()

@@ -1,10 +1,37 @@
 // Copyright (c) 2026 ShadowAssist. All rights reserved.
 // PP-OCRv4 (RapidOCR/Paddle ONNX) in the Electron main process.
 
+const path = require('path')
+const fs = require('fs')
 const sharp = require('sharp')
 
 let ocrInstance = null
 let initPromise = null
+
+/** Native onnxruntime cannot read inside app.asar — models live in app.asar.unpacked. */
+function toAsarUnpacked(fsPath) {
+  if (typeof fsPath !== 'string') return fsPath
+  const asarSeg = `${path.sep}app.asar${path.sep}`
+  if (!fsPath.includes(asarSeg)) return fsPath
+  return fsPath.split(asarSeg).join(`${path.sep}app.asar.unpacked${path.sep}`)
+}
+
+function getRepeatoOcrModelPaths() {
+  const pkgJson = toAsarUnpacked(require.resolve('@repeato/ocr/package.json'))
+  const assetsDir = path.join(path.dirname(pkgJson), 'build', 'node', 'assets')
+  const models = {
+    detectionPath: path.join(assetsDir, 'ch_PP-OCRv4_det_infer.onnx'),
+    recognitionPath: path.join(assetsDir, 'ch_PP-OCRv4_rec_infer.onnx'),
+    dictionaryPath: path.join(assetsDir, 'ppocr_keys_v1.txt'),
+  }
+  const missing = Object.entries(models)
+    .filter(([, p]) => !fs.existsSync(p))
+    .map(([k, p]) => `${k}=${p}`)
+  if (missing.length) {
+    throw new Error(`OCR model assets missing: ${missing.join('; ')}`)
+  }
+  return models
+}
 
 function getOcrModule() {
   return require('@repeato/ocr')
@@ -15,7 +42,7 @@ async function getOcr() {
   if (initPromise) return initPromise
   initPromise = (async () => {
     const Ocr = getOcrModule()
-    ocrInstance = await Ocr.create()
+    ocrInstance = await Ocr.create({ models: getRepeatoOcrModelPaths() })
     return ocrInstance
   })()
   try {
