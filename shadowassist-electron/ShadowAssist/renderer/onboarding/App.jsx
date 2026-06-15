@@ -9,7 +9,7 @@ import AppWindowFrame from '../shared/AppWindowFrame'
 const ipc = createIpcShim()
 
 const PROVIDERS = [
-  { id: 'groq', label: 'Groq', badge: 'FAST', color: '#22c55e', desc: 'Llama 3.3 70B — low latency', placeholder: 'gsk_...', link: 'https://console.groq.com/keys' },
+  { id: 'groq', label: 'Groq', badge: 'FAST', color: '#3b82f6', desc: 'Llama 3.3 70B — low latency', placeholder: 'gsk_...', link: 'https://console.groq.com/keys' },
   { id: 'openai', label: 'OpenAI', badge: 'GPT-4o', color: '#0ea5e9', desc: 'Vision & screenshots', placeholder: 'sk-...', link: 'https://platform.openai.com/api-keys' },
   { id: 'nvidia', label: 'NVIDIA NIM', badge: 'NIM', color: '#a78bfa', desc: 'Llama, Qwen, Nemotron', placeholder: 'nvapi-...', link: 'https://build.nvidia.com/' },
 ]
@@ -174,13 +174,13 @@ export default function Onboarding() {
                 {BYOK_CHECKS.map(({ key, label }) => (
                   <label
                     key={key}
-                    className={`settings-row-tile flex cursor-default gap-3 py-2.5 ${byok[key] ? 'border-indigo-500/25 bg-indigo-500/[0.04]' : ''}`}
+                    className={`settings-row-tile flex cursor-default gap-3 py-2.5 ${byok[key] ? 'border-blue-500/25 bg-blue-500/[0.04]' : ''}`}
                   >
                     <input
                       type="checkbox"
                       checked={byok[key]}
                       onChange={() => toggleByok(key)}
-                      className="mt-0.5 h-4 w-4 shrink-0 rounded border-white/15 bg-black/40 accent-indigo-500"
+                      className="mt-0.5 h-4 w-4 shrink-0 rounded border-white/15 bg-black/40 accent-blue-500"
                     />
                     <span className="text-[12px] leading-snug text-zinc-300">{label}</span>
                   </label>

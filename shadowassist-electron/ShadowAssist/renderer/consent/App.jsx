@@ -34,7 +34,7 @@ export default function ConsentApp() {
   const allOk = useMemo(() => state.c1 && state.c2 && state.c3 && state.c4, [state])
 
   useEffect(() => {
-    applyUiAccentTheme(document.documentElement, normalizeUiAccentId('indigo'))
+    applyUiAccentTheme(document.documentElement, normalizeUiAccentId('blue'))
   }, [])
 
   const toggle = (k) => setState((s) => ({ ...s, [k]: !s[k] }))
@@ -97,14 +97,14 @@ export default function ConsentApp() {
                   <label
                     key={key}
                     className={`settings-row-tile flex cursor-default gap-3 py-3 ${
-                      state[key] ? 'border-indigo-500/25 bg-indigo-500/[0.04]' : ''
+                      state[key] ? 'border-blue-500/25 bg-blue-500/[0.04]' : ''
                     }`}
                   >
                     <input
                       type="checkbox"
                       checked={state[key]}
                       onChange={() => toggle(key)}
-                      className="mt-0.5 h-4 w-4 shrink-0 rounded border-white/15 bg-black/40 accent-indigo-500"
+                      className="mt-0.5 h-4 w-4 shrink-0 rounded border-white/15 bg-black/40 accent-blue-500"
                     />
                     <span className="text-[13px] leading-snug text-zinc-300">{label}</span>
                   </label>

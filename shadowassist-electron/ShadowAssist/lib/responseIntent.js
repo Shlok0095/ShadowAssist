@@ -29,13 +29,22 @@ function looksLikeCodeScreen(text) {
   return SCREEN_CODE_RE.test(t) || ALGORITHM_RE.test(t) || /\b(function|=>|class Solution)\b/.test(t)
 }
 
+const COACHING_MODE_RE =
+  /\b(sales|recruiting|interview|looking for work|team meet|meeting|lecture|gen ai|data science|general)\b/i
+
 /**
- * @param {{ userQuestion?: string, transcript?: string, screen?: string }} ctx
+ * @param {{ userQuestion?: string, transcript?: string, screen?: string, activeModeName?: string, activeModeContent?: string }} ctx
  * @returns {ResponseIntent}
  */
-function inferResponseIntent({ userQuestion = '', transcript = '', screen = '' } = {}) {
+function inferResponseIntent({
+  userQuestion = '',
+  transcript = '',
+  screen = '',
+  activeModeName = '',
+  activeModeContent = '',
+} = {}) {
   const text = `${userQuestion}\n${transcript}\n${screen}`.trim()
-  if (!text) return 'explanation'
+  const modeLabel = `${activeModeName}\n${activeModeContent}`.trim()
   if (
     CODING_RE.test(text) ||
     ALGORITHM_RE.test(text) ||
@@ -45,6 +54,8 @@ function inferResponseIntent({ userQuestion = '', transcript = '', screen = '' }
     return 'coding'
   }
   if (PROCESS_RE.test(text)) return 'process'
+  if (modeLabel && COACHING_MODE_RE.test(modeLabel)) return 'process'
+  if (!text) return 'explanation'
   return 'explanation'
 }
 
@@ -64,7 +75,7 @@ function getIntentRoutingHint(intent) {
         'High-level steps may go under ## Details, but the real code must appear in the main answer body.',
       ].join(' ')
     case 'process':
-      return 'Process/strategy/sales question: answer in prose. Put step-by-step lists under ## Details only. Do NOT output programming code, example classes, scripts, or pseudo-code implementations.'
+      return 'Process/strategy/sales/coaching question: answer in prose as a live coach. Put step-by-step lists under ## Details only. Do NOT output programming code, example classes, scripts, or pseudo-code implementations. Do NOT use unclear-screen disclaimers — follow the ACTIVE PROMPT role.'
     default:
       return 'Explain in prose. Do NOT output code fences, scripts, or example programs unless the user explicitly asked for code or implementation.'
   }

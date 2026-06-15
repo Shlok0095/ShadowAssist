@@ -3,10 +3,10 @@
 
 /**
  * Accent presets — saturated “neon” ramps (main / mid / light).
- * Default `neon` matches original ShadowAssist green (#22c55e family).
+ * Default `blue` — professional accent (Cluely-style). `neon` kept as optional preset.
  */
 
-export const DEFAULT_UI_ACCENT_ID = 'neon'
+export const DEFAULT_UI_ACCENT_ID = 'blue'
 
 export const UI_ACCENT_THEMES = [
   { id: 'neon', label: 'Neon green', main: [34, 197, 94], mid: [5, 210, 120], light: [130, 255, 175] },

@@ -8,6 +8,46 @@ const HISTORY_MAX = 20
 const INJECT_MAX = 8000
 const MAX_REFERENCE_FILES = 20
 const REFERENCE_FILE_MAX_CHARS = 80000
+const NOTES_SECTION_MAX = 16
+const NOTE_TITLE_MAX = 80
+const NOTE_INSTRUCTIONS_MAX = 400
+
+function newNotesSectionId() {
+  return `ns-${Date.now()}-${Math.random().toString(36).slice(2, 9)}`
+}
+
+function normalizeNotesSections(list) {
+  if (!Array.isArray(list)) return []
+  return list
+    .map((s, i) => {
+      if (!s || typeof s !== 'object') return null
+      const title = String(s.title || '').trim().slice(0, NOTE_TITLE_MAX)
+      const instructions = String(s.instructions || s.description || '').trim().slice(0, NOTE_INSTRUCTIONS_MAX)
+      if (!title && !instructions) return null
+      return {
+        id: String(s.id || `ns-${i}-${Date.now()}`).slice(0, 64),
+        title: title || 'Section',
+        instructions,
+      }
+    })
+    .filter(Boolean)
+    .slice(0, NOTES_SECTION_MAX)
+}
+
+function normalizeNotesTemplate(raw) {
+  if (!raw) return { sections: [] }
+  if (Array.isArray(raw)) return { sections: normalizeNotesSections(raw) }
+  if (typeof raw === 'object') return { sections: normalizeNotesSections(raw.sections) }
+  return { sections: [] }
+}
+
+function cloneNotesSectionsForPrompt(sections) {
+  return normalizeNotesSections(sections).map((s) => ({
+    id: newNotesSectionId(),
+    title: s.title,
+    instructions: s.instructions,
+  }))
+}
 
 const DEFAULT_CONTEXT_PROMPTS = [
   {
@@ -58,6 +98,7 @@ function normalizePrompt(raw, fallbackId) {
   let name = String(raw.name || '').trim().slice(0, NAME_MAX)
   const content = promptContent(raw).slice(0, CONTENT_MAX)
   const referenceFiles = normalizeReferenceFiles(raw.referenceFiles)
+  const notesTemplate = normalizeNotesTemplate(raw.notesTemplate)
   if (!name) {
     const first = content.split('\n').map((l) => l.trim()).find(Boolean)
     name = (first || 'New prompt').slice(0, NAME_MAX)
@@ -65,7 +106,7 @@ function normalizePrompt(raw, fallbackId) {
   const now = Date.now()
   const createdAt = Number.isFinite(Number(raw.createdAt)) ? Number(raw.createdAt) : now
   const updatedAt = Number.isFinite(Number(raw.updatedAt)) ? Number(raw.updatedAt) : now
-  return { id, name, content, referenceFiles, createdAt, updatedAt }
+  return { id, name, content, referenceFiles, notesTemplate, createdAt, updatedAt }
 }
 
 function normalizePromptsList(list) {
@@ -100,12 +141,40 @@ function pushPromptHistory(history, promptId) {
   return prev.slice(0, HISTORY_MAX)
 }
 
+function formatNotesTemplateBlock(prompt) {
+  const { sections } = normalizeNotesTemplate(prompt?.notesTemplate)
+  if (!sections.length) return ''
+  const body = sections
+    .map((s) => {
+      const inst = s.instructions ? `\n${s.instructions}` : ''
+      return `### ${s.title}${inst}`
+    })
+    .join('\n\n')
+  return `\n\n---\n## NOTES TEMPLATE (post-meeting only)\nUse these sections ONLY when the user explicitly asks for meeting notes, a summary, or written takeaways — NOT for live coaching replies.\n\n${body}`
+}
+
+function formatModeSessionRules(prompt) {
+  const content = promptContent(prompt).trim()
+  if (!content) return ''
+  const name = String(prompt?.name || 'Mode').trim()
+  return `
+
+## MODE SESSION RULES (priority over <unclear_or_empty_screen>, <other_content>, and NOTES TEMPLATE headings)
+You are the user's live **${name}** assistant. The real-time prompt above defines your role for this turn.
+
+- Follow that prompt: coach the user, suggest what to say, ask discovery questions, handle objections, answer interview questions, etc.
+- Treat screen and audio as conversation context for this role — not as a reason to refuse or demand clarification first.
+- Do NOT open with "I'm not sure what information you're looking for" or similar ambiguity disclaimers while coaching in this mode.
+- Live replies use the normal answer format (Takeaway + prose). Do NOT structure coaching replies with NOTES TEMPLATE section titles (Discovery, Objections, Action items, etc.) unless the user explicitly asks for notes or a summary.
+- If the user mentions a product, prospect, or goal (even briefly), help immediately — do not require a fully described sales call before assisting.`
+}
+
 function formatActivePromptBlock(prompt) {
   const content = promptContent(prompt).trim()
   if (!content) return ''
   const name = String(prompt?.name || 'Reference').trim()
   const body = content.length > INJECT_MAX ? `${content.slice(0, INJECT_MAX)}\n…` : content
-  return `\n\n---\n## ACTIVE PROMPT (${name})\n${body}`
+  return `\n\n---\n## ACTIVE PROMPT (${name})\n${body}${formatModeSessionRules(prompt)}`
 }
 
 function getActivePrompt(prompts, activeId) {
@@ -234,6 +303,14 @@ module.exports = {
   INJECT_MAX,
   MAX_REFERENCE_FILES,
   REFERENCE_FILE_MAX_CHARS,
+  NOTES_SECTION_MAX,
+  NOTE_TITLE_MAX,
+  NOTE_INSTRUCTIONS_MAX,
+  newNotesSectionId,
+  normalizeNotesTemplate,
+  normalizeNotesSections,
+  cloneNotesSectionsForPrompt,
+  formatNotesTemplateBlock,
   DEFAULT_CONTEXT_PROMPTS,
   newPromptId,
   normalizePrompt,

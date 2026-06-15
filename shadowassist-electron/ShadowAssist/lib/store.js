@@ -105,8 +105,8 @@ const schema = {
   overlayTeleprompter: { type: 'boolean', default: false },
   /** Hide input until tapped — more space for answers */
   overlayFocusMode: { type: 'boolean', default: false },
-  /** Accent preset id — see renderer/shared/uiAccentThemes.js (default neon = original green) */
-  uiAccentTheme: { type: 'string', default: 'neon' },
+  /** Accent preset id — see renderer/shared/uiAccentThemes.js (default blue) */
+  uiAccentTheme: { type: 'string', default: 'blue' },
   hotkeys: {
     type: 'object',
     default: {
@@ -291,12 +291,20 @@ function migrateContextPromptsV2() {
   }
 }
 
+function migrateUiAccentFromGreen() {
+  try {
+    const id = get('uiAccentTheme')
+    if (id === 'neon' || id === 'lime' || id === 'mint') set('uiAccentTheme', 'blue')
+  } catch (_) {}
+}
+
 function runDataMigration() {
   migrateLegacySystemPrompt()
   migrateSttModeFromLocal()
   migrateSttProviderFromLegacy()
   migrateContextProfilesFromLegacy()
   migrateContextPromptsV2()
+  migrateUiAccentFromGreen()
   const epoch = typeof get('dataEpoch') === 'number' ? get('dataEpoch') : 0
   if (epoch >= DATA_EPOCH) return
   for (const k of ENCRYPTED_KEYS) {

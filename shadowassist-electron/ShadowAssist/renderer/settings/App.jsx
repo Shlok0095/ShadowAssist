@@ -4,6 +4,7 @@
 import React, { useState, useEffect, useMemo, useId, memo } from 'react'
 import { applyUiAccentTheme, normalizeUiAccentId } from '../shared/uiAccentThemes'
 import { createIpcShim } from '../shared/ipcShim'
+import ProfileModesPanel from './ProfileModesPanel'
 import AppWindowFrame from '../shared/AppWindowFrame'
 import logoSrc from '../../logo.png'
 
@@ -12,6 +13,24 @@ const ipc = createIpcShim()
 const CONTENT_MAX = 12000
 const NAME_MAX = 64
 const REFERENCE_FILE_MAX_CHARS = 80000
+const NOTE_TITLE_MAX = 80
+const NOTE_INSTRUCTIONS_MAX = 400
+
+function notesSectionsFromPrompt(p) {
+  if (!p?.notesTemplate) return []
+  const raw = p.notesTemplate
+  const list = Array.isArray(raw) ? raw : raw.sections
+  if (!Array.isArray(list)) return []
+  return list.map((s) => ({
+    id: s.id || `ns-${Date.now()}`,
+    title: s.title || '',
+    instructions: s.instructions || s.description || '',
+  }))
+}
+
+function newNotesSectionId() {
+  return `ns-${Date.now()}-${Math.random().toString(36).slice(2, 9)}`
+}
 
 function basename(filePath) {
   const p = String(filePath || '').replace(/\\/g, '/')
@@ -58,7 +77,7 @@ const HOTKEY_DEFS = [
 ]
 
 const SETTINGS_TABS = [
-  { id: 'profile', label: 'Profile', sub: 'Customize' },
+  { id: 'profile', label: 'Profile', sub: 'Modes' },
   { id: 'display', label: 'Display', sub: 'Overlay layout' },
   { id: 'meetings', label: 'Meetings', sub: 'Calendar & detection' },
   { id: 'session', label: 'Session', sub: 'Chat, STT & capture' },
@@ -161,7 +180,7 @@ function parseSummaryBullets(text) {
 const AmbientOrbs = memo(function AmbientOrbs() {
   return (
     <div className="pointer-events-none fixed inset-0 z-[1] overflow-hidden" aria-hidden>
-      <div className="absolute -left-[25%] top-[15%] h-[280px] w-[280px] rounded-full bg-accent/6 blur-[100px]" />
+      <div className="absolute -left-[25%] top-[15%] h-[280px] w-[280px] rounded-full bg-indigo-500/[0.05] blur-[100px]" />
       <div className="absolute -right-[20%] bottom-[10%] h-[240px] w-[240px] rounded-full bg-white/[0.04] blur-[90px]" />
     </div>
   )
@@ -273,9 +292,10 @@ export default function Settings() {
   const [contextPromptHistory, setContextPromptHistory] = useState([])
   const [contextIndexing, setContextIndexing] = useState(false)
   const [uploadBusy, setUploadBusy] = useState(false)
-  const [profileMenuOpen, setProfileMenuOpen] = useState(false)
+  const [showModeTemplates, setShowModeTemplates] = useState(false)
   const [draftName, setDraftName] = useState('')
   const [draftContent, setDraftContent] = useState('')
+  const [draftNotesSections, setDraftNotesSections] = useState([])
 
   const [modelCatalog, setModelCatalog] = useState({})
   const [sttPolicy, setSttPolicy] = useState(null)
@@ -339,6 +359,7 @@ export default function Settings() {
           const merged = String(activeP.content || '').trim()
             || [activeP.instructions, activeP.knowledge].map((s) => String(s || '').trim()).filter(Boolean).join('\n\n')
           setDraftContent(merged)
+          setDraftNotesSections(notesSectionsFromPrompt(activeP))
         }
         const ob = s.overlayBounds || {}
         setOverlayOpacityUi(typeof s.overlayOpacity === 'number' ? s.overlayOpacity : 0.92)
@@ -557,15 +578,16 @@ export default function Settings() {
     await withIndexing(() => save('contextPrompts', next))
   }
 
-  const selectContextPrompt = async (id) => {
-    const p = contextPrompts.find((x) => x.id === id)
+  const selectContextPrompt = async (id, promptOverride) => {
+    const p = promptOverride || contextPrompts.find((x) => x.id === id)
     if (!p) return
-    setProfileMenuOpen(false)
+    setShowModeTemplates(false)
     setActiveContextPromptId(id)
     setDraftName(p.name || '')
     const merged = String(p.content || '').trim()
       || [p.instructions, p.knowledge].map((s) => String(s || '').trim()).filter(Boolean).join('\n\n')
     setDraftContent(merged)
+    setDraftNotesSections(notesSectionsFromPrompt(p))
     await save('activeContextPromptId', id)
     const nextHist = [id, ...(contextPromptHistory || []).filter((h) => h !== id)].slice(0, 20)
     setContextPromptHistory(nextHist)
@@ -576,23 +598,58 @@ export default function Settings() {
     const now = Date.now()
     const p = {
       id: `cp-${now}-${Math.random().toString(36).slice(2, 9)}`,
-      name: 'New prompt',
+      name: 'New mode',
       content: '',
       referenceFiles: [],
+      notesTemplate: { sections: [] },
       createdAt: now,
       updatedAt: now,
     }
     const next = [...contextPrompts, p]
     await saveContextPrompts(next)
-    await selectContextPrompt(p.id)
+    setShowModeTemplates(false)
+    setDraftNotesSections([])
+    await selectContextPrompt(p.id, p)
+  }
+
+  const addModeFromTemplate = async (template) => {
+    if (!template) return
+    const now = Date.now()
+    const noteSections = (template.notesTemplate || []).map((s, i) => ({
+      id: `ns-${now}-${i}`,
+      title: String(s.title || 'Section').slice(0, NOTE_TITLE_MAX),
+      instructions: String(s.instructions || '').slice(0, NOTE_INSTRUCTIONS_MAX),
+    }))
+    const p = {
+      id: `cp-${now}-${Math.random().toString(36).slice(2, 9)}`,
+      name: String(template.name || 'New mode').slice(0, NAME_MAX),
+      content: String(template.content || '').slice(0, CONTENT_MAX),
+      referenceFiles: [],
+      notesTemplate: { sections: noteSections },
+      createdAt: now,
+      updatedAt: now,
+    }
+    const next = [...contextPrompts, p]
+    await saveContextPrompts(next)
+    setShowModeTemplates(false)
+    await selectContextPrompt(p.id, p)
   }
 
   const saveActivePrompt = async () => {
     if (!activeContextPromptId) return
     const name = String(draftName || 'New prompt').trim().slice(0, NAME_MAX) || 'New prompt'
     const content = String(draftContent || '').slice(0, CONTENT_MAX)
+    const sections = draftNotesSections
+      .map((s) => ({
+        id: String(s.id || newNotesSectionId()).slice(0, 64),
+        title: String(s.title || '').trim().slice(0, NOTE_TITLE_MAX) || 'Section',
+        instructions: String(s.instructions || '').trim().slice(0, NOTE_INSTRUCTIONS_MAX),
+      }))
+      .filter((s) => s.title || s.instructions)
     const next = contextPrompts.map((p) =>
-      p.id === activeContextPromptId ? { ...p, name, content, updatedAt: Date.now() } : p,
+      p.id === activeContextPromptId
+        ? { ...p, name, content, notesTemplate: { sections }, updatedAt: Date.now() }
+        : p,
     )
     setDraftName(name)
     await saveContextPrompts(next)
@@ -641,22 +698,23 @@ export default function Settings() {
     await saveContextPrompts(next)
   }
 
-  const deleteActivePrompt = async () => {
-    if (!activeContextPromptId) return
-    setProfileMenuOpen(false)
-    const id = activeContextPromptId
+  const deletePromptById = async (id) => {
+    if (!id) return
     const next = contextPrompts.filter((p) => p.id !== id)
     const nextHist = (contextPromptHistory || []).filter((h) => h !== id)
     setContextPromptHistory(nextHist)
     await save('contextPromptHistory', nextHist)
     await saveContextPrompts(next)
-    if (next[0]) {
-      await selectContextPrompt(next[0].id)
-    } else {
-      setActiveContextPromptId('')
-      setDraftName('')
-      setDraftContent('')
-      await save('activeContextPromptId', '')
+    if (activeContextPromptId === id) {
+      if (next[0]) {
+        await selectContextPrompt(next[0].id)
+      } else {
+        setActiveContextPromptId('')
+        setDraftName('')
+        setDraftContent('')
+        setDraftNotesSections([])
+        await save('activeContextPromptId', '')
+      }
     }
   }
 
@@ -972,157 +1030,28 @@ export default function Settings() {
 
         <main className="settings-scroll-outer min-h-0 min-w-0 flex-1 overflow-y-auto overflow-x-hidden p-6 lg:p-8">
           {activeTab === 'profile' && (
-            <div className="mx-auto max-w-2xl animate-fade-in">
-              <div className="mb-5 flex flex-wrap gap-2">
-                {contextPrompts.map((p) => (
-                  <button
-                    key={p.id}
-                    type="button"
-                    onClick={() => void selectContextPrompt(p.id)}
-                    className={`settings-chip settings-chip-sm !normal-case ${
-                      activeContextPromptId === p.id ? 'settings-chip-active' : ''
-                    }`}
-                  >
-                    {p.name}
-                  </button>
-                ))}
-                <button
-                  type="button"
-                  onClick={() => void addContextPrompt()}
-                  className="settings-chip settings-chip-sm !normal-case border-dashed border-white/20 text-gray-400 hover:text-white"
-                >
-                  + New
-                </button>
-              </div>
-
-              {activePrompt ? (
-                <div className="space-y-8">
-                  <div className="flex items-start justify-between gap-4">
-                    <input
-                      type="text"
-                      value={draftName}
-                      onChange={(e) => setDraftName(e.target.value.slice(0, NAME_MAX))}
-                      className="min-w-0 flex-1 bg-transparent text-2xl font-bold tracking-tight text-white outline-none placeholder:text-zinc-600"
-                      placeholder="Prompt name"
-                    />
-                    <div className="flex shrink-0 items-center gap-2 pt-1">
-                      <span className="rounded-md bg-blue-500/15 px-2.5 py-1 text-xs font-medium text-blue-400">
-                        ✓ Active
-                      </span>
-                      <div className="relative">
-                        <button
-                          type="button"
-                          onClick={() => setProfileMenuOpen((o) => !o)}
-                          className="rounded-md px-2 py-1 text-lg leading-none text-zinc-400 hover:bg-white/5 hover:text-white"
-                          aria-label="Prompt menu"
-                        >
-                          ···
-                        </button>
-                        {profileMenuOpen ? (
-                          <div className="absolute right-0 z-30 mt-1 min-w-[140px] rounded-lg border border-white/10 bg-zinc-900 py-1 shadow-xl">
-                            {contextPrompts
-                              .filter((p) => p.id !== activeContextPromptId)
-                              .map((p) => (
-                                <button
-                                  key={p.id}
-                                  type="button"
-                                  onClick={() => void selectContextPrompt(p.id)}
-                                  className="block w-full px-3 py-2 text-left text-xs text-zinc-300 hover:bg-white/5"
-                                >
-                                  Switch to {p.name}
-                                </button>
-                              ))}
-                            <button
-                              type="button"
-                              onClick={() => {
-                                setProfileMenuOpen(false)
-                                void deleteActivePrompt()
-                              }}
-                              className="block w-full px-3 py-2 text-left text-xs text-red-400 hover:bg-white/5"
-                            >
-                              Delete prompt
-                            </button>
-                          </div>
-                        ) : null}
-                      </div>
-                    </div>
-                  </div>
-
-                  <section>
-                    <h4 className="mb-3 text-sm font-semibold text-white">Real-time prompt</h4>
-                    <div className="overflow-hidden rounded-xl border border-white/10 bg-black/40">
-                      <textarea
-                        value={draftContent}
-                        onChange={(e) => setDraftContent(e.target.value.slice(0, CONTENT_MAX))}
-                        rows={14}
-                        className="w-full resize-y bg-transparent px-4 py-4 text-sm leading-relaxed text-zinc-300 outline-none placeholder:text-zinc-600"
-                        placeholder="How should the AI behave? Paste role, goals, tone, bullet points…"
-                      />
-                      <div className="flex items-center justify-end gap-3 border-t border-white/5 px-3 py-2">
-                        {contextIndexing ? (
-                          <span className="text-[10px] text-zinc-500">Indexing…</span>
-                        ) : null}
-                        <button
-                          type="button"
-                          onClick={() => void saveActivePrompt()}
-                          disabled={contextIndexing}
-                          className="rounded-md bg-white/10 px-4 py-1.5 text-xs font-medium text-white hover:bg-white/15 disabled:opacity-50"
-                        >
-                          Save
-                        </button>
-                      </div>
-                    </div>
-                  </section>
-
-                  <section>
-                    <h4 className="mb-3 text-sm font-semibold text-white">Reference files</h4>
-                    <div className="rounded-xl border border-white/10 bg-black/20 px-6 py-12 text-center">
-                      <p className="mb-5 text-sm text-zinc-500">Add files as real-time context.</p>
-                      <button
-                        type="button"
-                        onClick={() => void uploadReferenceFile()}
-                        disabled={uploadBusy || contextIndexing}
-                        className="inline-flex items-center gap-2 rounded-lg border border-white/15 bg-white/5 px-4 py-2 text-sm text-zinc-300 hover:bg-white/10 disabled:opacity-50"
-                      >
-                        <span aria-hidden>📎</span>
-                        {uploadBusy ? 'Uploading…' : 'Upload file'}
-                      </button>
-                      <p className="mt-3 text-[10px] text-zinc-600">PDF or TXT</p>
-                    </div>
-                    {(activePrompt.referenceFiles || []).length > 0 ? (
-                      <ul className="mt-3 space-y-2">
-                        {(activePrompt.referenceFiles || []).map((f) => (
-                          <li
-                            key={f.id}
-                            className="flex items-center justify-between gap-3 rounded-lg border border-white/10 px-3 py-2.5 text-sm text-zinc-300"
-                          >
-                            <span className="min-w-0 truncate">{f.name}</span>
-                            <button
-                              type="button"
-                              onClick={() => void removeReferenceFile(f.id)}
-                              className="shrink-0 text-xs text-zinc-500 hover:text-red-400"
-                            >
-                              Remove
-                            </button>
-                          </li>
-                        ))}
-                      </ul>
-                    ) : null}
-                  </section>
-                </div>
-              ) : (
-                <div className="rounded-xl border border-dashed border-white/15 p-12 text-center">
-                  <p className="mb-4 text-sm text-zinc-500">Create a prompt to customize how VeilAssist responds.</p>
-                  <button
-                    type="button"
-                    onClick={() => void addContextPrompt()}
-                    className="rounded-lg bg-accent/20 px-4 py-2 text-sm font-medium text-accent-light hover:bg-accent/30"
-                  >
-                    Create prompt
-                  </button>
-                </div>
-              )}
-            </div>
+            <ProfileModesPanel
+              contextPrompts={contextPrompts}
+              activeContextPromptId={activeContextPromptId}
+              activePrompt={activePrompt}
+              draftName={draftName}
+              draftContent={draftContent}
+              draftNotesSections={draftNotesSections}
+              onDraftNotesSectionsChange={setDraftNotesSections}
+              contextIndexing={contextIndexing}
+              uploadBusy={uploadBusy}
+              showTemplates={showModeTemplates}
+              onDraftNameChange={setDraftName}
+              onDraftContentChange={setDraftContent}
+              onSelectPrompt={selectContextPrompt}
+              onAddEmptyMode={addContextPrompt}
+              onAddFromTemplate={addModeFromTemplate}
+              onDeletePrompt={deletePromptById}
+              onSavePrompt={saveActivePrompt}
+              onUploadFile={uploadReferenceFile}
+              onRemoveFile={removeReferenceFile}
+              onToggleTemplates={() => setShowModeTemplates((v) => !v)}
+            />
           )}
 
           {activeTab === 'display' && (

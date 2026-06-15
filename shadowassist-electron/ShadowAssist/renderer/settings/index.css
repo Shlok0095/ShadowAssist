@@ -3,9 +3,9 @@
 @tailwind utilities;
 
 :root {
-  --accent-rgb: 34 197 94;
-  --accent-mid-rgb: 16 185 129;
-  --accent-light-rgb: 52 211 153;
+  --accent-rgb: 59 130 246;
+  --accent-mid-rgb: 37 99 235;
+  --accent-light-rgb: 147 197 253;
 }
 
 @keyframes borderPulseThemed {
@@ -273,3 +273,29 @@ html::-webkit-scrollbar {
   color: rgb(161, 161, 170);
 }
 
+/* Cluely-style profile modes */
+.profile-modes-root {
+  min-height: calc(100vh - 11rem);
+}
+.mode-sidebar-item-active {
+  background: rgba(255, 255, 255, 0.06);
+}
+.mode-sidebar-item:hover:not(.mode-sidebar-item-active) {
+  background: rgba(255, 255, 255, 0.03);
+}
+.mode-sidebar-list {
+  scrollbar-width: thin;
+  scrollbar-color: rgba(255, 255, 255, 0.12) transparent;
+}
+.mode-template-card:hover {
+  background: rgba(255, 255, 255, 0.04);
+}
+.mode-template-icon {
+  transition: transform 0.15s ease, box-shadow 0.15s ease;
+}
+.mode-template-card:hover .mode-template-icon {
+  transform: scale(1.03);
+}
+.notes-section-card textarea {
+  min-height: 2.5rem;
+}

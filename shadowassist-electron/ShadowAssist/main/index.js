@@ -46,8 +46,10 @@ const {
 const {
   normalizePromptsList,
   formatActivePromptBlock,
+  formatNotesTemplateBlock,
   getActivePrompt,
   pushPromptHistory,
+  promptContent,
   KNOWLEDGE_BASE_MAX,
 } = require('../lib/contextPrompts')
 const googleCalendar = require('../lib/googleCalendar')
@@ -928,6 +930,12 @@ async function buildProfileContextBlock({ userQ, structured, transcript, cleanSc
     const activePrompt = getActivePrompt(prompts, activeId)
 
     const instructionsBlock = formatActivePromptBlock(activePrompt)
+    const notesBlock = formatNotesTemplateBlock(activePrompt)
+    if (!instructionsBlock.trim()) {
+      console.warn('[profile] no active mode prompt in store — set Profile → mode → Save mode')
+    } else {
+      console.log('[profile] injecting mode:', activePrompt?.name || activeId, 'chars:', instructionsBlock.length)
+    }
 
     await contextVectorStore.loadIndex(app.getPath('userData'))
     const query = extractRetrievalQuery({ userQ, structured, transcript, cleanScreen })
@@ -935,7 +943,7 @@ async function buildProfileContextBlock({ userQ, structured, transcript, cleanSc
       ? contextVectorStore.formatContextBlock(query, { promptId: activeId || null })
       : ''
 
-    return `${instructionsBlock}${retrievedBlock}`
+    return `${instructionsBlock}${notesBlock}${retrievedBlock}`
   } catch (e) {
     console.warn('[context] retrieval failed:', e?.message || e)
     return ''
@@ -1007,6 +1015,9 @@ async function handleAskAI(userQuestion, audioTranscript, _askMeta = {}) {
   const userQEarly = (userQuestion || '').trim()
   const structuredEarly =
     typeof _askMeta?.structuredUserPrompt === 'string' ? _askMeta.structuredUserPrompt.trim() : ''
+  const profilePrompts = normalizePromptsList(store.get('contextPrompts') || [])
+  const profileActiveId = store.get('activeContextPromptId') || null
+  const profileActivePrompt = getActivePrompt(profilePrompts, profileActiveId)
   const profileBlock = await buildProfileContextBlock({
     userQ: userQEarly,
     structured: structuredEarly,
@@ -1039,6 +1050,8 @@ async function handleAskAI(userQuestion, audioTranscript, _askMeta = {}) {
     userQuestion: userQ,
     transcript: overlayAudio,
     screen: cleanScreen,
+    activeModeName: profileActivePrompt?.name || '',
+    activeModeContent: promptContent(profileActivePrompt),
   })}`
 
   let audioCombined = overlayAudio
