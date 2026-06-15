@@ -1,10 +1,12 @@
-// Copyright (c) 2026 ShadowAssist. All rights reserved.
-// Local TF-IDF context index — chunks profile text and retrieves by cosine similarity.
+// Copyright (c) 2026 VeilAssist. All rights reserved.
+// Local TF-IDF context index — chunks profile + prompt knowledge; retrieves by cosine similarity.
 
 const fsPromises = require('fs').promises
 const path = require('path')
-const { CONTEXT_TAGS } = require('./contextProfiles')
+const { normalizePromptsList } = require('./contextPrompts')
 
+const KB_TAG = 'kb'
+const PROFILE_TAG = 'kb'
 const CHUNK_MAX = 420
 const CHUNK_OVERLAP = 70
 const TOP_K = 5
@@ -13,6 +15,10 @@ const MIN_SCORE = 0.06
 
 let currentIndex = null
 let indexPath = null
+
+function promptTag(promptId) {
+  return `prompt:${String(promptId || '')}`
+}
 
 function getIndexPath(userDataPath) {
   return path.join(userDataPath, 'context-index.json')
@@ -106,7 +112,7 @@ function queryVector(query, idfMap, N) {
 
 function deserializeIndex(raw) {
   return {
-    version: raw.version || 1,
+    version: raw.version || 2,
     indexedAt: raw.indexedAt || null,
     chunkCount: raw.chunkCount || 0,
     chunks: raw.chunks || [],
@@ -136,7 +142,7 @@ async function loadIndex(userDataPath) {
     currentIndex = deserializeIndex(raw)
   } catch {
     currentIndex = {
-      version: 1,
+      version: 2,
       indexedAt: null,
       chunkCount: 0,
       chunks: [],
@@ -148,20 +154,60 @@ async function loadIndex(userDataPath) {
   return currentIndex
 }
 
+/** @deprecated — use indexContextData */
 async function indexProfiles(profiles, userDataPath) {
-  indexPath = getIndexPath(userDataPath)
-  const allChunks = []
-  for (const tag of CONTEXT_TAGS) {
+  const prompts = []
+  const now = Date.now()
+  for (const tag of ['meeting', 'interview', 'general']) {
     const text = String(profiles?.[tag] || '').trim()
     if (!text) continue
-    for (const c of chunkText(text)) {
-      allChunks.push({ id: `${tag}-${allChunks.length}`, tag, text: c })
+    prompts.push({
+      id: `legacy-${tag}`,
+      name: tag,
+      instructions: '',
+      knowledge: text,
+      createdAt: now,
+      updatedAt: now,
+    })
+  }
+  return indexContextData({ contextPrompts: prompts }, userDataPath)
+}
+
+async function indexContextData({ knowledgeBase, contextPrompts }, userDataPath) {
+  indexPath = getIndexPath(userDataPath)
+  const allChunks = []
+
+  const kbText = String(knowledgeBase || '').trim()
+  if (kbText) {
+    for (const c of chunkText(kbText)) {
+      allChunks.push({
+        id: `kb-${allChunks.length}`,
+        tag: KB_TAG,
+        label: 'Knowledge base',
+        text: c,
+      })
+    }
+  }
+
+  for (const prompt of normalizePromptsList(contextPrompts)) {
+    const tag = promptTag(prompt.id)
+    for (const file of prompt.referenceFiles || []) {
+      const text = String(file.text || '').trim()
+      if (!text) continue
+      for (const c of chunkText(text)) {
+        allChunks.push({
+          id: `${tag}-f-${allChunks.length}`,
+          tag,
+          label: file.name || 'Reference file',
+          text: c,
+        })
+      }
     }
   }
 
   const { idfMap, vectors, N } = buildIndexFromChunks(allChunks)
   currentIndex = {
-    version: 1,
+    version: 2,
     indexedAt: new Date().toISOString(),
     chunkCount: allChunks.length,
     chunks: allChunks,
@@ -175,7 +221,13 @@ async function indexProfiles(profiles, userDataPath) {
   return getStats()
 }
 
-function search(query, { tag = null, topK = TOP_K } = {}) {
+function chunkMatchesScope(chunk, { promptId = null } = {}) {
+  if (chunk.tag === KB_TAG) return true
+  if (!promptId) return false
+  return chunk.tag === promptTag(promptId)
+}
+
+function search(query, { promptId = null, topK = TOP_K } = {}) {
   if (!currentIndex?.chunks?.length) return []
   const qVec = queryVector(query, currentIndex.idfMap, currentIndex.N)
   if (!qVec.size) return []
@@ -183,7 +235,7 @@ function search(query, { tag = null, topK = TOP_K } = {}) {
   const scored = []
   for (let i = 0; i < currentIndex.chunks.length; i++) {
     const chunk = currentIndex.chunks[i]
-    if (tag && chunk.tag !== tag) continue
+    if (!chunkMatchesScope(chunk, { promptId })) continue
     const score = cosineSimilarity(qVec, currentIndex.vectors[i])
     if (score >= MIN_SCORE) scored.push({ ...chunk, score })
   }
@@ -191,9 +243,8 @@ function search(query, { tag = null, topK = TOP_K } = {}) {
   return scored.slice(0, topK)
 }
 
-function formatContextBlock(query, { tag = null, topK = TOP_K } = {}) {
-  let results = search(query, { tag, topK })
-  if (tag && !results.length) results = search(query, { tag: null, topK })
+function formatContextBlock(query, { promptId = null, topK = TOP_K } = {}) {
+  const results = search(query, { promptId, topK })
   if (!results.length) return ''
 
   let body = ''
@@ -201,7 +252,8 @@ function formatContextBlock(query, { tag = null, topK = TOP_K } = {}) {
   for (const r of results) {
     if (used.has(r.text)) continue
     used.add(r.text)
-    const piece = `[${r.tag}] ${r.text}`
+    const label = r.label || r.tag || 'context'
+    const piece = `[${label}] ${r.text}`
     if (body.length + piece.length + 2 > MAX_BLOCK_CHARS) break
     body += (body ? '\n\n' : '') + piece
   }
@@ -210,13 +262,9 @@ function formatContextBlock(query, { tag = null, topK = TOP_K } = {}) {
 }
 
 function getStats() {
-  const chunks = currentIndex?.chunks || []
-  const tags = {}
-  for (const t of CONTEXT_TAGS) tags[t] = chunks.filter((c) => c.tag === t).length
   return {
     chunkCount: currentIndex?.chunkCount || 0,
     indexedAt: currentIndex?.indexedAt || null,
-    tags,
   }
 }
 
@@ -227,8 +275,11 @@ function invalidateCache() {
 module.exports = {
   loadIndex,
   indexProfiles,
+  indexContextData,
   search,
   formatContextBlock,
   getStats,
   invalidateCache,
+  PROFILE_TAG,
+  promptTag,
 }

@@ -41,10 +41,15 @@ const { resolveSystemPrompt } = require('../lib/defaultSystemPrompt')
 const { getAnswerStyleSuffix } = require('../lib/answerStyle')
 const contextVectorStore = require('../lib/contextVectorStore')
 const {
-  inferContextTagFromCalendar,
   extractRetrievalQuery,
-  CONTEXT_RETRIEVAL_MODES,
 } = require('../lib/contextProfiles')
+const {
+  normalizePromptsList,
+  formatActivePromptBlock,
+  getActivePrompt,
+  pushPromptHistory,
+  KNOWLEDGE_BASE_MAX,
+} = require('../lib/contextPrompts')
 const googleCalendar = require('../lib/googleCalendar')
 const rapidOcr = require('../lib/rapidOcrMain')
 store.runDataMigration()
@@ -583,43 +588,33 @@ function startMeetingForegroundPoll() {
 }
 
 /**
- * Exclude the overlay from desktop capture during OCR/vision.
- * - Stealth already uses content protection → no extra step.
- * - Overlay visible: brief setContentProtection(true) so capture APIs omit the chat UI without
- *   driving opacity (no local flicker); restore to match stealth after.
- * - Overlay hidden: opacity 0 before capture (unchanged).
+ * Exclude the overlay from desktop capture during OCR/vision thumbnail grabs only.
+ * - Stealth ON: content protection already excludes overlay — brief DWM settle wait.
+ * - Visible mode (stealth OFF): do NOT toggle protection/opacity (Windows flickers visibly).
+ * - Overlay hidden via tray: brief opacity 0 so capture omits the chat UI.
  */
 async function withOverlayExcludedFromScreenCapture(fn) {
   if (!overlayWindow || overlayWindow.isDestroyed()) return fn()
-  /** Stealth uses content protection (overlay excluded) — still wait for a fresh DWM frame. */
+
   if (isStealthModeEnabled()) {
     await new Promise((resolve) => setTimeout(resolve, 100))
     return fn()
   }
 
+  // Eye = visible: user expects overlay on screen — skipping hide avoids blink every OCR tick.
   if (overlayVisible) {
-    try {
-      overlayWindow.setContentProtection(true)
-      await new Promise((resolve) => setTimeout(resolve, 50))
-      return await fn()
-    } finally {
-      if (!overlayWindow.isDestroyed()) {
-        overlayWindow.setContentProtection(isStealthModeEnabled())
-      }
-    }
+    return fn()
   }
 
   const previousOpacity = overlayWindow.getOpacity()
   try {
     overlayWindow.setOpacity(0)
-    console.log('📸 OCR capture: overlay hidden')
     await new Promise((resolve) => setTimeout(resolve, 50))
     return await fn()
   } finally {
     if (!overlayWindow.isDestroyed()) {
       overlayWindow.setOpacity(previousOpacity)
     }
-    console.log('📸 OCR capture: overlay restored')
   }
 }
 
@@ -910,9 +905,16 @@ function scheduleContextReindex() {
   clearTimeout(contextReindexTimer)
   contextReindexTimer = setTimeout(async () => {
     try {
-      const profiles = store.get('contextProfiles') || {}
-      const stats = await contextVectorStore.indexProfiles(profiles, app.getPath('userData'))
+      const stats = await contextVectorStore.indexContextData(
+        {
+          knowledgeBase: store.get('knowledgeBase') || store.get('contextProfile') || '',
+          contextPrompts: store.get('contextPrompts') || [],
+        },
+        app.getPath('userData'),
+      )
       store.set('contextIndexMeta', stats)
+      sendToOverlay('context-index-update', stats)
+      sendToSettingsWindow('context-index-update', stats)
     } catch (e) {
       console.warn('[context] reindex failed:', e?.message || e)
     }
@@ -921,16 +923,19 @@ function scheduleContextReindex() {
 
 async function buildProfileContextBlock({ userQ, structured, transcript, cleanScreen }) {
   try {
+    const prompts = normalizePromptsList(store.get('contextPrompts') || [])
+    const activeId = store.get('activeContextPromptId') || null
+    const activePrompt = getActivePrompt(prompts, activeId)
+
+    const instructionsBlock = formatActivePromptBlock(activePrompt)
+
     await contextVectorStore.loadIndex(app.getPath('userData'))
     const query = extractRetrievalQuery({ userQ, structured, transcript, cleanScreen })
-    if (!query.trim()) return ''
-    let tag = store.get('contextRetrievalMode') || 'auto'
-    if (tag === 'auto') {
-      tag = await inferContextTagFromCalendar((k) => store.get(k), (k, v) => store.set(k, v), googleCalendar)
-    } else if (tag === 'all') {
-      tag = null
-    }
-    return contextVectorStore.formatContextBlock(query, { tag })
+    const retrievedBlock = query.trim()
+      ? contextVectorStore.formatContextBlock(query, { promptId: activeId || null })
+      : ''
+
+    return `${instructionsBlock}${retrievedBlock}`
   } catch (e) {
     console.warn('[context] retrieval failed:', e?.message || e)
     return ''
@@ -980,13 +985,11 @@ async function handleAskAI(userQuestion, audioTranscript, _askMeta = {}) {
   let visionB64 = null
 
   if (wantVision) {
-    const visionPromise = withOverlayExcludedFromScreenCapture(async () => {
-      if (wantVision) {
-        try {
-          visionB64 = await screenCapture.captureScreenForVision()
-        } catch (_) {}
-      }
-    })
+    const visionPromise = (async () => {
+      try {
+        visionB64 = await screenCapture.captureScreenForVision()
+      } catch (_) {}
+    })()
     void visionPromise
       .then(() => {
         console.log('Vision snapshot ready post-start')
@@ -1391,8 +1394,10 @@ function setupIPC() {
     const payload = {
       exportedAt: new Date().toISOString(),
       systemPrompt: store.get('systemPrompt'),
-      contextProfiles: store.get('contextProfiles'),
-      contextRetrievalMode: store.get('contextRetrievalMode'),
+      knowledgeBase: store.get('knowledgeBase'),
+      contextPrompts: store.get('contextPrompts'),
+      activeContextPromptId: store.get('activeContextPromptId'),
+      contextPromptHistory: store.get('contextPromptHistory'),
       contextIndexMeta: store.get('contextIndexMeta'),
       resumeContext: store.get('resumeContext'),
       jdContext: store.get('jdContext'),
@@ -1434,8 +1439,13 @@ function setupIPC() {
     return { ok: true, ...out }
   })
   ipcMain.handle('context:index', async () => {
-    const profiles = store.get('contextProfiles') || {}
-    const stats = await contextVectorStore.indexProfiles(profiles, app.getPath('userData'))
+    const stats = await contextVectorStore.indexContextData(
+      {
+        knowledgeBase: store.get('knowledgeBase') || store.get('contextProfile') || '',
+        contextPrompts: store.get('contextPrompts') || [],
+      },
+      app.getPath('userData'),
+    )
     store.set('contextIndexMeta', stats)
     return { ok: true, ...stats }
   })
@@ -1443,10 +1453,10 @@ function setupIPC() {
     await contextVectorStore.loadIndex(app.getPath('userData'))
     return contextVectorStore.getStats()
   })
-  ipcMain.handle('context:search-preview', async (_, query, tag) => {
+  ipcMain.handle('context:search-preview', async (_, query, promptId) => {
     await contextVectorStore.loadIndex(app.getPath('userData'))
     const results = contextVectorStore.search(String(query || ''), {
-      tag: tag && tag !== 'all' ? tag : null,
+      promptId: promptId ? String(promptId) : store.get('activeContextPromptId') || null,
       topK: 5,
     })
     return { ok: true, results }
@@ -1503,9 +1513,37 @@ function setupIPC() {
       scheduleContextReindex()
       return true
     }
+    if (key === 'knowledgeBase' || key === 'contextProfile') {
+      stored = String(value || '').slice(0, KNOWLEDGE_BASE_MAX)
+      store.set('knowledgeBase', stored)
+      store.set('contextProfile', stored)
+      scheduleContextReindex()
+      return true
+    }
+    if (key === 'contextPrompts') {
+      stored = normalizePromptsList(Array.isArray(value) ? value : [])
+      store.set('contextPrompts', stored)
+      const activeId = store.get('activeContextPromptId')
+      if (activeId && !stored.some((p) => p.id === activeId)) {
+        store.set('activeContextPromptId', stored[0]?.id || '')
+      }
+      scheduleContextReindex()
+      return true
+    }
+    if (key === 'activeContextPromptId') {
+      const id = value ? String(value).slice(0, 64) : ''
+      store.set('activeContextPromptId', id)
+      if (id) {
+        const hist = pushPromptHistory(store.get('contextPromptHistory') || [], id)
+        store.set('contextPromptHistory', hist)
+      }
+      const prompts = normalizePromptsList(store.get('contextPrompts') || [])
+      const active = getActivePrompt(prompts, id)
+      sendToOverlay('context-prompt-update', { activeContextPromptId: id, activeName: active?.name || '' })
+      sendToSettingsWindow('context-prompt-update', { activeContextPromptId: id, activeName: active?.name || '' })
+      return true
+    }
     if (key === 'contextRetrievalMode') {
-      stored = CONTEXT_RETRIEVAL_MODES.includes(value) ? value : 'auto'
-      store.set('contextRetrievalMode', stored)
       return true
     }
     store.set(key, stored)
@@ -1601,9 +1639,7 @@ function setupIPC() {
       if (!rapidOcr.isReady()) {
         await screenCapture.initOcr()
       }
-      const text = await withOverlayExcludedFromScreenCapture(() =>
-        screenCapture.captureScreenText(opts || {}),
-      )
+      const text = await screenCapture.captureScreenText(opts || {})
       const out = String(text || '')
       return {
         ok: true,
@@ -1767,6 +1803,7 @@ function setupIPC() {
 }
 
 async function initApp() {
+  screenCapture.setOverlayCaptureWrapper(withOverlayExcludedFromScreenCapture)
   const { session } = require('electron')
   /** Packaged `file://` overlay: Chromium checks permissions before requesting; without this, mic/desktop capture can fail silently (dev often still works). */
   const capturePermissions = new Set(['media', 'display-capture', 'screen', 'speaker-selection'])
@@ -1815,10 +1852,17 @@ async function initApp() {
   startCalendarReminderPoll()
   setupAutoUpdater()
   try {
-    const profiles = store.get('contextProfiles') || {}
-    const hasText = ['meeting', 'interview', 'general'].some((t) => String(profiles[t] || '').trim())
+    const hasText =
+      String(store.get('knowledgeBase') || store.get('contextProfile') || '').trim() ||
+      normalizePromptsList(store.get('contextPrompts') || []).some((p) => String(p.content || '').trim())
     if (hasText) {
-      const stats = await contextVectorStore.indexProfiles(profiles, app.getPath('userData'))
+      const stats = await contextVectorStore.indexContextData(
+        {
+          knowledgeBase: store.get('knowledgeBase') || store.get('contextProfile') || '',
+          contextPrompts: store.get('contextPrompts') || [],
+        },
+        app.getPath('userData'),
+      )
       store.set('contextIndexMeta', stats)
     } else {
       await contextVectorStore.loadIndex(app.getPath('userData'))

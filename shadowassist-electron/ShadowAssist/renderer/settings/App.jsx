@@ -9,19 +9,14 @@ import logoSrc from '../../logo.png'
 
 const ipc = createIpcShim()
 
-const CONTEXT_SECTION_MAX = 12000
-const CONTEXT_SECTIONS = [
-  { id: 'meeting', label: 'Meeting', sub: 'Background, projects, talking points', accent: 'accent' },
-  { id: 'interview', label: 'Interview', sub: 'STAR stories, stack, prep notes', accent: 'sky' },
-  { id: 'general', label: 'General', sub: 'Anything else the AI should know', accent: 'zinc' },
-]
-const CONTEXT_RETRIEVAL_OPTIONS = [
-  { id: 'auto', label: 'Auto (calendar hint)' },
-  { id: 'meeting', label: 'Meeting only' },
-  { id: 'interview', label: 'Interview only' },
-  { id: 'general', label: 'General only' },
-  { id: 'all', label: 'All sections' },
-]
+const CONTENT_MAX = 12000
+const NAME_MAX = 64
+const REFERENCE_FILE_MAX_CHARS = 80000
+
+function basename(filePath) {
+  const p = String(filePath || '').replace(/\\/g, '/')
+  return p.split('/').pop() || 'file'
+}
 
 const GROQ_WHISPER = ['whisper-large-v3-turbo', 'whisper-large-v3']
 const TOGETHER_WHISPER_MODELS = ['openai/whisper-large-v3', 'openai/whisper-large-v3-turbo']
@@ -63,7 +58,7 @@ const HOTKEY_DEFS = [
 ]
 
 const SETTINGS_TABS = [
-  { id: 'profile', label: 'Profile', sub: 'Indexed context' },
+  { id: 'profile', label: 'Profile', sub: 'Customize' },
   { id: 'display', label: 'Display', sub: 'Overlay layout' },
   { id: 'meetings', label: 'Meetings', sub: 'Calendar & detection' },
   { id: 'session', label: 'Session', sub: 'Chat, STT & capture' },
@@ -273,11 +268,14 @@ export default function Settings() {
   const [meetingForegroundDetectionEnabled, setMeetingForegroundDetectionEnabled] = useState(true)
   const [listenSummaries, setListenSummaries] = useState([])
   const [selectedSummaryId, setSelectedSummaryId] = useState('')
-  const [contextProfiles, setContextProfiles] = useState({ meeting: '', interview: '', general: '' })
-  const [contextProfileTab, setContextProfileTab] = useState('meeting')
-  const [contextRetrievalMode, setContextRetrievalMode] = useState('auto')
-  const [contextIndexStats, setContextIndexStats] = useState(null)
+  const [contextPrompts, setContextPrompts] = useState([])
+  const [activeContextPromptId, setActiveContextPromptId] = useState('')
+  const [contextPromptHistory, setContextPromptHistory] = useState([])
   const [contextIndexing, setContextIndexing] = useState(false)
+  const [uploadBusy, setUploadBusy] = useState(false)
+  const [profileMenuOpen, setProfileMenuOpen] = useState(false)
+  const [draftName, setDraftName] = useState('')
+  const [draftContent, setDraftContent] = useState('')
 
   const [modelCatalog, setModelCatalog] = useState({})
   const [sttPolicy, setSttPolicy] = useState(null)
@@ -330,17 +328,18 @@ export default function Settings() {
             ? Math.max(0, Number(s.calendarReminderMinutes))
             : 5,
         )
-        setContextProfiles({
-          meeting: s.contextProfiles?.meeting || '',
-          interview: s.contextProfiles?.interview || '',
-          general: s.contextProfiles?.general || '',
-        })
-        setContextRetrievalMode(
-          CONTEXT_RETRIEVAL_OPTIONS.some((o) => o.id === s.contextRetrievalMode)
-            ? s.contextRetrievalMode
-            : 'auto',
+        setContextPrompts(Array.isArray(s.contextPrompts) ? s.contextPrompts : [])
+        setActiveContextPromptId(s.activeContextPromptId || '')
+        setContextPromptHistory(Array.isArray(s.contextPromptHistory) ? s.contextPromptHistory : [])
+        const activeP = (Array.isArray(s.contextPrompts) ? s.contextPrompts : []).find(
+          (p) => p.id === s.activeContextPromptId,
         )
-        setContextIndexStats(s.contextIndexMeta || null)
+        if (activeP) {
+          setDraftName(activeP.name || '')
+          const merged = String(activeP.content || '').trim()
+            || [activeP.instructions, activeP.knowledge].map((s) => String(s || '').trim()).filter(Boolean).join('\n\n')
+          setDraftContent(merged)
+        }
         const ob = s.overlayBounds || {}
         setOverlayOpacityUi(typeof s.overlayOpacity === 'number' ? s.overlayOpacity : 0.92)
         setOverlayFontUi(s.overlayFontSize || 'medium')
@@ -544,45 +543,128 @@ export default function Settings() {
     setTestingProvider(null)
   }
 
-  const refreshContextStats = async () => {
-    if (!ipc) return
-    try {
-      const stats = await ipc.invoke('context:stats')
-      setContextIndexStats(stats)
-    } catch {
-      /* ignore */
-    }
-  }
-
-  const reindexContext = async () => {
-    if (!ipc) return
+  const withIndexing = async (fn) => {
     setContextIndexing(true)
     try {
-      const r = await ipc.invoke('context:index')
-      setContextIndexStats(r)
+      await fn()
     } finally {
       setContextIndexing(false)
     }
   }
 
-  const saveContextProfiles = async (next) => {
-    setContextProfiles(next)
-    await save('contextProfiles', next)
-    void refreshContextStats()
+  const saveContextPrompts = async (next) => {
+    setContextPrompts(next)
+    await withIndexing(() => save('contextPrompts', next))
   }
 
-  const updateContextSection = (sectionId, text) => {
-    const trimmed = text.slice(0, CONTEXT_SECTION_MAX)
-    setContextProfiles((prev) => ({ ...prev, [sectionId]: trimmed }))
+  const selectContextPrompt = async (id) => {
+    const p = contextPrompts.find((x) => x.id === id)
+    if (!p) return
+    setProfileMenuOpen(false)
+    setActiveContextPromptId(id)
+    setDraftName(p.name || '')
+    const merged = String(p.content || '').trim()
+      || [p.instructions, p.knowledge].map((s) => String(s || '').trim()).filter(Boolean).join('\n\n')
+    setDraftContent(merged)
+    await save('activeContextPromptId', id)
+    const nextHist = [id, ...(contextPromptHistory || []).filter((h) => h !== id)].slice(0, 20)
+    setContextPromptHistory(nextHist)
+    await save('contextPromptHistory', nextHist)
   }
 
-  useEffect(() => {
-    if (activeTab === 'profile') void refreshContextStats()
-  }, [activeTab])
+  const addContextPrompt = async () => {
+    const now = Date.now()
+    const p = {
+      id: `cp-${now}-${Math.random().toString(36).slice(2, 9)}`,
+      name: 'New prompt',
+      content: '',
+      referenceFiles: [],
+      createdAt: now,
+      updatedAt: now,
+    }
+    const next = [...contextPrompts, p]
+    await saveContextPrompts(next)
+    await selectContextPrompt(p.id)
+  }
+
+  const saveActivePrompt = async () => {
+    if (!activeContextPromptId) return
+    const name = String(draftName || 'New prompt').trim().slice(0, NAME_MAX) || 'New prompt'
+    const content = String(draftContent || '').slice(0, CONTENT_MAX)
+    const next = contextPrompts.map((p) =>
+      p.id === activeContextPromptId ? { ...p, name, content, updatedAt: Date.now() } : p,
+    )
+    setDraftName(name)
+    await saveContextPrompts(next)
+  }
+
+  const uploadReferenceFile = async () => {
+    if (!activeContextPromptId || !ipc) return
+    const { canceled, filePaths } = await ipc.invoke('show-open-dialog', {
+      properties: ['openFile'],
+      filters: [{ name: 'Documents', extensions: ['pdf', 'txt'] }],
+    })
+    if (canceled || !filePaths?.[0]) return
+    setUploadBusy(true)
+    try {
+      const text = await ipc.invoke('parse-playbook', filePaths[0])
+      if (!String(text || '').trim()) return
+      const file = {
+        id: `rf-${Date.now()}`,
+        name: basename(filePaths[0]),
+        text: String(text).slice(0, REFERENCE_FILE_MAX_CHARS),
+      }
+      const next = contextPrompts.map((p) =>
+        p.id === activeContextPromptId
+          ? { ...p, referenceFiles: [...(p.referenceFiles || []), file], updatedAt: Date.now() }
+          : p,
+      )
+      await saveContextPrompts(next)
+    } catch (e) {
+      console.error('[profile] upload reference file:', e)
+    } finally {
+      setUploadBusy(false)
+    }
+  }
+
+  const removeReferenceFile = async (fileId) => {
+    if (!activeContextPromptId) return
+    const next = contextPrompts.map((p) =>
+      p.id === activeContextPromptId
+        ? {
+            ...p,
+            referenceFiles: (p.referenceFiles || []).filter((f) => f.id !== fileId),
+            updatedAt: Date.now(),
+          }
+        : p,
+    )
+    await saveContextPrompts(next)
+  }
+
+  const deleteActivePrompt = async () => {
+    if (!activeContextPromptId) return
+    setProfileMenuOpen(false)
+    const id = activeContextPromptId
+    const next = contextPrompts.filter((p) => p.id !== id)
+    const nextHist = (contextPromptHistory || []).filter((h) => h !== id)
+    setContextPromptHistory(nextHist)
+    await save('contextPromptHistory', nextHist)
+    await saveContextPrompts(next)
+    if (next[0]) {
+      await selectContextPrompt(next[0].id)
+    } else {
+      setActiveContextPromptId('')
+      setDraftName('')
+      setDraftContent('')
+      await save('activeContextPromptId', '')
+    }
+  }
+
+  const activePrompt = contextPrompts.find((p) => p.id === activeContextPromptId) || null
 
   const launchFromSetup = async () => {
     try {
-      await save('contextProfiles', contextProfiles)
+      await save('contextPrompts', contextPrompts)
       await save('hasCompletedOnboarding', true)
       setHasCompletedOnboarding(true)
     } catch (e) {
@@ -624,8 +706,21 @@ export default function Settings() {
     // eslint-disable-next-line react-hooks/exhaustive-deps -- hydrate model list when provider/key ready
   }, [snap, provider, providerMeta.length])
 
-  const activeContextSection = CONTEXT_SECTIONS.find((s) => s.id === contextProfileTab) || CONTEXT_SECTIONS[0]
-  const activeContextText = contextProfiles[contextProfileTab] || ''
+  useEffect(() => {
+    if (!ipc) return
+    const onIndex = () => setContextIndexing(false)
+    const onPrompt = (_, payload) => {
+      if (payload?.activeContextPromptId != null) {
+        setActiveContextPromptId(payload.activeContextPromptId)
+      }
+    }
+    ipc.on('context-index-update', onIndex)
+    ipc.on('context-prompt-update', onPrompt)
+    return () => {
+      ipc.removeAllListeners('context-index-update')
+      ipc.removeAllListeners('context-prompt-update')
+    }
+  }, [])
 
   const connectGoogleCalendar = async () => {
     if (!ipc) return
@@ -877,110 +972,156 @@ export default function Settings() {
 
         <main className="settings-scroll-outer min-h-0 min-w-0 flex-1 overflow-y-auto overflow-x-hidden p-6 lg:p-8">
           {activeTab === 'profile' && (
-            <div className="mx-auto max-w-[1600px] animate-fade-in space-y-5">
-              <section className="glass-panel p-6">
-                <div className="mb-4 flex flex-wrap items-start justify-between gap-3">
-                  <div>
-                    <h3 className="font-display text-sm font-bold uppercase tracking-widest text-phantom-300">
-                      Context index
-                    </h3>
+            <div className="mx-auto max-w-2xl animate-fade-in">
+              <div className="mb-5 flex flex-wrap gap-2">
+                {contextPrompts.map((p) => (
+                  <button
+                    key={p.id}
+                    type="button"
+                    onClick={() => void selectContextPrompt(p.id)}
+                    className={`settings-chip settings-chip-sm !normal-case ${
+                      activeContextPromptId === p.id ? 'settings-chip-active' : ''
+                    }`}
+                  >
+                    {p.name}
+                  </button>
+                ))}
+                <button
+                  type="button"
+                  onClick={() => void addContextPrompt()}
+                  className="settings-chip settings-chip-sm !normal-case border-dashed border-white/20 text-gray-400 hover:text-white"
+                >
+                  + New
+                </button>
+              </div>
+
+              {activePrompt ? (
+                <div className="space-y-8">
+                  <div className="flex items-start justify-between gap-4">
+                    <input
+                      type="text"
+                      value={draftName}
+                      onChange={(e) => setDraftName(e.target.value.slice(0, NAME_MAX))}
+                      className="min-w-0 flex-1 bg-transparent text-2xl font-bold tracking-tight text-white outline-none placeholder:text-zinc-600"
+                      placeholder="Prompt name"
+                    />
+                    <div className="flex shrink-0 items-center gap-2 pt-1">
+                      <span className="rounded-md bg-blue-500/15 px-2.5 py-1 text-xs font-medium text-blue-400">
+                        ✓ Active
+                      </span>
+                      <div className="relative">
+                        <button
+                          type="button"
+                          onClick={() => setProfileMenuOpen((o) => !o)}
+                          className="rounded-md px-2 py-1 text-lg leading-none text-zinc-400 hover:bg-white/5 hover:text-white"
+                          aria-label="Prompt menu"
+                        >
+                          ···
+                        </button>
+                        {profileMenuOpen ? (
+                          <div className="absolute right-0 z-30 mt-1 min-w-[140px] rounded-lg border border-white/10 bg-zinc-900 py-1 shadow-xl">
+                            {contextPrompts
+                              .filter((p) => p.id !== activeContextPromptId)
+                              .map((p) => (
+                                <button
+                                  key={p.id}
+                                  type="button"
+                                  onClick={() => void selectContextPrompt(p.id)}
+                                  className="block w-full px-3 py-2 text-left text-xs text-zinc-300 hover:bg-white/5"
+                                >
+                                  Switch to {p.name}
+                                </button>
+                              ))}
+                            <button
+                              type="button"
+                              onClick={() => {
+                                setProfileMenuOpen(false)
+                                void deleteActivePrompt()
+                              }}
+                              className="block w-full px-3 py-2 text-left text-xs text-red-400 hover:bg-white/5"
+                            >
+                              Delete prompt
+                            </button>
+                          </div>
+                        ) : null}
+                      </div>
+                    </div>
                   </div>
+
+                  <section>
+                    <h4 className="mb-3 text-sm font-semibold text-white">Real-time prompt</h4>
+                    <div className="overflow-hidden rounded-xl border border-white/10 bg-black/40">
+                      <textarea
+                        value={draftContent}
+                        onChange={(e) => setDraftContent(e.target.value.slice(0, CONTENT_MAX))}
+                        rows={14}
+                        className="w-full resize-y bg-transparent px-4 py-4 text-sm leading-relaxed text-zinc-300 outline-none placeholder:text-zinc-600"
+                        placeholder="How should the AI behave? Paste role, goals, tone, bullet points…"
+                      />
+                      <div className="flex items-center justify-end gap-3 border-t border-white/5 px-3 py-2">
+                        {contextIndexing ? (
+                          <span className="text-[10px] text-zinc-500">Indexing…</span>
+                        ) : null}
+                        <button
+                          type="button"
+                          onClick={() => void saveActivePrompt()}
+                          disabled={contextIndexing}
+                          className="rounded-md bg-white/10 px-4 py-1.5 text-xs font-medium text-white hover:bg-white/15 disabled:opacity-50"
+                        >
+                          Save
+                        </button>
+                      </div>
+                    </div>
+                  </section>
+
+                  <section>
+                    <h4 className="mb-3 text-sm font-semibold text-white">Reference files</h4>
+                    <div className="rounded-xl border border-white/10 bg-black/20 px-6 py-12 text-center">
+                      <p className="mb-5 text-sm text-zinc-500">Add files as real-time context.</p>
+                      <button
+                        type="button"
+                        onClick={() => void uploadReferenceFile()}
+                        disabled={uploadBusy || contextIndexing}
+                        className="inline-flex items-center gap-2 rounded-lg border border-white/15 bg-white/5 px-4 py-2 text-sm text-zinc-300 hover:bg-white/10 disabled:opacity-50"
+                      >
+                        <span aria-hidden>📎</span>
+                        {uploadBusy ? 'Uploading…' : 'Upload file'}
+                      </button>
+                      <p className="mt-3 text-[10px] text-zinc-600">PDF or TXT</p>
+                    </div>
+                    {(activePrompt.referenceFiles || []).length > 0 ? (
+                      <ul className="mt-3 space-y-2">
+                        {(activePrompt.referenceFiles || []).map((f) => (
+                          <li
+                            key={f.id}
+                            className="flex items-center justify-between gap-3 rounded-lg border border-white/10 px-3 py-2.5 text-sm text-zinc-300"
+                          >
+                            <span className="min-w-0 truncate">{f.name}</span>
+                            <button
+                              type="button"
+                              onClick={() => void removeReferenceFile(f.id)}
+                              className="shrink-0 text-xs text-zinc-500 hover:text-red-400"
+                            >
+                              Remove
+                            </button>
+                          </li>
+                        ))}
+                      </ul>
+                    ) : null}
+                  </section>
+                </div>
+              ) : (
+                <div className="rounded-xl border border-dashed border-white/15 p-12 text-center">
+                  <p className="mb-4 text-sm text-zinc-500">Create a prompt to customize how VeilAssist responds.</p>
                   <button
                     type="button"
-                    onClick={reindexContext}
-                    disabled={contextIndexing}
-                    className="btn-glow px-4 py-2 text-sm"
+                    onClick={() => void addContextPrompt()}
+                    className="rounded-lg bg-accent/20 px-4 py-2 text-sm font-medium text-accent-light hover:bg-accent/30"
                   >
-                    {contextIndexing ? 'Indexing…' : 'Re-index now'}
+                    Create prompt
                   </button>
                 </div>
-
-                <div className="flex flex-wrap items-center gap-3 text-xs text-gray-500">
-                  <span>
-                    Chunks:{' '}
-                    <span className="font-mono text-gray-300">{contextIndexStats?.chunkCount ?? '—'}</span>
-                  </span>
-                  {contextIndexStats?.indexedAt && (
-                    <span>
-                      Last indexed:{' '}
-                      <span className="font-mono text-gray-400">
-                        {new Date(contextIndexStats.indexedAt).toLocaleString()}
-                      </span>
-                    </span>
-                  )}
-                  {contextIndexStats?.tags && (
-                    <span className="font-mono text-[10px] text-gray-600">
-                      meeting {contextIndexStats.tags.meeting || 0} · interview{' '}
-                      {contextIndexStats.tags.interview || 0} · general {contextIndexStats.tags.general || 0}
-                    </span>
-                  )}
-                </div>
-
-                <div className="mt-5">
-                  <label className="mb-1.5 block text-[10px] font-semibold uppercase tracking-wider text-zinc-500">
-                    Retrieval mode
-                  </label>
-                  <div className="flex flex-wrap gap-2">
-                    {CONTEXT_RETRIEVAL_OPTIONS.map((o) => (
-                      <button
-                        key={o.id}
-                        type="button"
-                        onClick={() => {
-                          setContextRetrievalMode(o.id)
-                          save('contextRetrievalMode', o.id)
-                        }}
-                        className={`settings-chip settings-chip-sm !normal-case ${
-                          contextRetrievalMode === o.id ? 'settings-chip-active' : ''
-                        }`}
-                      >
-                        {o.label}
-                      </button>
-                    ))}
-                  </div>
-                </div>
-
-                <div className="mt-5 flex flex-wrap gap-2">
-                  {CONTEXT_SECTIONS.map((s) => (
-                    <button
-                      key={s.id}
-                      type="button"
-                      onClick={() => setContextProfileTab(s.id)}
-                      className={`settings-chip settings-chip-sm !normal-case ${
-                        contextProfileTab === s.id ? 'settings-chip-active' : ''
-                      }`}
-                    >
-                      {s.label}
-                    </button>
-                  ))}
-                </div>
-
-                <p className="mt-3 text-xs text-gray-500">{activeContextSection.sub}</p>
-
-                <textarea
-                  value={activeContextText}
-                  onChange={(e) => updateContextSection(contextProfileTab, e.target.value)}
-                  onBlur={(e) => {
-                    const next = {
-                      ...contextProfiles,
-                      [contextProfileTab]: e.target.value.slice(0, CONTEXT_SECTION_MAX),
-                    }
-                    void saveContextProfiles(next)
-                  }}
-                  rows={16}
-                  className="input-shadow mt-3 min-h-[320px] w-full resize-y px-3 py-3 text-sm leading-relaxed"
-                  placeholder={
-                    contextProfileTab === 'meeting'
-                      ? 'Resume bullets, current role, projects, team context…'
-                      : contextProfileTab === 'interview'
-                        ? 'STAR stories, tech stack, companies, interview prep…'
-                        : 'Anything else you want the AI to remember…'
-                  }
-                />
-                <p className="mt-2 text-[10px] text-gray-600">
-                  {activeContextText.length.toLocaleString()} / {CONTEXT_SECTION_MAX.toLocaleString()} — saved and
-                  re-indexed on blur.
-                </p>
-              </section>
+              )}
             </div>
           )}
 

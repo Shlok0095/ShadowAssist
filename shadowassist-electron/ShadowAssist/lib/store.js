@@ -146,14 +146,24 @@ const schema = {
   jdContext: { type: 'string', default: '' },
   /** Original filename for UI display — legacy */
   resumeSourceName: { type: 'string', default: '' },
-  /** Cluely-style tagged profile sections indexed for retrieval */
+  /** @deprecated legacy buckets — migrated to contextPrompts */
   contextProfiles: {
     type: 'object',
     default: { meeting: '', interview: '', general: '' },
   },
-  /** auto = calendar hint; all = search every tag */
+  /** @deprecated */
   contextRetrievalMode: { type: 'string', default: 'auto' },
-  /** Last index stats { chunkCount, indexedAt, tags } */
+  /** Shared facts/docs (Cluely knowledge base) — vector indexed, always searched */
+  knowledgeBase: { type: 'string', default: '' },
+  /** @deprecated — migrated to knowledgeBase */
+  contextProfile: { type: 'string', default: '' },
+  /** Saved context prompts [{ id, name, instructions, knowledge, createdAt, updatedAt }] */
+  contextPrompts: { type: 'array', default: [] },
+  /** Active prompt id for completions */
+  activeContextPromptId: { type: 'string', default: '' },
+  /** Recent prompt ids (newest first) */
+  contextPromptHistory: { type: 'array', default: [] },
+  /** Last index stats { chunkCount, indexedAt } */
   contextIndexMeta: { type: 'object', default: {} },
   /** Stealth Mode: true = hidden from screen capture (setContentProtection / WDA_EXCLUDEFROMCAPTURE on Windows) */
   stealth_mode: { type: 'boolean', default: false },
@@ -262,11 +272,31 @@ function migrateContextProfilesFromLegacy() {
   }
 }
 
+function migrateKnowledgeBase() {
+  try {
+    const kb = String(get('knowledgeBase') || '').trim()
+    const profile = String(get('contextProfile') || '').trim()
+    if (!kb && profile) set('knowledgeBase', profile)
+  } catch (_) {}
+}
+
+function migrateContextPromptsV2() {
+  try {
+    migrateKnowledgeBase()
+    const { migrateContextPromptsFromLegacy } = require('./contextPrompts')
+    migrateContextPromptsFromLegacy(get, set)
+    migrateKnowledgeBase()
+  } catch (e) {
+    console.warn('[store] context prompts migration:', e?.message || e)
+  }
+}
+
 function runDataMigration() {
   migrateLegacySystemPrompt()
   migrateSttModeFromLocal()
   migrateSttProviderFromLegacy()
   migrateContextProfilesFromLegacy()
+  migrateContextPromptsV2()
   const epoch = typeof get('dataEpoch') === 'number' ? get('dataEpoch') : 0
   if (epoch >= DATA_EPOCH) return
   for (const k of ENCRYPTED_KEYS) {

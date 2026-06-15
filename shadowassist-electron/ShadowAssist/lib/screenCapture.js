@@ -34,6 +34,12 @@ let lastOcrForSamePng = ''
 let captureFailCount = 0
 let ocrInFlightPromise = null
 let lastCaptureDiag = { ok: false, sources: 0, dataUrlLen: 0, thumbW: 0, thumbH: 0, err: '' }
+/** Optional hook from main — runs only when a real desktop thumbnail grab is needed (not on OCR cache hits). */
+let overlayCaptureWrapper = null
+
+function setOverlayCaptureWrapper(fn) {
+  overlayCaptureWrapper = typeof fn === 'function' ? fn : null
+}
 
 function sleep(ms) {
   return new Promise((r) => setTimeout(r, ms))
@@ -215,63 +221,67 @@ async function ocrPngBuffer(buf) {
 }
 
 async function safeCaptureDataUrl() {
-  const thumbSizes = [
-    getOcrThumbnailSize(),
-    { width: 1280, height: 720 },
-    { width: 960, height: 540 },
-  ]
-  for (const thumbSize of thumbSizes) {
-    for (let i = 0; i < 2; i++) {
-      try {
-        const sources = await desktopCapturer.getSources({
-          types: ['screen'],
-          thumbnailSize: thumbSize,
-        })
-        if (!sources?.length) {
-          cachedScreenSourceId = null
-          throw new Error('no screen sources')
-        }
-        let pick = null
-        if (cachedScreenSourceId) {
-          pick = sources.find((s) => s.id === cachedScreenSourceId) || null
-        }
-        if (!pick) pick = pickScreenSource(sources) || sources[0]
-        cachedScreenSourceId = pick.id
-        const dataUrl = pick.thumbnail?.toDataURL('image/png')
-        if (!dataUrl || typeof dataUrl !== 'string' || dataUrl.length < 80) {
-          throw new Error('invalid thumbnail')
-        }
-        captureFailCount = 0
-        lastCaptureDiag = {
-          ok: true,
-          sources: sources.length,
-          dataUrlLen: dataUrl.length,
-          thumbW: thumbSize.width,
-          thumbH: thumbSize.height,
-          err: '',
-        }
-        ocrDebugLog('capture_ok', lastCaptureDiag)
-        return dataUrl
-      } catch (e) {
-        if (i < 1) await sleep(120)
-        else {
+  const capture = async () => {
+    const thumbSizes = [
+      getOcrThumbnailSize(),
+      { width: 1280, height: 720 },
+      { width: 960, height: 540 },
+    ]
+    for (const thumbSize of thumbSizes) {
+      for (let i = 0; i < 2; i++) {
+        try {
+          const sources = await desktopCapturer.getSources({
+            types: ['screen'],
+            thumbnailSize: thumbSize,
+          })
+          if (!sources?.length) {
+            cachedScreenSourceId = null
+            throw new Error('no screen sources')
+          }
+          let pick = null
+          if (cachedScreenSourceId) {
+            pick = sources.find((s) => s.id === cachedScreenSourceId) || null
+          }
+          if (!pick) pick = pickScreenSource(sources) || sources[0]
+          cachedScreenSourceId = pick.id
+          const dataUrl = pick.thumbnail?.toDataURL('image/png')
+          if (!dataUrl || typeof dataUrl !== 'string' || dataUrl.length < 80) {
+            throw new Error('invalid thumbnail')
+          }
+          captureFailCount = 0
           lastCaptureDiag = {
-            ok: false,
-            sources: 0,
-            dataUrlLen: 0,
+            ok: true,
+            sources: sources.length,
+            dataUrlLen: dataUrl.length,
             thumbW: thumbSize.width,
             thumbH: thumbSize.height,
-            err: e?.message || String(e),
+            err: '',
+          }
+          ocrDebugLog('capture_ok', lastCaptureDiag)
+          return dataUrl
+        } catch (e) {
+          if (i < 1) await sleep(120)
+          else {
+            lastCaptureDiag = {
+              ok: false,
+              sources: 0,
+              dataUrlLen: 0,
+              thumbW: thumbSize.width,
+              thumbH: thumbSize.height,
+              err: e?.message || String(e),
+            }
           }
         }
       }
     }
+    ocrDebugLog('capture_fail', lastCaptureDiag)
+    captureFailCount++
+    const delay = Math.min(1000 * 2 ** captureFailCount, 8000)
+    captureFailCooldownUntil = Date.now() + delay
+    return null
   }
-  ocrDebugLog('capture_fail', lastCaptureDiag)
-  captureFailCount++
-  const delay = Math.min(1000 * 2 ** captureFailCount, 8000)
-  captureFailCooldownUntil = Date.now() + delay
-  return null
+  if (overlayCaptureWrapper) return overlayCaptureWrapper(capture)
+  return capture()
 }
 
 /**
@@ -424,6 +434,7 @@ async function getDisplayMediaLoopbackPayload() {
 }
 
 module.exports = {
+  setOverlayCaptureWrapper,
   captureScreenText,
   captureScreenForVision,
   getDesktopSourceId,
