@@ -43,8 +43,8 @@ const REGISTRY = {
     modelField: 'anthropicModel',
     defaultModel: 'claude-3-5-sonnet-20241022',
     testModel: 'claude-3-5-haiku-20241022',
-    vision: false,
-    ui: { label: 'Anthropic', badge: 'Claude', color: '#d97757', desc: 'Claude — reasoning', docs: 'https://console.anthropic.com/' },
+    vision: true,
+    ui: { label: 'Anthropic', badge: 'Claude', color: '#d97757', desc: 'Claude — reasoning + vision', docs: 'https://console.anthropic.com/' },
   },
   deepseek: {
     kind: 'openai_compat',

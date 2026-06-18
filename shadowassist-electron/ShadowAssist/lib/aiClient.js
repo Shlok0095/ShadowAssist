@@ -51,14 +51,22 @@ function getOpenAICompatClient(apiKey, baseURL) {
   return openaiClientCache[cacheKey]
 }
 
-function flattenUserContentForAnthropic(content) {
+function convertContentForAnthropic(content) {
   if (typeof content === 'string') return content
-  if (Array.isArray(content)) {
-    const texts = content.filter((p) => p && p.type === 'text').map((p) => p.text || '')
-    const t = texts.join('\n\n').trim()
-    return t || '[Context includes non-text parts — describe screen/audio from text sections only.]'
-  }
-  return String(content)
+  if (!Array.isArray(content)) return String(content)
+  const parts = content.map((p) => {
+    if (!p) return null
+    if (p.type === 'text') return { type: 'text', text: String(p.text || '') }
+    if (p.type === 'image_url') {
+      const url = String(p.image_url?.url || '')
+      const m = url.match(/^data:(image\/[a-z+]+);base64,(.+)$/)
+      if (m) return { type: 'image', source: { type: 'base64', media_type: m[1], data: m[2] } }
+    }
+    return null
+  }).filter(Boolean)
+  if (parts.length === 0) return '[no content]'
+  if (parts.length === 1 && parts[0].type === 'text') return parts[0].text
+  return parts
 }
 
 function splitMessagesForAnthropic(messages) {
@@ -68,7 +76,7 @@ function splitMessagesForAnthropic(messages) {
     if (m.role === 'system') {
       system += (typeof m.content === 'string' ? m.content : '') + '\n'
     } else if (m.role === 'user') {
-      out.push({ role: 'user', content: flattenUserContentForAnthropic(m.content) })
+      out.push({ role: 'user', content: convertContentForAnthropic(m.content) })
     } else if (m.role === 'assistant') {
       out.push({ role: 'assistant', content: typeof m.content === 'string' ? m.content : String(m.content) })
     }
