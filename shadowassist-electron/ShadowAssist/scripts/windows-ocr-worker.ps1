@@ -1,5 +1,5 @@
 # windows-ocr-worker.ps1
-# Persistent Windows.Graphics.OCR worker process.
+# Persistent Windows.Media.Ocr worker process.
 # Loads WinRT OCR engine once on startup; subsequent calls are fast (~50-150ms).
 #
 # Protocol (newline-delimited over stdin/stdout):
@@ -14,13 +14,19 @@
 [Console]::OutputEncoding = [System.Text.Encoding]::UTF8
 
 # ── Load WinRT type projections ───────────────────────────────────────────────
+# Assembly names match the WinMD filenames in %SystemRoot%\System32\WinMetadata\
+#   Windows.Graphics.winmd  → Windows.Graphics.Imaging.*
+#   Windows.Media.winmd     → Windows.Media.Ocr.*
+#   Windows.Globalization.winmd → Windows.Globalization.*
 try {
     Add-Type -AssemblyName System.Runtime.WindowsRuntime
-    $null = [Windows.Graphics.Imaging.BitmapDecoder,     Windows.Graphics.Imaging, ContentType = WindowsRuntime]
-    $null = [Windows.Graphics.Imaging.SoftwareBitmap,    Windows.Graphics.Imaging, ContentType = WindowsRuntime]
-    $null = [Windows.Graphics.Imaging.BitmapPixelFormat, Windows.Graphics.Imaging, ContentType = WindowsRuntime]
-    $null = [Windows.Graphics.OCR.OcrEngine,             Windows.Foundation,       ContentType = WindowsRuntime]
-    $null = [Windows.Globalization.Language,              Windows.Foundation,       ContentType = WindowsRuntime]
+
+    $null = [Windows.Graphics.Imaging.BitmapDecoder,     Windows.Graphics,      ContentType = WindowsRuntime]
+    $null = [Windows.Graphics.Imaging.SoftwareBitmap,    Windows.Graphics,      ContentType = WindowsRuntime]
+    $null = [Windows.Graphics.Imaging.BitmapPixelFormat, Windows.Graphics,      ContentType = WindowsRuntime]
+    $null = [Windows.Media.Ocr.OcrEngine,                Windows.Media,         ContentType = WindowsRuntime]
+    $null = [Windows.Media.Ocr.OcrResult,                Windows.Media,         ContentType = WindowsRuntime]
+    $null = [Windows.Globalization.Language,              Windows.Globalization, ContentType = WindowsRuntime]
 } catch {
     [Console]::Out.WriteLine('FATAL:WinRT load failed: ' + $_.Exception.Message)
     [Console]::Out.Flush()
@@ -33,7 +39,7 @@ $_asTask = [System.WindowsRuntimeSystemExtensions].GetMethods() |
     Select-Object -First 1
 
 if ($null -eq $_asTask) {
-    [Console]::Out.WriteLine('FATAL:AsTask reflection failed — Windows Runtime extensions not available')
+    [Console]::Out.WriteLine('FATAL:AsTask reflection failed — System.Runtime.WindowsRuntime not available')
     [Console]::Out.Flush()
     exit 1
 }
@@ -46,11 +52,11 @@ function Await-WinRT([object]$AsyncOp, [Type]$T) {
 
 # ── Create OCR engine ─────────────────────────────────────────────────────────
 try {
-    $engine = [Windows.Graphics.OCR.OcrEngine]::TryCreateFromUserProfileLanguages()
+    $engine = [Windows.Media.Ocr.OcrEngine]::TryCreateFromUserProfileLanguages()
     if ($null -eq $engine) {
         # Fallback: force English if no profile language pack is installed
         $lang   = [Windows.Globalization.Language]::new('en-US')
-        $engine = [Windows.Graphics.OCR.OcrEngine]::TryCreateFromLanguage($lang)
+        $engine = [Windows.Media.Ocr.OcrEngine]::TryCreateFromLanguage($lang)
     }
     if ($null -eq $engine) {
         [Console]::Out.WriteLine('FATAL:Cannot create Windows OCR engine. Install an OCR language pack: Windows Settings > Time & Language > Language > your language > Options > Download under OCR.')
@@ -81,7 +87,6 @@ while ($true) {
     }
 
     $filePath = $line.Substring(5)
-
     $fs  = $null
     $bmp = $null
 
@@ -89,12 +94,10 @@ while ($true) {
         # Decode PNG → SoftwareBitmap
         $fs      = [System.IO.File]::OpenRead($filePath)
         $ras     = [System.IO.WindowsRuntimeStreamExtensions]::AsRandomAccessStream($fs)
-        $decoder = Await-WinRT ([Windows.Graphics.Imaging.BitmapDecoder]::CreateAsync($ras)) ([Windows.Graphics.Imaging.BitmapDecoder])
-        $bmp     = Await-WinRT ($decoder.GetSoftwareBitmapAsync())                            ([Windows.Graphics.Imaging.SoftwareBitmap])
+        $decoder = Await-WinRT ([Windows.Graphics.Imaging.BitmapDecoder]::CreateAsync($ras))    ([Windows.Graphics.Imaging.BitmapDecoder])
+        $bmp     = Await-WinRT ($decoder.GetSoftwareBitmapAsync())                              ([Windows.Graphics.Imaging.SoftwareBitmap])
 
-        $fs.Close()
-        $fs.Dispose()
-        $fs = $null
+        $fs.Close(); $fs.Dispose(); $fs = $null
 
         # Windows OCR requires Bgra8 pixel format
         if ($bmp.BitmapPixelFormat -ne [Windows.Graphics.Imaging.BitmapPixelFormat]::Bgra8) {
@@ -104,9 +107,8 @@ while ($true) {
         }
 
         # Run OCR
-        $result = Await-WinRT ($engine.RecognizeAsync($bmp)) ([Windows.Graphics.OCR.OcrResult])
-        $bmp.Dispose()
-        $bmp = $null
+        $result = Await-WinRT ($engine.RecognizeAsync($bmp)) ([Windows.Media.Ocr.OcrResult])
+        $bmp.Dispose(); $bmp = $null
 
         # Collect lines
         $lines = [System.Collections.Generic.List[string]]::new()
@@ -122,7 +124,7 @@ while ($true) {
         $msg = ($_.Exception.Message -replace '[\r\n]+', ' ').Trim()
         [Console]::Out.WriteLine('ERR:' + $msg)
     } finally {
-        if ($null -ne $fs)  { try { $fs.Close();  $fs.Dispose()  } catch {} }
+        if ($null -ne $fs)  { try { $fs.Close(); $fs.Dispose()  } catch {} }
         if ($null -ne $bmp) { try { $bmp.Dispose()               } catch {} }
         try { [System.IO.File]::Delete($filePath) } catch {}
     }
