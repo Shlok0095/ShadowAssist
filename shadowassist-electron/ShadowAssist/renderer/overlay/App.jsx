@@ -1665,7 +1665,11 @@ export default function App() {
           const bufferedSpeech = String(speechBufferRef.current || '').trim()
           const segmentSnapshot = [...speechSegmentsRef.current]
           const isManualAsk = !isAuto
-          const promptModeEarly = (isScreenRead && !trimmed) ? 'screen' : trimmed ? 'typed' : 'audio'
+          const promptModeEarly = trimmed
+            ? 'typed'
+            : (isScreenRead || (!bufferedSpeech && segmentSnapshot.length === 0))
+              ? 'screen'
+              : 'audio'
           if (
             isManualAsk &&
             promptModeEarly !== 'screen' &&
