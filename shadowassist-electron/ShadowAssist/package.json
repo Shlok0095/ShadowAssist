@@ -1,6 +1,6 @@
 {
   "name": "veilassist",
-  "version": "1.0.8",
+  "version": "1.0.9",
   "description": "Undetectable AI for live meetings — discreet on-screen meeting assistant",
   "author": "VeilAssist",
   "license": "UNLICENSED",
@@ -14,7 +14,7 @@
     "start:force": "npm run kill-electron && npm run start",
     "dist": "node scripts/make-win-ico.cjs && npm run build && node scripts/run-electron-builder.cjs --win portable",
     "dist:release": "node scripts/make-win-ico.cjs && npm run build && node scripts/run-electron-builder.cjs --win portable nsis",
-    "build:win": "npm run dist:release",
+    "build:win": "node scripts/inject-oauth.cjs && npm run dist:release",
     "dist:dir": "node scripts/make-win-ico.cjs && npm run build && node scripts/run-electron-builder.cjs --win dir",
     "dist:checksums": "node scripts/sha256-dist.cjs",
     "verify:packaged-ocr": "node scripts/verify-packaged-ocr.cjs",

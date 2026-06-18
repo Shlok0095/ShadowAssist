@@ -171,10 +171,12 @@ html::-webkit-scrollbar {
 }
 
 .glass-panel {
-  @apply rounded-2xl border border-white/[0.08] bg-gradient-to-br from-white/[0.05] to-white/[0.02] backdrop-blur-xl;
+  @apply rounded-2xl border border-white/[0.09] bg-gradient-to-br from-white/[0.065] to-white/[0.01] backdrop-blur-2xl;
   box-shadow:
-    0 0 0 1px rgba(255, 255, 255, 0.04) inset,
-    0 12px 40px -20px rgba(0, 0, 0, 0.55);
+    0 0 0 1px rgba(255, 255, 255, 0.055) inset,
+    0 1px 0 rgba(255, 255, 255, 0.03) inset,
+    0 20px 60px -20px rgba(0, 0, 0, 0.7),
+    0 4px 12px rgba(0, 0, 0, 0.3);
 }
 
 .input-shadow {
@@ -264,13 +266,16 @@ html::-webkit-scrollbar {
   color: rgb(212, 212, 216);
 }
 .settings-nav-btn-active {
-  border-color: rgba(255, 255, 255, 0.08);
-  border-left-color: rgb(var(--accent-rgb) / 1);
-  background: rgba(255, 255, 255, 0.06);
+  border-color: transparent;
+  border-left-color: rgb(var(--accent-rgb));
+  background: linear-gradient(90deg, rgb(var(--accent-rgb) / 0.14) 0%, rgba(255, 255, 255, 0.025) 75%, transparent 100%);
   color: white;
 }
 .settings-nav-btn-active .settings-nav-sub {
   color: rgb(161, 161, 170);
+}
+.settings-nav-btn:hover:not(.settings-nav-btn-active) {
+  background: rgba(255, 255, 255, 0.05);
 }
 
 /* Cluely-style profile modes */

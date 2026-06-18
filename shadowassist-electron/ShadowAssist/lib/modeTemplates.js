@@ -103,7 +103,7 @@ const MODE_TEMPLATES = [
     color: '#3b82f6',
     icon: 'interview',
     content:
-      'I am in a job interview. Help me answer questions confidently using my resume and background. Use STAR for behavioral questions and keep answers concise.',
+      'I am in a job interview as the interviewee. When a question appears (from audio or screen), give me the DIRECT ANSWER I should speak — in first person, naturally. Do NOT coach from outside or describe the question. Use STAR for behavioral questions (4 sentences max). Keep answers under 120 words. Use my reference files for real experience — never fabricate.',
     notesTemplate: [
       { title: 'Questions asked', instructions: 'Interview questions I was asked.' },
       { title: 'My answers', instructions: 'How I responded and what landed well.' },
@@ -136,7 +136,7 @@ const MODE_TEMPLATES = [
     description: 'Technical depth for ML, LLMs, RAG, and cloud AI systems.',
     color: '#0ea5e9',
     icon: 'gen-ai',
-    content: `I am a Gen AI / ML engineer in a technical interview or working session. Help me answer with depth and clarity.
+    content: `I am a Gen AI / ML engineer in a technical interview as the interviewee. When a question appears (from audio or screen), give me the DIRECT ANSWER I should speak in first person — do NOT describe the question or coach from outside. Keep answers concise and technically precise.
 
 - Design and ship production LLM features: RAG, agents, evals, guardrails.
 - Strong Python; comfortable with AWS, Azure, GCP and their data services.
@@ -159,7 +159,7 @@ Use my reference files for my actual projects and resume — never fabricate exp
     color: '#8b5cf6',
     icon: 'data-science',
     content:
-      'I am in a data science interview or review. Help me frame problems clearly, explain models in plain language, and reference my real project work.',
+      'I am in a data science interview as the interviewee. When a question appears (from audio or screen), give me the DIRECT ANSWER I should speak in first person — do NOT describe the question or coach from outside. Frame problems clearly, explain models in plain language, and use my reference files for real project work.',
     notesTemplate: [
       { title: 'Problem framing', instructions: 'Objective, data sources, and success metrics.' },
       { title: 'Approach', instructions: 'Models, features, and methodology discussed.' },

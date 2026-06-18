@@ -14,6 +14,10 @@ Menu.setApplicationMenu(null)
 /** Windows: taskbar / Task Manager identity for the packaged app (not the generic Electron entry). */
 if (process.platform === 'win32') {
   app.setAppUserModelId('com.local.veilassist.v2')
+  // DXGI Desktop Duplication fails on some Windows GPU configurations (hybrid GPU, content-protection
+  // active windows). Enable WGC (Windows.Graphics.Capture) as a fallback capture path so OCR
+  // continues to work when DXGI is unavailable.
+  app.commandLine.appendSwitch('enable-features', 'DesktopCaptureFallbackWindowsGraphicsCapture')
 }
 
 const gotLock = app.requestSingleInstanceLock()
@@ -591,19 +595,29 @@ function startMeetingForegroundPoll() {
 
 /**
  * Exclude the overlay from desktop capture during OCR/vision thumbnail grabs only.
- * - Stealth ON: content protection already excludes overlay — brief DWM settle wait.
- * - Visible mode (stealth OFF): do NOT toggle protection/opacity (Windows flickers visibly).
+ * - Stealth ON: setContentProtection(true) causes Windows DXGI Desktop Duplication to refuse ALL
+ *   captures in the process — not just the protected window. We briefly lift protection for the
+ *   ~60ms snapshot window, then restore it. The gap is imperceptible and the overlay stays hidden.
+ * - Visible mode (stealth OFF): do NOT toggle opacity (Windows flickers visibly on every OCR tick).
  * - Overlay hidden via tray: brief opacity 0 so capture omits the chat UI.
  */
 async function withOverlayExcludedFromScreenCapture(fn) {
   if (!overlayWindow || overlayWindow.isDestroyed()) return fn()
 
   if (isStealthModeEnabled()) {
-    await new Promise((resolve) => setTimeout(resolve, 100))
-    return fn()
+    // Temporarily drop content protection so DXGI/WGC can capture the desktop.
+    try {
+      overlayWindow.setContentProtection(false)
+      await new Promise((resolve) => setTimeout(resolve, 60))
+      return await fn()
+    } finally {
+      if (!overlayWindow.isDestroyed()) {
+        overlayWindow.setContentProtection(true)
+      }
+    }
   }
 
-  // Eye = visible: user expects overlay on screen — skipping hide avoids blink every OCR tick.
+  // Overlay visible: user sees it on screen — don't blink it for every OCR tick.
   if (overlayVisible) {
     return fn()
   }

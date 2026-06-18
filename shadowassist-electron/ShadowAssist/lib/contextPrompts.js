@@ -153,10 +153,37 @@ function formatNotesTemplateBlock(prompt) {
   return `\n\n---\n## NOTES TEMPLATE (post-meeting only)\nUse these sections ONLY when the user explicitly asks for meeting notes, a summary, or written takeaways — NOT for live coaching replies.\n\n${body}`
 }
 
+const INTERVIEWEE_NAME_RE = /\b(looking for work)\b/i
+const INTERVIEWEE_CONTENT_RE = /\bi am (?:in a|a .{1,60}? in a) .{0,40}interview\b/i
+
+function isIntervieweeMode(prompt) {
+  const name = String(prompt?.name || '')
+  const content = promptContent(prompt)
+  return INTERVIEWEE_NAME_RE.test(name) || INTERVIEWEE_CONTENT_RE.test(content)
+}
+
 function formatModeSessionRules(prompt) {
   const content = promptContent(prompt).trim()
   if (!content) return ''
   const name = String(prompt?.name || 'Mode').trim()
+
+  if (isIntervieweeMode(prompt)) {
+    return `
+
+## MODE SESSION RULES — INTERVIEW (priority over ALL other formatting rules)
+You are helping the user ANSWER interview questions in real time. The user is the INTERVIEWEE.
+
+- When you see a question from "Participant" in the transcript or a question on screen: provide the DIRECT ANSWER the user should speak — in first person ("I ...").
+- NEVER narrate or describe what was asked ("The interviewer asked...", "The participant is asking..."). Just give the answer.
+- NEVER open with coaching tips, preamble, or "I'm not sure what you're looking for".
+- NEVER ask for clarification — infer from context and answer immediately.
+- Keep answers short and speakable: under 120 words unless the question requires technical depth.
+- Behavioral questions: STAR structure in 4 brief sentences (Situation / Task / Action / Result).
+- Technical questions: direct answer first, then 2–3 supporting points.
+- If the screen shows an interview question, answer it directly — treat it as the question being asked TO the user right now.
+- Use reference files for the user's real experience and resume — never fabricate.`
+  }
+
   return `
 
 ## MODE SESSION RULES (priority over <unclear_or_empty_screen>, <other_content>, and NOTES TEMPLATE headings)

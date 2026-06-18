@@ -195,26 +195,23 @@ const ModelSelect = memo(function ModelSelect({ label, value, models, onChange, 
   }, [models, filter])
   const display = filtered.length ? filtered : models
   const safeVal = display.includes(value) ? value : display[0] || ''
-  const n = display.length
-  const size = listbox && n > 1 ? Math.min(22, Math.max(5, n)) : undefined
   return (
     <div>
       <label className="mb-1 block text-[10px] font-semibold uppercase tracking-[0.2em] text-mist-400">{label}</label>
-      {listbox && models.length > 14 ? (
+      {listbox && models.length > 6 ? (
         <input
           type="search"
           value={filter}
           onChange={(e) => setFilter(e.target.value)}
-          placeholder="Filter models (e.g. gpt-5.4, claude-opus)…"
+          placeholder="Filter models…"
           className="input-shadow mb-2 w-full px-3 py-2 font-mono text-xs"
           autoComplete="off"
         />
       ) : null}
       <select
         value={safeVal}
-        size={size}
         onChange={(e) => onChange(e.target.value)}
-        className={`input-shadow w-full px-3 py-2 font-mono text-xs ${size ? 'min-h-0' : 'py-2.5'}`}
+        className="input-shadow w-full px-3 py-2.5 font-mono text-xs"
       >
         {display.map((m) => (
           <option key={m} value={m} className="bg-void-900">
@@ -223,7 +220,7 @@ const ModelSelect = memo(function ModelSelect({ label, value, models, onChange, 
         ))}
       </select>
       {filter.trim() && !filtered.length ? (
-        <p className="mt-1 text-[10px] text-amber-400">No match — clear filter or type the id below.</p>
+        <p className="mt-1 text-[10px] text-amber-400">No match — clear filter or type the model ID directly.</p>
       ) : null}
     </div>
   )
@@ -254,6 +251,75 @@ const ModelInput = memo(function ModelInput({ label, value, onChange, onCommit, 
     </div>
   )
 })
+
+const ToggleSwitch = memo(function ToggleSwitch({ checked, onChange, disabled }) {
+  return (
+    <button
+      type="button"
+      role="switch"
+      aria-checked={checked}
+      onClick={() => !disabled && onChange(!checked)}
+      disabled={disabled}
+      className={`relative inline-flex h-[22px] w-[42px] shrink-0 cursor-pointer rounded-full transition-all duration-200 ease-in-out focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-offset-2 focus-visible:ring-offset-black disabled:cursor-not-allowed disabled:opacity-40 ${checked ? 'bg-accent focus-visible:ring-accent/60' : 'bg-white/[0.13] focus-visible:ring-white/30'}`}
+      style={checked ? { boxShadow: '0 0 10px -2px rgb(var(--accent-rgb) / 0.55)' } : undefined}
+    >
+      <span className={`pointer-events-none mt-[3px] inline-block h-4 w-4 transform rounded-full bg-white shadow-sm transition-transform duration-200 ease-in-out ${checked ? 'translate-x-[23px]' : 'translate-x-[3px]'}`} />
+    </button>
+  )
+})
+
+const NAV_ICONS = {
+  profile: (
+    <>
+      <path d="M19 21v-2a4 4 0 0 0-4-4H9a4 4 0 0 0-4 4v2"/>
+      <circle cx="12" cy="8" r="4"/>
+    </>
+  ),
+  display: (
+    <>
+      <rect x="2" y="3" width="20" height="14" rx="2"/>
+      <path d="M8 21h8M12 17v4"/>
+    </>
+  ),
+  meetings: (
+    <>
+      <rect x="3" y="4" width="18" height="18" rx="2"/>
+      <path d="M16 2v4M8 2v4M3 10h18"/>
+    </>
+  ),
+  session: (
+    <>
+      <path d="M12 1a3 3 0 0 0-3 3v8a3 3 0 0 0 6 0V4a3 3 0 0 0-3-3z"/>
+      <path d="M19 10v2a7 7 0 0 1-14 0v-2M12 19v4"/>
+    </>
+  ),
+  privacy: (
+    <path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/>
+  ),
+  about: (
+    <>
+      <circle cx="12" cy="12" r="10"/>
+      <path d="M12 8v4M12 16h.01"/>
+    </>
+  ),
+}
+
+function NavIcon({ id }) {
+  return (
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.75" strokeLinecap="round" strokeLinejoin="round" className="h-[15px] w-[15px] shrink-0">
+      {NAV_ICONS[id] ?? null}
+    </svg>
+  )
+}
+
+function SectionTitle({ children, as: Tag = 'h2', className = '' }) {
+  return (
+    <Tag className={`flex items-center gap-2.5 font-display font-semibold text-white ${className}`}>
+      <span className="inline-block h-[18px] w-[3px] shrink-0 rounded-full bg-gradient-to-b from-accent to-accent/20" aria-hidden="true" />
+      {children}
+    </Tag>
+  )
+}
 
 export default function Settings() {
   const isFirstRunWindow = useFirstRunQuery()
@@ -785,17 +851,19 @@ export default function Settings() {
     setCalendarErr('')
     setCalendarConnectBusy(true)
     try {
-      const id = String(googleCalendarClientId || '').trim()
-      const secret = String(googleCalendarClientSecret || '').trim()
-      if (!googleCalendarOAuthReady && (!id || !secret || secret === '••••••••')) {
-        throw new Error('Enter Google Calendar client ID and client secret first')
-      }
+      // If credentials were typed into the dev section, save them first
       if (!googleCalendarOAuthReady) {
+        const id = String(googleCalendarClientId || '').trim()
+        const secret = String(googleCalendarClientSecret || '').trim()
+        if (!id || !secret || secret === '••••••••') {
+          throw new Error('No OAuth credentials configured. Use the Developer setup section to enter your client ID and secret.')
+        }
         await save('googleCalendarClientId', id)
         await save('googleCalendarClientSecret', secret)
       }
       const res = await ipc.invoke('google-calendar:connect')
       setGoogleCalendarConnectedEmail(res?.connectedEmail || '')
+      setGoogleCalendarOAuthReady(true)
       setGoogleCalendarClientSecret('••••••••')
       await refreshCalendarMeetings()
     } catch (e) {
@@ -988,42 +1056,51 @@ export default function Settings() {
       <div className="settings-root relative z-10 flex min-h-0 flex-1 flex-col overflow-hidden">
       <AmbientOrbs />
 
-      <header className="relative z-20 shrink-0 border-b border-white/[0.06] bg-black/30 px-5 py-4 backdrop-blur-xl lg:px-8">
-        <div className="flex min-w-0 items-start gap-3">
-          <img src={logoSrc} alt="" className="h-10 w-10 shrink-0 object-contain" draggable={false} />
+      <header className="relative z-20 shrink-0 border-b border-white/[0.06] bg-black/30 px-5 py-3.5 backdrop-blur-xl lg:px-8">
+        <div className="flex min-w-0 items-center gap-3">
+          <div className="relative shrink-0">
+            <div className="absolute inset-0 rounded-xl bg-accent/15 blur-xl" aria-hidden="true" />
+            <img src={logoSrc} alt="" className="relative h-9 w-9 rounded-xl object-contain" draggable={false} />
+          </div>
           <div className="min-w-0">
-            <p className="text-[10px] font-medium uppercase tracking-[0.2em] text-zinc-500">Settings</p>
-            <h1 className="font-display mt-0.5 text-xl font-semibold tracking-tight text-white md:text-2xl">VeilAssist</h1>
-            {showSetupBanner ? (
-              <p className="mt-1 max-w-xl text-[13px] leading-snug text-zinc-500">
-                Finish first-time setup under Session: chat provider, API key, and model.
-              </p>
-            ) : null}
+            <h1 className="font-display text-[17px] font-semibold leading-tight tracking-tight text-white">VeilAssist</h1>
+            <p className="mt-0.5 text-[11px] text-zinc-500">Settings &amp; Configuration</p>
           </div>
         </div>
+        {showSetupBanner && (
+          <p className="mt-2 text-[12px] text-zinc-500">
+            Finish first-time setup under Session: chat provider, API key, and model.
+          </p>
+        )}
       </header>
 
       {showSetupBanner && (
-        <div className="relative z-20 shrink-0 border-b border-white/[0.06] bg-accent/5 px-5 py-2.5 lg:px-8">
-          <p className="text-[12px] font-medium text-accent-light">
+        <div className="relative z-20 shrink-0 border-b border-accent/20 bg-accent/[0.06] px-5 py-2 lg:px-8">
+          <p className="text-[12px] font-medium text-accent-light/90">
             First run: open Session, set chat provider, API key, and model, then launch.
           </p>
         </div>
       )}
 
       <div className="relative z-20 flex min-h-0 min-w-0 flex-1 overflow-hidden">
-        <nav className="flex w-[188px] shrink-0 flex-col border-r border-white/[0.06] bg-black/20 py-4">
+        <nav className="flex w-[196px] shrink-0 flex-col gap-0.5 border-r border-white/[0.06] bg-black/20 px-2 py-3">
           {SETTINGS_TABS.map((t) => (
             <button
               key={t.id}
               type="button"
               onClick={() => setActiveTab(t.id)}
-              className={`settings-nav-btn group mx-2 mb-0.5 rounded-lg px-3 py-2.5 text-left ${
+              className={`settings-nav-btn group flex items-center gap-2.5 rounded-lg px-3 py-2.5 text-left ${
                 activeTab === t.id ? 'settings-nav-btn-active' : 'text-zinc-500'
               }`}
             >
-              <span className="block text-[13px] font-medium">{t.label}</span>
-              <span className="settings-nav-sub mt-0.5 block text-[10px] text-zinc-600 group-hover:text-zinc-500">{t.sub}</span>
+              <NavIcon id={t.id} />
+              <div className="min-w-0 flex-1">
+                <span className="block text-[13px] font-medium">{t.label}</span>
+                <span className="settings-nav-sub mt-0.5 block text-[10px] text-zinc-600 group-hover:text-zinc-500">{t.sub}</span>
+              </div>
+              {activeTab === t.id && (
+                <span className="ml-auto h-1.5 w-1.5 shrink-0 rounded-full bg-accent" aria-hidden="true" />
+              )}
             </button>
           ))}
         </nav>
@@ -1057,7 +1134,7 @@ export default function Settings() {
           {activeTab === 'display' && (
             <div className="mx-auto max-w-3xl animate-fade-in space-y-5">
               <section className="glass-panel p-6">
-                <h2 className="text-base font-semibold text-white">Overlay</h2>
+                <SectionTitle className="text-base">Overlay</SectionTitle>
 
                 <div className="mt-6 space-y-7">
                   <div>
@@ -1142,24 +1219,14 @@ export default function Settings() {
                           <span className="font-medium text-gray-200">Teleprompter</span>
                           <p className="text-xs text-gray-600">Larger type, minimal labels — best during live calls.</p>
                         </div>
-                        <input
-                          type="checkbox"
-                          checked={overlayTeleprompterUi}
-                          onChange={(e) => applyOverlayTeleprompter(e.target.checked)}
-                          className="h-5 w-5 rounded border-white/20 accent-accent"
-                        />
+                        <ToggleSwitch checked={overlayTeleprompterUi} onChange={applyOverlayTeleprompter} />
                       </label>
                       <label className="settings-row-tile flex cursor-pointer items-center justify-between gap-4">
                         <div>
                           <span className="font-medium text-gray-200">Focus mode</span>
                           <p className="text-xs text-gray-600">Hide the input bar until you tap — more room for answers.</p>
                         </div>
-                        <input
-                          type="checkbox"
-                          checked={overlayFocusModeUi}
-                          onChange={(e) => applyOverlayFocusMode(e.target.checked)}
-                          className="h-5 w-5 rounded border-white/20 accent-accent"
-                        />
+                        <ToggleSwitch checked={overlayFocusModeUi} onChange={applyOverlayFocusMode} />
                       </label>
                     </div>
                   </div>
@@ -1196,12 +1263,7 @@ export default function Settings() {
                           Also toggled from the overlay visibility control.
                         </p>
                       </div>
-                      <input
-                        type="checkbox"
-                        checked={stealthModeUi}
-                        onChange={(e) => applyStealthMode(e.target.checked)}
-                        className="h-5 w-5 rounded border-white/20 accent-accent"
-                      />
+                      <ToggleSwitch checked={stealthModeUi} onChange={applyStealthMode} />
                     </label>
                   </div>
 
@@ -1303,55 +1365,44 @@ export default function Settings() {
 
           {activeTab === 'session' && (
             <div className="mx-auto max-w-3xl animate-fade-in space-y-5">
-              <details className="glass-panel group p-0 open" open>
-                <summary className="cursor-pointer list-none px-6 py-4 font-display text-sm font-bold uppercase tracking-[0.15em] text-gray-300 [&::-webkit-details-marker]:hidden">
-                  <span className="flex items-center justify-between gap-2">
-                    Capture
-                    <span className="font-mono text-[10px] font-normal normal-case tracking-normal text-zinc-600 group-open:hidden">
-                      Show
-                    </span>
-                  </span>
-                </summary>
-                <div className="space-y-6 border-t border-white/[0.06] px-6 pb-6 pt-2">
+              <section className="glass-panel overflow-hidden">
+                <div className="border-b border-white/[0.06] px-6 py-4">
+                  <SectionTitle className="text-sm">Capture</SectionTitle>
+                </div>
+                <div className="space-y-3 px-6 pb-6 pt-5">
                   <label className="settings-row-tile flex cursor-pointer items-center justify-between gap-4">
                     <div>
-                      <span className="font-medium text-gray-200">Screen reading (OCR)</span>
-                      <p className="text-xs text-gray-600">
-                        When Listen is on, screen text is captured when you trigger the assistant (hotkey or typed ask)
-                        — not continuously in the background.
+                      <span className="text-[13px] font-medium text-gray-200">Screen reading (OCR)</span>
+                      <p className="mt-0.5 text-[11px] leading-relaxed text-zinc-600">
+                        Captured on-demand when you trigger the assistant — not continuously in the background.
                       </p>
                     </div>
-                    <input
-                      type="checkbox"
+                    <ToggleSwitch
                       checked={ocrEnabled}
-                      onChange={(e) => {
-                        setOcrEnabled(e.target.checked)
-                        save('ocrEnabled', e.target.checked)
+                      onChange={(v) => {
+                        setOcrEnabled(v)
+                        save('ocrEnabled', v)
                       }}
-                      className="h-5 w-5 rounded border-white/20 accent-accent"
                     />
                   </label>
                   <label className="settings-row-tile flex cursor-pointer items-center justify-between gap-4">
                     <div>
-                      <span className="font-medium text-gray-200">Microphone / audio</span>
-                      <p className="text-xs text-gray-600">Listen uses fixed-length chunks for transcription (event-driven).</p>
+                      <span className="text-[13px] font-medium text-gray-200">Microphone / audio</span>
+                      <p className="mt-0.5 text-[11px] leading-relaxed text-zinc-600">Transcribed in fixed-length chunks when Listen is active.</p>
                     </div>
-                    <input
-                      type="checkbox"
+                    <ToggleSwitch
                       checked={audioEnabled}
-                      onChange={(e) => {
-                        setAudioEnabled(e.target.checked)
-                        save('audioEnabled', e.target.checked)
+                      onChange={(v) => {
+                        setAudioEnabled(v)
+                        save('audioEnabled', v)
                       }}
-                      className="h-5 w-5 rounded border-white/20 accent-accent"
                     />
                   </label>
-                  <div className="settings-row-tile flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+                  <div className="settings-row-tile flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
                     <div className="min-w-0 flex-1">
-                      <span className="font-medium text-gray-200">Mic sensitivity</span>
-                      <p className="mt-1 text-xs text-gray-600">
-                        Boost helps quiet mics; restart Listen after changing. Shortcut keys are under Display → Keyboard
-                        shortcuts.
+                      <span className="text-[13px] font-medium text-gray-200">Mic sensitivity</span>
+                      <p className="mt-0.5 text-[11px] leading-relaxed text-zinc-600">
+                        Boost helps quiet microphones — restart Listen after changing.
                       </p>
                     </div>
                     <select
@@ -1361,31 +1412,27 @@ export default function Settings() {
                         setMicSensitivity(v)
                         save('micSensitivity', v)
                       }}
-                      className="input-shadow w-full shrink-0 px-3 py-2 text-sm sm:w-64"
+                      className="input-shadow w-full shrink-0 px-3 py-2 text-sm sm:w-52"
                     >
-                      <option value="standard" className="bg-void-900">
-                        Standard
-                      </option>
-                      <option value="boost" className="bg-void-900">
-                        Boost (quiet mic)
-                      </option>
+                      <option value="standard" className="bg-void-900">Standard</option>
+                      <option value="boost" className="bg-void-900">Boost (quiet mic)</option>
                     </select>
                   </div>
                 </div>
-              </details>
+              </section>
 
-              <details className="glass-panel group p-0 open" open>
-                <summary className="cursor-pointer list-none px-6 py-4 font-display text-sm font-bold uppercase tracking-[0.15em] text-gray-300 [&::-webkit-details-marker]:hidden">
-                  Chat
-                </summary>
-                <div className="space-y-4 border-t border-white/[0.06] px-6 pb-6 pt-2">
+              <section className="glass-panel overflow-hidden">
+                <div className="flex items-center justify-between border-b border-white/[0.06] px-6 py-4">
+                  <SectionTitle className="text-sm">Chat</SectionTitle>
+                </div>
+                <div className="space-y-5 px-6 pb-6 pt-5">
                   {!snap || !providerMeta.length ? (
                     <p className="text-sm text-gray-500">Loading providers…</p>
                   ) : (
                     <>
                       <div>
-                        <label className="mb-1 block text-[10px] font-semibold uppercase tracking-[0.2em] text-mist-400">
-                          Chat provider
+                        <label className="mb-1.5 block text-[10px] font-semibold uppercase tracking-[0.2em] text-zinc-500">
+                          Provider
                         </label>
                         <select
                           value={provider}
@@ -1402,38 +1449,39 @@ export default function Settings() {
                       </div>
 
                       {chatVendor && snap && (
-                        <div
-                          className="space-y-4 rounded-xl border px-4 py-4"
-                          style={{
-                            borderColor: `${chatVendor.color}55`,
-                            background: `linear-gradient(165deg, ${chatVendor.color}12 0%, rgba(0,0,0,0.35) 100%)`,
-                          }}
-                        >
+                        <div className="space-y-4 rounded-xl border border-white/[0.08] bg-black/25 px-4 py-4">
+                          {/* Vendor header row */}
                           <div className="flex flex-wrap items-center justify-between gap-2">
-                            <span className="font-display text-xs font-bold text-white">{chatVendor.label}</span>
+                            <div className="flex items-center gap-2">
+                              <span className="text-[13px] font-semibold text-white">{chatVendor.label}</span>
+                              {chatKeySaved && (
+                                <span className="rounded border border-white/10 bg-white/[0.06] px-1.5 py-0.5 text-[9px] font-semibold uppercase tracking-wide text-zinc-400">
+                                  Key saved
+                                </span>
+                              )}
+                            </div>
                             {chatVendor.docs ? (
                               <a
                                 href={chatVendor.docs}
                                 target="_blank"
                                 rel="noreferrer"
-                                className="text-xs font-medium hover:underline"
-                                style={{ color: chatVendor.color }}
+                                className="text-[11px] text-zinc-500 transition-colors hover:text-zinc-300"
                               >
-                                Get API key →
+                                Get API key ↗
                               </a>
                             ) : null}
                           </div>
 
                           {chatVendor.kind === 'anthropic' && (
-                            <p className="rounded-lg border border-amber-500/20 bg-amber-500/5 px-3 py-2 text-xs text-amber-200/90">
-                              Claude uses the Anthropic Messages API (not OpenAI). Model id must match your account.
+                            <p className="rounded-lg border border-white/[0.07] bg-white/[0.03] px-3 py-2 text-[11px] leading-relaxed text-zinc-400">
+                              Claude uses the Anthropic Messages API — not OpenAI-compatible. Model ID must match your Anthropic account.
                             </p>
                           )}
 
                           {chatVendor.usesCustomBase && (
                             <div>
-                              <label className="mb-1 block text-[10px] font-semibold uppercase tracking-[0.2em] text-mist-400">
-                                OpenAI-compatible base URL
+                              <label className="mb-1.5 block text-[10px] font-semibold uppercase tracking-[0.2em] text-zinc-500">
+                                Base URL
                               </label>
                               <input
                                 type="url"
@@ -1446,41 +1494,40 @@ export default function Settings() {
                             </div>
                           )}
 
-                          <div className="flex flex-wrap gap-2">
-                            <input
-                              type="password"
-                              value={secretByProvider[chatVendor.id] ?? ''}
-                              onChange={(e) =>
-                                setSecretByProvider((m) => ({ ...m, [chatVendor.id]: e.target.value }))
-                              }
-                              placeholder={chatKeySaved ? '••••••••' : 'Paste API key'}
-                              className="input-shadow min-w-[200px] flex-1 px-3 py-2.5"
-                            />
-                            <button
-                              type="button"
-                              onClick={() => testApiFor(chatVendor.id)}
-                              disabled={chatTesting}
-                              className="btn-ghost px-4 py-2.5 text-accent"
-                            >
-                              {chatTesting ? '…' : 'Ping'}
-                            </button>
-                            <button
-                              type="button"
-                              onClick={() =>
-                                chatKf && saveKey(chatKf, secretByProvider[chatVendor.id] || '', chatVendor.id)
-                              }
-                              className="btn-ghost px-4 py-2.5"
-                            >
-                              Commit
-                            </button>
+                          {/* API key */}
+                          <div>
+                            <label className="mb-1.5 block text-[10px] font-semibold uppercase tracking-[0.2em] text-zinc-500">
+                              API Key
+                            </label>
+                            <div className="flex flex-wrap gap-2">
+                              <input
+                                type="password"
+                                value={secretByProvider[chatVendor.id] ?? ''}
+                                onChange={(e) =>
+                                  setSecretByProvider((m) => ({ ...m, [chatVendor.id]: e.target.value }))
+                                }
+                                placeholder={chatKeySaved ? '••••••••' : 'Paste API key here'}
+                                className="input-shadow min-w-[200px] flex-1 px-3 py-2.5"
+                              />
+                              <button
+                                type="button"
+                                onClick={() =>
+                                  chatKf && saveKey(chatKf, secretByProvider[chatVendor.id] || '', chatVendor.id)
+                                }
+                                className="btn-ghost px-4 py-2.5 text-[13px]"
+                              >
+                                Save key
+                              </button>
+                            </div>
                           </div>
 
+                          {/* Model selector */}
                           {chatMf && chatOpts.length > 0 && (
                             <div className="space-y-2">
                               <div className="flex flex-wrap items-end gap-2">
                                 <div className="min-w-[min(100%,320px)] flex-1">
                                   <ModelSelect
-                                    label={`Chat model (${chatOpts.length} from ${chatVendor.label})`}
+                                    label={`Model — ${chatOpts.length} available`}
                                     value={chatModel || chatVendor.defaultModel || chatOpts[0]}
                                     models={chatOpts}
                                     listbox={chatOpts.length > 14}
@@ -1496,10 +1543,12 @@ export default function Settings() {
                                   disabled={chatListLoading}
                                   className="btn-ghost whitespace-nowrap px-4 py-2.5 text-xs"
                                 >
-                                  {chatListLoading ? 'Syncing…' : 'Refresh from API'}
+                                  {chatListLoading ? 'Syncing…' : 'Sync models'}
                                 </button>
                               </div>
-                              {chatListErr ? <p className="text-xs text-amber-400">{chatListErr}</p> : null}
+                              {chatListErr ? (
+                                <p className="text-[11px] text-rose-300/80">{chatListErr}</p>
+                              ) : null}
                             </div>
                           )}
 
@@ -1510,8 +1559,8 @@ export default function Settings() {
                                   chatListLoading
                                     ? 'Loading models…'
                                     : chatKeySaved
-                                      ? 'Chat model (save key & refresh, or type id)'
-                                      : 'Chat model (save API key first)'
+                                      ? 'Model ID'
+                                      : 'Model ID (save API key first)'
                                 }
                                 value={chatModel}
                                 onChange={(v) => patchSnap(chatMf, v)}
@@ -1520,7 +1569,7 @@ export default function Settings() {
                                   modelCatalog[chatVendor.id] ||
                                   (chatVendor.defaultModel ? [chatVendor.defaultModel] : [])
                                 }
-                                hint="Commit your key, then Refresh from API to load models from your vendor account."
+                                hint="Save your key, then use Sync models to load the full list."
                               />
                               {chatKeySaved ? (
                                 <button
@@ -1529,100 +1578,109 @@ export default function Settings() {
                                   disabled={chatListLoading}
                                   className="btn-ghost whitespace-nowrap px-4 py-2.5 text-xs"
                                 >
-                                  {chatListLoading ? 'Syncing…' : 'Refresh from API'}
+                                  {chatListLoading ? 'Syncing…' : 'Sync models'}
                                 </button>
                               ) : null}
-                              {chatListErr ? <p className="text-xs text-amber-400">{chatListErr}</p> : null}
+                              {chatListErr ? (
+                                <p className="text-[11px] text-rose-300/80">{chatListErr}</p>
+                              ) : null}
                             </div>
                           )}
 
-                          {chatTest && (
-                            <p
-                              className={`font-mono text-xs ${chatTest.success ? 'text-accent' : 'text-rose-400'}`}
-                            >
-                              {chatTest.success ? 'API key verified' : chatTest.error}
-                            </p>
-                          )}
-                          <button
-                            type="button"
-                            onClick={() => testApiFor(chatVendor.id)}
-                            disabled={chatTesting}
-                            className="btn-glow py-3 px-8"
-                          >
-                            {chatTesting ? 'Testing…' : 'Full connection test'}
-                          </button>
+                          {/* Divider + test row */}
+                          <div className="border-t border-white/[0.06] pt-3">
+                            <div className="flex flex-wrap items-center justify-between gap-3">
+                              {chatTest ? (
+                                <div className={`flex items-center gap-2 rounded-lg border px-3 py-2 text-[11px] ${
+                                  chatTest.success
+                                    ? 'border-white/[0.08] bg-white/[0.04] text-zinc-300'
+                                    : 'border-rose-500/20 bg-rose-500/[0.07] text-rose-300'
+                                }`}>
+                                  <span className={`h-1.5 w-1.5 shrink-0 rounded-full ${chatTest.success ? 'bg-white/60' : 'bg-rose-400'}`} />
+                                  {chatTest.success ? 'Connection verified' : chatTest.error}
+                                </div>
+                              ) : (
+                                <span className="text-[11px] text-zinc-600">Run a test to verify your key.</span>
+                              )}
+                              <button
+                                type="button"
+                                onClick={() => testApiFor(chatVendor.id)}
+                                disabled={chatTesting}
+                                className="btn-ghost shrink-0 px-5 py-2 text-[13px] disabled:opacity-50"
+                              >
+                                {chatTesting ? 'Testing…' : 'Test connection'}
+                              </button>
+                            </div>
+                          </div>
                         </div>
                       )}
                     </>
                   )}
                 </div>
-              </details>
+              </section>
 
-              <details className="glass-panel group p-0 open" open>
-                <summary className="cursor-pointer list-none px-6 py-4 font-display text-sm font-bold uppercase tracking-[0.15em] text-gray-300 [&::-webkit-details-marker]:hidden">
-                  Transcription
-                </summary>
-                <div className="space-y-6 border-t border-white/[0.06] px-6 pb-6 pt-2">
+              <section className="glass-panel overflow-hidden">
+                <div className="border-b border-white/[0.06] px-6 py-4">
+                  <SectionTitle className="text-sm">Transcription</SectionTitle>
+                </div>
+                <div className="space-y-5 px-6 pb-6 pt-5">
                   {snap && (
                     <>
-                      <div className="settings-row-tile">
-                        <div className="mb-2 flex items-center justify-between gap-2">
-                          <span className="font-medium text-gray-200">Cloud STT provider</span>
-                          <span className={`font-mono text-[10px] ${sttKeySaved ? 'text-accent' : 'text-amber-400'}`}>
-                            {sttKeySaved ? 'Key ✓' : 'Key —'}
-                          </span>
+                      <div className="space-y-4">
+                        <div>
+                          <label className="mb-2 block text-[10px] font-semibold uppercase tracking-[0.2em] text-zinc-500">
+                            Provider
+                          </label>
+                          <div className="flex flex-wrap gap-2">
+                            {sttCapableMeta.map((p) => (
+                              <button
+                                key={p.id}
+                                type="button"
+                                onClick={() => {
+                                  setSttProvider(p.id)
+                                  save('sttProvider', p.id)
+                                }}
+                                className={`settings-chip settings-chip-sm !normal-case ${sttProvider === p.id ? 'settings-chip-active' : ''}`}
+                              >
+                                {p.label}
+                              </button>
+                            ))}
+                          </div>
                         </div>
-                        <div className="flex flex-col gap-1.5">
-                          {sttCapableMeta.map((p) => (
-                            <button
-                              key={p.id}
-                              type="button"
-                              onClick={() => {
-                                setSttProvider(p.id)
-                                save('sttProvider', p.id)
-                              }}
-                              className="w-full rounded-xl border px-3 py-2.5 text-left transition-all duration-300"
-                              style={{
-                                background:
-                                  sttProvider === p.id
-                                    ? `linear-gradient(145deg, ${p.color}22, rgba(0,0,0,0.42))`
-                                    : 'linear-gradient(165deg, rgba(255,255,255,0.07) 0%, rgba(0,0,0,0.48) 100%)',
-                                borderColor: sttProvider === p.id ? `${p.color}70` : 'rgba(255,255,255,0.1)',
-                              }}
-                            >
-                              <div className="flex items-center justify-between gap-2">
-                                <span className="font-display text-xs font-bold text-white">{p.label}</span>
-                                <span
-                                  className="shrink-0 rounded px-1.5 py-0.5 font-mono text-[8px] font-bold uppercase"
-                                  style={{ background: `${p.color}28`, color: p.color }}
-                                >
-                                  {p.badge}
-                                </span>
-                              </div>
-                            </button>
-                          ))}
-                        </div>
+
                         {sttKeyField && (
-                          <div className="mt-3 flex flex-wrap gap-2">
-                            <input
-                              type="password"
-                              value={sttSecretInput}
-                              onChange={(e) => setSttSecretInput(e.target.value)}
-                              placeholder={sttKeySaved ? '••••••••' : `${currentSttMeta?.label || 'STT'} API key`}
-                              className="input-shadow min-w-[200px] flex-1 px-3 py-2 text-sm"
-                            />
-                            <button
-                              type="button"
-                              onClick={() => {
-                                if (sttKeyField && sttSecretInput.trim()) {
-                                  saveKey(sttKeyField, sttSecretInput)
-                                  setSttSecretInput('')
-                                }
-                              }}
-                              className="btn-ghost px-4 py-2 text-xs"
-                            >
-                              Commit key
-                            </button>
+                          <div>
+                            <div className="mb-1.5 flex items-center justify-between gap-2">
+                              <label className="text-[10px] font-semibold uppercase tracking-[0.2em] text-zinc-500">
+                                {currentSttMeta?.label || 'STT'} API Key
+                              </label>
+                              {sttKeySaved && (
+                                <span className="rounded border border-white/10 bg-white/[0.06] px-1.5 py-0.5 text-[9px] font-semibold uppercase tracking-wide text-zinc-400">
+                                  Key saved
+                                </span>
+                              )}
+                            </div>
+                            <div className="flex flex-wrap gap-2">
+                              <input
+                                type="password"
+                                value={sttSecretInput}
+                                onChange={(e) => setSttSecretInput(e.target.value)}
+                                placeholder={sttKeySaved ? '••••••••' : `Paste ${currentSttMeta?.label || 'STT'} API key`}
+                                className="input-shadow min-w-[200px] flex-1 px-3 py-2 text-sm"
+                              />
+                              <button
+                                type="button"
+                                onClick={() => {
+                                  if (sttKeyField && sttSecretInput.trim()) {
+                                    saveKey(sttKeyField, sttSecretInput)
+                                    setSttSecretInput('')
+                                  }
+                                }}
+                                className="btn-ghost px-4 py-2 text-xs"
+                              >
+                                Save key
+                              </button>
+                            </div>
                           </div>
                         )}
                       </div>
@@ -1683,15 +1741,15 @@ export default function Settings() {
                         />
                       )}
                       {sttProvider === 'openai' && (
-                        <div className="settings-row-tile">
-                          <span className="text-[10px] font-semibold uppercase tracking-widest text-mist-400">STT model</span>
+                        <div className="rounded-xl border border-white/[0.07] bg-black/20 px-4 py-3">
+                          <span className="text-[10px] font-semibold uppercase tracking-[0.2em] text-zinc-500">STT model</span>
                           <p className="mt-1 font-mono text-sm text-gray-300">whisper-1</p>
                         </div>
                       )}
                     </>
                   )}
                 </div>
-              </details>
+              </section>
 
               {showSetupBanner && (
                 <button type="button" onClick={launchFromSetup} className="btn-glow w-full py-4 text-base">
@@ -1704,7 +1762,7 @@ export default function Settings() {
           {activeTab === 'meetings' && (
             <div className="mx-auto max-w-3xl animate-fade-in space-y-5">
               <section className="glass-panel p-8">
-                <h2 className="font-display text-lg font-bold text-white">Meeting detection</h2>
+                <SectionTitle className="text-lg">Meeting detection</SectionTitle>
                 <label className="settings-row-tile mt-6 flex cursor-pointer items-center justify-between gap-4">
                   <div>
                     <span className="font-medium text-gray-200">Detect Meet & Teams</span>
@@ -1712,187 +1770,181 @@ export default function Settings() {
                       Shows a one-time toast per meeting window. Does not use your calendar or microphone.
                     </p>
                   </div>
-                  <input
-                    type="checkbox"
+                  <ToggleSwitch
                     checked={meetingForegroundDetectionEnabled}
-                    onChange={(e) => {
-                      const v = e.target.checked
+                    onChange={(v) => {
                       setMeetingForegroundDetectionEnabled(v)
                       save('meetingForegroundDetectionEnabled', v)
                     }}
-                    className="h-5 w-5 shrink-0 rounded border-white/20 accent-accent"
                   />
                 </label>
               </section>
 
               <section className="glass-panel p-8">
-                <div className="flex items-center gap-3">
-                  <img
-                    src="https://ssl.gstatic.com/calendar/images/dynamiclogo_2020q4/calendar_31_2x.png"
-                    alt="Google Calendar"
-                    className="h-[34px] w-[34px] rounded-lg border border-white/15 object-cover shadow-[0_8px_24px_-16px_rgba(0,0,0,0.65)]"
-                  />
-                  <h2 className="font-display text-lg font-bold text-white">Google Calendar</h2>
-                </div>
+                <SectionTitle className="text-lg">Calendar</SectionTitle>
                 <p className="mt-1 text-sm text-gray-500">
-                  Connect Google Calendar to sync accepted upcoming meetings and keep this list updated.
+                  Manage the calendar account VeilAssist uses to show meetings and reminders.
                 </p>
-                <div className="mt-6 space-y-4">
-                  <div className="rounded-xl border border-accent/20 bg-accent/5 p-4">
-                    <p className="text-[11px] font-semibold uppercase tracking-[0.2em] text-accent">
-                      Quick connect
-                    </p>
-                    <ol className="mt-2 list-decimal space-y-1 pl-4 text-xs text-zinc-300">
-                      <li>Click <span className="font-semibold text-white">Connect Google Calendar</span>.</li>
-                      <li>Choose the Google account email you want to sync.</li>
-                      <li>Approve read-only calendar access.</li>
-                    </ol>
-                    <p className="mt-3 text-[11px] text-zinc-500">
-                      If you see a Google 403 / access denied screen, that email must be added in OAuth consent screen <span className="font-mono">Test users</span> by the app owner.
-                    </p>
-                  </div>
 
-                  <div className="flex flex-wrap gap-2">
-                    <button
-                      type="button"
-                      onClick={() => void connectGoogleCalendar()}
-                      disabled={calendarConnectBusy}
-                      className="btn-ghost px-4 py-2.5"
-                    >
-                      {calendarConnectBusy ? 'Connecting…' : 'Connect Google Calendar'}
-                    </button>
-                    {calendarConnectBusy && (
-                      <button
-                        type="button"
-                        onClick={() => void cancelGoogleCalendarConnect()}
-                        className="btn-ghost px-4 py-2.5 text-amber-200"
-                      >
-                        Cancel connect
-                      </button>
-                    )}
-                    <button
-                      type="button"
-                      onClick={() => void disconnectGoogleCalendar()}
-                      disabled={calendarConnectBusy || !googleCalendarConnectedEmail}
-                      className="btn-ghost px-4 py-2.5 text-rose-200"
-                    >
-                      Disconnect
-                    </button>
-                    <button
-                      type="button"
-                      onClick={() => void refreshCalendarMeetings()}
-                      disabled={calendarEventsLoading}
-                      className="btn-ghost px-4 py-2.5"
-                    >
-                      {calendarEventsLoading ? 'Refreshing…' : 'Refresh meetings'}
-                    </button>
-                  </div>
-                  <div className="settings-row-tile flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
-                    <div className="min-w-0 flex-1">
-                      <span className="font-medium text-gray-200">Start-time reminders</span>
-                      <p className="mt-1 text-xs text-gray-600">
-                        Show a one-time notification before accepted meetings start.
-                      </p>
-                    </div>
-                    <div className="flex w-full shrink-0 items-center gap-2 sm:w-auto">
-                      <input
-                        type="checkbox"
-                        checked={calendarRemindersEnabled}
-                        onChange={(e) => {
-                          const v = e.target.checked
-                          setCalendarRemindersEnabled(v)
-                          save('calendarRemindersEnabled', v)
-                        }}
-                        className="h-5 w-5 rounded border-white/20 accent-accent"
-                      />
-                      <select
-                        value={String(calendarReminderMinutes)}
-                        onChange={(e) => {
-                          const v = Math.max(0, Number(e.target.value || 0))
-                          setCalendarReminderMinutes(v)
-                          save('calendarReminderMinutes', v)
-                        }}
-                        className="input-shadow px-3 py-2 text-xs"
-                        disabled={!calendarRemindersEnabled}
-                      >
-                        <option value="0" className="bg-void-900">At start time</option>
-                        <option value="5" className="bg-void-900">5 min before</option>
-                        <option value="10" className="bg-void-900">10 min before</option>
-                        <option value="15" className="bg-void-900">15 min before</option>
-                      </select>
-                    </div>
-                  </div>
-                  <div className="rounded-xl border border-white/[0.08] bg-black/25 p-4">
-                    <p className="text-xs text-gray-400">
-                      Connected account:{' '}
-                      <span className="font-mono text-zinc-200">{googleCalendarConnectedEmail || 'Not connected'}</span>
-                    </p>
-                    {googleCalendarUsingEmbeddedOAuth && (
-                      <p className="mt-1 text-[11px] text-zinc-500">
-                        OAuth client is configured by VeilAssist. Only Google sign-in is required.
-                      </p>
-                    )}
-                    {calendarConnectBusy && (
-                      <p className="mt-1 text-[11px] text-amber-200/90">
-                        Waiting for Google approval in your browser. If Google shows a tester-access 403 page, this email is not approved in your OAuth test users yet.
-                      </p>
-                    )}
-                    {!!calendarErr && (
-                      <p className="mt-2 text-xs text-rose-300">{calendarErr}</p>
-                    )}
-                    <p className="mt-2 text-[11px] text-zinc-600">
-                      If sync fails on corporate networks, allow: <span className="font-mono">accounts.google.com</span>, <span className="font-mono">oauth2.googleapis.com</span>, <span className="font-mono">www.googleapis.com</span>, <span className="font-mono">calendar.google.com</span>.
-                    </p>
-                  </div>
-
-                  {!googleCalendarOAuthReady && (
-                    <details className="rounded-xl border border-white/[0.08] bg-black/20 p-4">
-                      <summary className="cursor-pointer text-xs font-semibold uppercase tracking-[0.2em] text-mist-400">
-                        Advanced setup (for app owners)
-                      </summary>
-                      <div className="mt-3 space-y-3">
-                        <div className="space-y-1 text-xs">
-                          <a href="https://console.cloud.google.com/" target="_blank" rel="noopener noreferrer" className="block text-accent hover:underline">1) Open Google Cloud Console</a>
-                          <a href="https://console.cloud.google.com/apis/library/calendar-json.googleapis.com" target="_blank" rel="noopener noreferrer" className="block text-accent hover:underline">2) Enable Google Calendar API</a>
-                          <a href="https://console.cloud.google.com/apis/credentials" target="_blank" rel="noopener noreferrer" className="block text-accent hover:underline">3) Create OAuth client credentials (Desktop app)</a>
-                          <a href="https://console.cloud.google.com/apis/credentials/consent" target="_blank" rel="noopener noreferrer" className="block text-accent hover:underline">4) Add user emails in OAuth consent -&gt; Test users</a>
-                        </div>
-                        <div className="settings-row-tile">
-                          <label className="mb-1 block text-[10px] font-semibold uppercase tracking-[0.2em] text-mist-400">
-                            Google OAuth Client ID
-                          </label>
-                          <input
-                            type="text"
-                            value={googleCalendarClientId}
-                            onChange={(e) => setGoogleCalendarClientId(e.target.value)}
-                            onBlur={() => save('googleCalendarClientId', String(googleCalendarClientId || '').trim())}
-                            placeholder="From Google Cloud OAuth Desktop app"
-                            className="input-shadow w-full px-3 py-2.5 font-mono text-xs"
-                          />
-                        </div>
-                        <div className="settings-row-tile">
-                          <label className="mb-1 block text-[10px] font-semibold uppercase tracking-[0.2em] text-mist-400">
-                            Google OAuth Client Secret
-                          </label>
-                          <input
-                            type="password"
-                            value={googleCalendarClientSecret}
-                            onChange={(e) => setGoogleCalendarClientSecret(e.target.value)}
-                            placeholder="Stored encrypted on this device"
-                            className="input-shadow w-full px-3 py-2.5 font-mono text-xs"
-                          />
-                        </div>
+                {/* Google Calendar connect card */}
+                <div className="mt-6 rounded-xl border border-white/[0.08] bg-black/20 p-4">
+                  <div className="flex items-center justify-between gap-4">
+                    <div className="flex items-center gap-3">
+                      <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg border border-white/10 bg-white/5">
+                        <img
+                          src="https://ssl.gstatic.com/calendar/images/dynamiclogo_2020q4/calendar_31_2x.png"
+                          alt="Google Calendar"
+                          className="h-6 w-6 object-contain"
+                        />
                       </div>
-                    </details>
+                      <div className="min-w-0">
+                        <p className="text-sm font-semibold text-white">Google Calendar</p>
+                        <p className="text-xs text-gray-500">
+                          {googleCalendarConnectedEmail
+                            ? googleCalendarConnectedEmail
+                            : 'Connect a Google personal or workspace account.'}
+                        </p>
+                      </div>
+                    </div>
+                    <div className="flex shrink-0 items-center gap-2">
+                      {googleCalendarConnectedEmail ? (
+                        <>
+                          <button
+                            type="button"
+                            onClick={() => void refreshCalendarMeetings()}
+                            disabled={calendarEventsLoading}
+                            className="btn-ghost px-3 py-1.5 text-xs"
+                          >
+                            {calendarEventsLoading ? 'Refreshing…' : 'Refresh'}
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => void disconnectGoogleCalendar()}
+                            disabled={calendarConnectBusy}
+                            className="btn-ghost px-3 py-1.5 text-xs text-rose-300"
+                          >
+                            Disconnect
+                          </button>
+                        </>
+                      ) : (
+                        <>
+                          <button
+                            type="button"
+                            onClick={() => void connectGoogleCalendar()}
+                            disabled={calendarConnectBusy}
+                            className="flex items-center gap-2 rounded-lg border border-white/15 bg-white px-4 py-2 text-sm font-medium text-gray-800 shadow-sm transition hover:bg-gray-100 disabled:opacity-60"
+                          >
+                            <svg width="16" height="16" viewBox="0 0 48 48" aria-hidden>
+                              <path fill="#EA4335" d="M24 9.5c3.54 0 6.71 1.22 9.21 3.6l6.85-6.85C35.9 2.38 30.47 0 24 0 14.62 0 6.51 5.38 2.56 13.22l7.98 6.19C12.43 13.72 17.74 9.5 24 9.5z"/>
+                              <path fill="#4285F4" d="M46.98 24.55c0-1.57-.15-3.09-.38-4.55H24v9.02h12.94c-.58 2.96-2.26 5.48-4.78 7.18l7.73 6c4.51-4.18 7.09-10.36 7.09-17.65z"/>
+                              <path fill="#FBBC05" d="M10.53 28.59c-.48-1.45-.76-2.99-.76-4.59s.27-3.14.76-4.59l-7.98-6.19C.92 16.46 0 20.12 0 24c0 3.88.92 7.54 2.56 10.78l7.97-6.19z"/>
+                              <path fill="#34A853" d="M24 48c6.48 0 11.93-2.13 15.89-5.81l-7.73-6c-2.18 1.48-4.97 2.31-8.16 2.31-6.26 0-11.57-4.22-13.47-9.91l-7.98 6.19C6.51 42.62 14.62 48 24 48z"/>
+                              <path fill="none" d="M0 0h48v48H0z"/>
+                            </svg>
+                            {calendarConnectBusy ? 'Connecting…' : 'Connect'}
+                          </button>
+                          {calendarConnectBusy && (
+                            <button
+                              type="button"
+                              onClick={() => void cancelGoogleCalendarConnect()}
+                              className="btn-ghost px-3 py-1.5 text-xs text-amber-200"
+                            >
+                              Cancel
+                            </button>
+                          )}
+                        </>
+                      )}
+                    </div>
+                  </div>
+
+                  {/* Status / error line */}
+                  {calendarConnectBusy && (
+                    <p className="mt-3 text-[11px] text-amber-200/80">
+                      Waiting for Google sign-in in your browser…
+                    </p>
+                  )}
+                  {!!calendarErr && (
+                    <p className="mt-3 text-xs text-rose-300">{calendarErr}</p>
                   )}
                 </div>
+
+                {/* Start-time reminders */}
+                <div className="mt-4 settings-row-tile flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+                  <div className="min-w-0 flex-1">
+                    <span className="font-medium text-gray-200">Start-time reminders</span>
+                    <p className="mt-1 text-xs text-gray-600">
+                      Show a notification before accepted meetings start.
+                    </p>
+                  </div>
+                  <div className="flex w-full shrink-0 items-center gap-2 sm:w-auto">
+                    <ToggleSwitch
+                      checked={calendarRemindersEnabled}
+                      onChange={(v) => {
+                        setCalendarRemindersEnabled(v)
+                        save('calendarRemindersEnabled', v)
+                      }}
+                    />
+                    <select
+                      value={String(calendarReminderMinutes)}
+                      onChange={(e) => {
+                        const v = Math.max(0, Number(e.target.value || 0))
+                        setCalendarReminderMinutes(v)
+                        save('calendarReminderMinutes', v)
+                      }}
+                      className="input-shadow px-3 py-2 text-xs"
+                      disabled={!calendarRemindersEnabled}
+                    >
+                      <option value="0" className="bg-void-900">At start time</option>
+                      <option value="5" className="bg-void-900">5 min before</option>
+                      <option value="10" className="bg-void-900">10 min before</option>
+                      <option value="15" className="bg-void-900">15 min before</option>
+                    </select>
+                  </div>
+                </div>
+
+                {/* Dev-only: credential setup (hidden by default, shown only when no credentials are configured) */}
+                {!googleCalendarOAuthReady && (
+                  <details className="mt-4 rounded-xl border border-white/[0.06] bg-black/15 p-4">
+                    <summary className="cursor-pointer text-[10px] font-semibold uppercase tracking-[0.2em] text-zinc-600 hover:text-zinc-400">
+                      Developer setup
+                    </summary>
+                    <div className="mt-3 space-y-3">
+                      <p className="text-[11px] text-zinc-500">
+                        Set <span className="font-mono">VEILASSIST_GOOGLE_CAL_CLIENT_ID</span> and <span className="font-mono">VEILASSIST_GOOGLE_CAL_CLIENT_SECRET</span> as GitHub Secrets, then rebuild — or paste credentials below for local testing.
+                      </p>
+                      <div className="settings-row-tile">
+                        <label className="mb-1 block text-[10px] font-semibold uppercase tracking-[0.2em] text-mist-400">
+                          OAuth Client ID
+                        </label>
+                        <input
+                          type="text"
+                          value={googleCalendarClientId}
+                          onChange={(e) => setGoogleCalendarClientId(e.target.value)}
+                          onBlur={() => save('googleCalendarClientId', String(googleCalendarClientId || '').trim())}
+                          placeholder="…apps.googleusercontent.com"
+                          className="input-shadow w-full px-3 py-2.5 font-mono text-xs"
+                        />
+                      </div>
+                      <div className="settings-row-tile">
+                        <label className="mb-1 block text-[10px] font-semibold uppercase tracking-[0.2em] text-mist-400">
+                          OAuth Client Secret
+                        </label>
+                        <input
+                          type="password"
+                          value={googleCalendarClientSecret}
+                          onChange={(e) => setGoogleCalendarClientSecret(e.target.value)}
+                          placeholder="Stored on this device only"
+                          className="input-shadow w-full px-3 py-2.5 font-mono text-xs"
+                        />
+                      </div>
+                    </div>
+                  </details>
+                )}
               </section>
 
               <section className="glass-panel p-8">
                 <div className="flex flex-wrap items-center justify-between gap-3">
-                  <h3 className="font-display text-sm font-bold uppercase tracking-[0.2em] text-gray-300">
-                    Meeting Summary
-                  </h3>
+                  <SectionTitle as="h3" className="text-sm">Meeting Summary</SectionTitle>
                   <div className="flex flex-wrap gap-2">
                     <button
                       type="button"
@@ -2065,7 +2117,7 @@ export default function Settings() {
           {activeTab === 'privacy' && (
             <div className="mx-auto max-w-3xl animate-fade-in space-y-5">
               <section className="glass-panel p-6">
-                <h3 className="text-sm font-semibold text-white">What stays on this device</h3>
+                <SectionTitle as="h3" className="text-sm">What stays on this device</SectionTitle>
                 <ul className="mt-4 space-y-2 text-sm leading-relaxed text-zinc-400">
                   <li className="flex gap-2">
                     <span className="text-accent">·</span>
@@ -2083,7 +2135,7 @@ export default function Settings() {
               </section>
 
               <section className="glass-panel p-6">
-                <h3 className="text-sm font-semibold text-white">Your data</h3>
+                <SectionTitle as="h3" className="text-sm">Your data</SectionTitle>
                 <p className="mt-2 text-xs text-zinc-500">
                   Export includes profile text, consent record, and preferences — not API keys, raw audio, or live buffers.
                 </p>
@@ -2118,18 +2170,41 @@ export default function Settings() {
           )}
 
           {activeTab === 'about' && (
-            <div className="mx-auto max-w-xl animate-fade-in text-center">
-              <section className="glass-panel p-10">
-                <img
-                  src={logoSrc}
-                  alt="VeilAssist"
-                  className="mx-auto mb-5 h-16 w-16 object-contain"
-                  draggable={false}
-                />
-                <h2 className="font-display text-2xl font-bold text-white">VeilAssist</h2>
-                {appVersion ? (
-                  <p className="mt-1 font-mono text-xs text-zinc-500">v{appVersion}</p>
-                ) : null}
+            <div className="mx-auto max-w-xl animate-fade-in">
+              <section className="glass-panel overflow-hidden">
+                <div className="relative px-10 pb-8 pt-10 text-center">
+                  <div className="absolute inset-x-0 top-0 h-px bg-gradient-to-r from-transparent via-accent/40 to-transparent" aria-hidden="true" />
+                  <div className="relative mx-auto mb-5 h-20 w-20">
+                    <div className="absolute inset-0 rounded-2xl bg-accent/20 blur-2xl" aria-hidden="true" />
+                    <img
+                      src={logoSrc}
+                      alt="VeilAssist"
+                      className="relative h-20 w-20 rounded-2xl object-contain"
+                      draggable={false}
+                    />
+                  </div>
+                  <h2 className="font-display text-2xl font-bold text-white">VeilAssist</h2>
+                  {appVersion ? (
+                    <p className="mt-2 inline-flex items-center gap-1.5 rounded-full border border-white/10 bg-white/[0.05] px-3 py-1 font-mono text-[11px] text-zinc-400">
+                      <span className="h-1.5 w-1.5 rounded-full bg-accent" aria-hidden="true" />
+                      v{appVersion}
+                    </p>
+                  ) : null}
+                </div>
+                <div className="border-t border-white/[0.06] px-8 pb-8 pt-6">
+                  <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
+                    {[
+                      { label: 'Undetectable', desc: 'Hidden from screen capture & shares' },
+                      { label: 'AI-powered', desc: 'Answers from your chosen LLM provider' },
+                      { label: 'Private', desc: 'Audio & OCR data never stored on disk' },
+                    ].map((item) => (
+                      <div key={item.label} className="rounded-xl border border-white/[0.07] bg-black/20 px-4 py-3 text-center">
+                        <p className="text-[11px] font-semibold text-white">{item.label}</p>
+                        <p className="mt-1 text-[10px] leading-relaxed text-zinc-500">{item.desc}</p>
+                      </div>
+                    ))}
+                  </div>
+                </div>
               </section>
             </div>
           )}

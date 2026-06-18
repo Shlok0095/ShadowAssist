@@ -67,15 +67,30 @@ function validateClientConfig(clientId, clientSecret) {
   return { id, sec }
 }
 
+function loadBundledOAuthConfig() {
+  try {
+    const cfg = require('./oauthConfig')
+    return {
+      id: String(cfg?.googleCalClientId || '').trim(),
+      sec: String(cfg?.googleCalClientSecret || '').trim(),
+    }
+  } catch {
+    return { id: '', sec: '' }
+  }
+}
+
 function resolveOAuthClientConfig(storeGet) {
-  const envId = String(process.env.VeilAssist_GOOGLE_CAL_CLIENT_ID || '').trim()
-  const envSecret = String(process.env.VeilAssist_GOOGLE_CAL_CLIENT_SECRET || '').trim()
+  const bundled = loadBundledOAuthConfig()
+  // Env vars (dev overrides) → bundled build-time credentials → user-entered store values
+  const envId = String(process.env.VEILASSIST_GOOGLE_CAL_CLIENT_ID || process.env.VeilAssist_GOOGLE_CAL_CLIENT_ID || '').trim()
+  const envSecret = String(process.env.VEILASSIST_GOOGLE_CAL_CLIENT_SECRET || process.env.VeilAssist_GOOGLE_CAL_CLIENT_SECRET || '').trim()
   const storeId = String(storeGet('googleCalendarClientId') || '').trim()
   const storeSecret = String(storeGet('googleCalendarClientSecret') || '').trim()
-  const id = envId || storeId
-  const sec = envSecret || storeSecret
+  const id = envId || bundled.id || storeId
+  const sec = envSecret || bundled.sec || storeSecret
+  const isEmbedded = !!(envId && envSecret) || !!(bundled.id && bundled.sec)
   const oauthReady = !!(id && sec)
-  return { id, sec, oauthReady, usingEmbeddedOAuth: !!(envId && envSecret) }
+  return { id, sec, oauthReady, usingEmbeddedOAuth: isEmbedded }
 }
 
 function createAuthUrl(clientId, redirectUri, state) {
@@ -200,7 +215,11 @@ async function completeGoogleOAuthWithLoopback(storeGet, storeSet) {
           res.writeHead(200, { 'content-type': 'text/html; charset=utf-8' })
           res.end('<h3>Google sign-in cancelled. You can close this tab.</h3>')
           if (err === 'access_denied') {
-            reject(new Error('Google blocked this account. Add it as a Test user in OAuth consent screen or publish the app to Production.'))
+            const cfg = resolveOAuthClientConfig(storeGet)
+            const msg = cfg.usingEmbeddedOAuth
+              ? 'Google sign-in was cancelled or denied.'
+              : 'Google blocked this account. Add it as a Test user in OAuth consent screen, or publish the app to Production.'
+            reject(new Error(msg))
             return
           }
           reject(new Error(err))

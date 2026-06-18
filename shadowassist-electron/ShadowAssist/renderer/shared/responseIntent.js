@@ -18,12 +18,16 @@ const SCREEN_CODE_RE =
 const PROCESS_RE =
   /\b(steps?\s+(to|we|for)|how (do|can|should) we|what steps|sales|insurance|strategy|workflow|pitch|approach|onboard|policy|customer|procedure|playbook|objection|provide (the )?sales)\b/i
 
+const SMALLTALK_RE =
+  /^[\s\W]*(hey|hi|hello|howdy|hiya|yo)\b.{0,80}$|^[\s\W]*how (are|r) (you|u)(\s+(doing|going|feeling|holding up))?\??\s*$|^[\s\W]*(what'?s up|wassup|sup)\??\s*$|^[\s\W]*good (morning|afternoon|evening|day)\b.{0,40}$/i
+
 export function looksLikeCodeScreen(text) {
   const t = String(text || '')
   return SCREEN_CODE_RE.test(t) || ALGORITHM_RE.test(t) || /\b(function|=>|class Solution)\b/.test(t)
 }
 
 export function inferResponseIntent({ userQuestion = '', transcript = '', screen = '' } = {}) {
+  if (SMALLTALK_RE.test(String(userQuestion || '').trim())) return 'smalltalk'
   const text = `${userQuestion}\n${transcript}\n${screen}`.trim()
   if (!text) return 'explanation'
   if (
