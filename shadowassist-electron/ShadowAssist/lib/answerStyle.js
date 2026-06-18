@@ -41,6 +41,16 @@ CRITICAL:
 - NO fenced code blocks unless the question explicitly asks for code.
 </answer_format>`
 
+const CODING_BRIEF_RULES = `<answer_format>
+Coding / algorithm / implementation answer.
+
+1. **Takeaway** — 1 sentence stating the algorithm or approach (e.g. "Use sliding window + hash set for O(n) time."). NEVER start with "You're looking for..." or describe what the user wants — state the SOLUTION strategy.
+2. Complete, runnable code in a fenced block (e.g. \`\`\`python) immediately after the Takeaway.
+3. Below the code: concise explanation — how it works, time/space complexity, key edge cases.
+
+NEVER describe the screen or paraphrase the problem. Just solve it.
+</answer_format>`
+
 const CODING_ANSWER_OVERRIDE = `<coding_answer priority="override">
 Coding/implementation question: you MUST include runnable code in a fenced block (e.g. \`\`\`python) along with your explanation. Never use a "Python Code" heading with prose instead of real fenced code.
 </coding_answer>`
@@ -72,8 +82,7 @@ function getAnswerStyleSuffix(style, intentContext = {}) {
   } else if (intent === 'interview') {
     base = INTERVIEW_ANSWER_RULES
   } else if (intent === 'coding') {
-    base = isDetailed ? DETAILED_ANSWER_RULES : BRIEF_ANSWER_RULES
-    base = `${base}\n\n${CODING_ANSWER_OVERRIDE}`
+    base = isDetailed ? `${DETAILED_ANSWER_RULES}\n\n${CODING_ANSWER_OVERRIDE}` : CODING_BRIEF_RULES
   } else {
     base = isDetailed ? DETAILED_ANSWER_RULES : BRIEF_ANSWER_RULES
   }
