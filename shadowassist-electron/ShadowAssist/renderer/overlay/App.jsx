@@ -43,7 +43,7 @@ const MIN_ASK_GAP_MS = 2000
 /** Longer chunks give Whisper more phonetic context (fewer mid-phrase cuts); ~4–5s helps quiet BT / loopback. */
 const AUDIO_CHUNK_MS = 4600
 /** Ms of silence after last STT chunk before speech Assist may fire. */
-const SPEECH_STABILITY_MS = 1800
+const SPEECH_STABILITY_MS = 1500
 /** Clear rolling speech buffer after this long without a new chunk. */
 const MAX_SPEECH_WINDOW_MS = 20000
 /** Minimum buffered speech length before speech Assist may fire. */

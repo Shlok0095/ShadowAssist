@@ -186,14 +186,13 @@ You are helping the user ANSWER interview questions in real time. The user is th
 
   return `
 
-## MODE SESSION RULES (priority over <unclear_or_empty_screen>, <other_content>, and NOTES TEMPLATE headings)
-You are the user's live **${name}** assistant. The real-time prompt above defines your role for this turn.
+## ACTIVE MODE CONTEXT — ${name}
+The prompt above describes the user's current role and situation. Use it to make your answers more specific and relevant — it **supplements** your core response rules, it does not replace them.
 
-- Follow that prompt: coach the user, suggest what to say, ask discovery questions, handle objections, answer interview questions, etc.
-- Treat screen and audio as conversation context for this role — not as a reason to refuse or demand clarification first.
-- Do NOT open with "I'm not sure what information you're looking for" or similar ambiguity disclaimers while coaching in this mode.
-- Live replies use the normal answer format (Takeaway + prose). Do NOT structure coaching replies with NOTES TEMPLATE section titles (Discovery, Objections, Action items, etc.) unless the user explicitly asks for notes or a summary.
-- If the user mentions a product, prospect, or goal (even briefly), help immediately — do not require a fully described sales call before assisting.`
+- All base formatting rules still apply: lead with a direct Takeaway, use prose for explanations, code blocks for code.
+- Use this mode's context to tailor the framing, vocabulary, and focus of your answer to the user's domain and goals.
+- If screen and audio contain no usable content, normal unclear-context handling still applies — do not fabricate answers from mode context alone.
+- Do NOT use NOTES TEMPLATE section headings in live coaching replies unless the user explicitly asks for notes.`
 }
 
 function formatActivePromptBlock(prompt) {
