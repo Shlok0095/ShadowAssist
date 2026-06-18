@@ -57,7 +57,7 @@ const {
   KNOWLEDGE_BASE_MAX,
 } = require('../lib/contextPrompts')
 const googleCalendar = require('../lib/googleCalendar')
-const rapidOcr = require('../lib/rapidOcrMain')
+const rapidOcr = require('../lib/windowsOcr')
 store.runDataMigration()
 const hotkeys = require('../lib/hotkeys')
 const screenCapture = require('../lib/screenCapture')

@@ -2,7 +2,7 @@
 // Unauthorized copying or distribution is prohibited.
 
 const { desktopCapturer, nativeImage, screen } = require('electron')
-const rapidOcr = require('./rapidOcrMain')
+const rapidOcr = require('./windowsOcr')
 const { ocrDebugLog } = require('./ocrDebugLog')
 
 /**

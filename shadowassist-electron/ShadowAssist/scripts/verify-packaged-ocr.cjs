@@ -1,39 +1,32 @@
-// Post-build check: ONNX OCR assets and native deps must exist in app.asar.unpacked.
+// Post-build check: windows-ocr-worker.ps1 must be unpacked and powershell.exe reachable.
 const fs = require('fs')
 const path = require('path')
 
 const distRoot = path.join(__dirname, '..', 'dist', 'win-unpacked', 'resources')
-const unpacked = path.join(distRoot, 'app.asar.unpacked', 'node_modules')
+const unpacked = path.join(distRoot, 'app.asar.unpacked')
 
 function mustExist(label, p, minBytes = 1) {
   if (!fs.existsSync(p)) {
-    console.error(`[verify-packaged-ocr] MISSING ${label}: ${p}`)
+    console.error(`[verify-ocr] MISSING ${label}: ${p}`)
     process.exit(1)
   }
   const size = fs.statSync(p).size
   if (size < minBytes) {
-    console.error(`[verify-packaged-ocr] TOO SMALL ${label}: ${p} (${size} bytes)`)
+    console.error(`[verify-ocr] TOO SMALL ${label}: ${p} (${size} bytes)`)
     process.exit(1)
   }
-  console.log(`[verify-packaged-ocr] ok ${label} (${size} bytes)`)
+  console.log(`[verify-ocr] ok  ${label} (${size} bytes)`)
 }
 
-const assets = path.join(unpacked, '@repeato', 'ocr', 'build', 'node', 'assets')
-mustExist('det model', path.join(assets, 'ch_PP-OCRv4_det_infer.onnx'), 1_000_000)
-mustExist('rec model', path.join(assets, 'ch_PP-OCRv4_rec_infer.onnx'), 1_000_000)
-mustExist('dict', path.join(assets, 'ppocr_keys_v1.txt'), 100)
-mustExist('ocr index.cjs', path.join(unpacked, '@repeato', 'ocr', 'build', 'node', 'index.cjs'), 1000)
-mustExist('onnxruntime binding', path.join(
-  unpacked,
-  'onnxruntime-node',
-  'bin',
-  'napi-v6',
-  'win32',
-  'x64',
-  'onnxruntime_binding.node',
-), 1000)
-mustExist('detect-libc', path.join(unpacked, 'detect-libc', 'lib', 'detect-libc.js'), 100)
-mustExist('semver', path.join(unpacked, 'semver', 'package.json'), 100)
-mustExist('onnxruntime-common', path.join(unpacked, 'onnxruntime-common', 'package.json'), 100)
+mustExist('windows-ocr-worker.ps1', path.join(unpacked, 'scripts', 'windows-ocr-worker.ps1'), 500)
 
-console.log('[verify-packaged-ocr] all checks passed')
+const psPath = path.join(
+  process.env.SystemRoot || 'C:\\Windows',
+  'System32', 'WindowsPowerShell', 'v1.0', 'powershell.exe'
+)
+if (!fs.existsSync(psPath)) {
+  console.error(`[verify-ocr] powershell.exe not found at expected path: ${psPath}`)
+  process.exit(1)
+}
+console.log(`[verify-ocr] ok  powershell.exe found`)
+console.log('[verify-ocr] all checks passed — Windows OCR ready')

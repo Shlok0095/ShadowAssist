@@ -33,15 +33,7 @@
     "forceCodeSigning": false,
     "asarUnpack": [
       "lib/meetingScanMeet.ps1",
-      "lib/rapidOcrMain.js",
-      "node_modules/@repeato/ocr/**",
-      "node_modules/@gutenye/**",
-      "node_modules/onnxruntime-node/**",
-      "node_modules/onnxruntime-common/**",
-      "node_modules/sharp/**",
-      "node_modules/detect-libc/**",
-      "node_modules/semver/**",
-      "node_modules/@img/**"
+      "scripts/windows-ocr-worker.ps1"
     ],
     "icon": "logo.png",
     "directories": {
@@ -104,17 +96,12 @@
     "@fontsource/syne": "^5.2.5",
     "@grpc/grpc-js": "^1.14.4",
     "@grpc/proto-loader": "^0.7.15",
-    "@repeato/ocr": "^1.5.21",
-    "detect-libc": "^2.1.2",
     "electron-store": "^8.1.0",
     "electron-updater": "^6.8.3",
     "highlight.js": "^11.11.1",
-    "onnxruntime-common": "^1.22.0",
     "openai": "^4.20.0",
     "pdf-parse": "^1.1.1",
     "react": "^18.2.0",
-    "react-dom": "^18.2.0",
-    "semver": "^7.8.4",
-    "sharp": "^0.34.5"
+    "react-dom": "^18.2.0"
   }
 }
