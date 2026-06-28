@@ -5,18 +5,18 @@ import { GlowCta } from '@/components/marketing/GlowCta'
 import { SITE } from '@/config/site'
 import brandLogo from '../../../logo.png'
 
-function downloadSectionHref() {
+function homeAnchor(id: string) {
   const base = import.meta.env.BASE_URL.replace(/\/?$/, '/')
-  return `${base}#download`
+  return `${base}#${id}`
 }
 
 const ctaDesktop = 'hidden lg:inline-flex'
-
 const ctaMobile = 'inline-flex lg:hidden'
 
 export function Header() {
   const { pathname } = useLocation()
   const isMarketing = pathname === '/' || pathname === '/how-it-works' || pathname === '/built-for-live-work'
+  const isHome = pathname === '/' || pathname === ''
   const [menuOpen, setMenuOpen] = useState(false)
   const wrapRef = useRef<HTMLDivElement>(null)
 
@@ -42,10 +42,10 @@ export function Header() {
           isMarketing
             ? isActive
               ? 'text-white'
-              : 'text-zinc-200 hover:text-white'
+              : 'text-zinc-300 hover:text-white'
             : isActive
-              ? 'font-semibold text-blue-700'
-              : 'text-zinc-900 hover:text-zinc-950'
+              ? 'font-semibold text-blue-600'
+              : 'text-zinc-900 hover:text-zinc-950',
         )
       }
     >
@@ -53,27 +53,37 @@ export function Header() {
     </NavLink>
   )
 
+  const anchorLink = (href: string, label: string) => (
+    <a
+      href={href}
+      className={cn(
+        'text-sm font-medium no-underline transition-colors duration-200',
+        isMarketing ? 'text-zinc-300 hover:text-white' : 'text-zinc-900 hover:text-zinc-950',
+      )}
+    >
+      {label}
+    </a>
+  )
+
   const menuPanelClass = cn(
     'absolute right-0 top-full z-50 mt-2 w-[min(17rem,calc(100vw-2rem))] origin-top-right scale-100 rounded-2xl border-2 p-2 opacity-100 shadow-xl',
     isMarketing
-      ? 'border-white/[0.08] bg-[#050508]/95 text-zinc-50 ring-1 ring-white/10 backdrop-blur-xl'
-      : 'border-zinc-300 bg-white text-zinc-950 ring-1 ring-black/5'
+      ? 'border-white/[0.08] bg-[#121216]/95 text-zinc-50 ring-1 ring-white/10 backdrop-blur-xl'
+      : 'border-zinc-300 bg-white text-zinc-950 ring-1 ring-black/5',
   )
 
   const menuItemClass = cn(
     'block rounded-xl px-4 py-3 text-sm font-semibold no-underline transition-colors',
     isMarketing
-      ? 'text-zinc-50 hover:bg-zinc-800 hover:text-white'
-      : 'text-zinc-900 hover:bg-zinc-100 hover:text-black'
+      ? 'text-zinc-50 hover:bg-white/[0.06] hover:text-white'
+      : 'text-zinc-900 hover:bg-zinc-100 hover:text-black',
   )
-
-  const menuSecondaryClass = isMarketing ? 'text-zinc-400' : 'text-zinc-600'
 
   return (
     <header
       className={cn(
         'sticky top-0 z-20 flex w-full max-w-none flex-wrap items-center justify-between gap-3 border-b px-4 py-3 backdrop-blur-xl sm:px-8 md:px-10 md:py-4 lg:px-14 xl:px-16',
-        isMarketing ? 'border-white/[0.06] bg-[#050508]/72' : 'border-zinc-200/80 bg-white/85'
+        isMarketing ? 'border-white/[0.06] bg-[#121216]/80' : 'border-zinc-200/80 bg-white/85',
       )}
     >
       <NavLink
@@ -100,19 +110,16 @@ export function Header() {
 
       {/* Desktop */}
       <nav className="hidden flex-wrap items-center gap-x-5 gap-y-2 md:flex md:gap-x-6">
-        {isMarketing ? (
+        {isHome ? (
+          <>
+            {anchorLink(homeAnchor('features'), 'Features')}
+            {anchorLink(homeAnchor('how-it-works'), 'How it works')}
+            {anchorLink(homeAnchor('faq'), 'FAQ')}
+          </>
+        ) : isMarketing ? (
           <>
             {navLinkMarketing('/how-it-works', 'How it works')}
             {navLinkMarketing('/built-for-live-work', 'Built for live work')}
-            <a
-              href={downloadSectionHref()}
-              className={cn(
-                'text-sm font-medium no-underline transition-colors duration-200',
-                isMarketing ? 'text-zinc-200 hover:text-white' : 'text-zinc-900 hover:text-zinc-950'
-              )}
-            >
-              Download
-            </a>
           </>
         ) : null}
         {navLinkMarketing('/docs', 'Docs')}
@@ -163,28 +170,36 @@ export function Header() {
                 <NavLink to="/" className={menuItemClass} role="menuitem" onClick={() => setMenuOpen(false)}>
                   Home
                 </NavLink>
-                <NavLink to="/how-it-works" className={menuItemClass} role="menuitem" onClick={() => setMenuOpen(false)}>
-                  How it works
-                </NavLink>
-                <NavLink
-                  to="/built-for-live-work"
-                  className={menuItemClass}
-                  role="menuitem"
-                  onClick={() => setMenuOpen(false)}
-                >
-                  Built for live work
-                </NavLink>
+                {isHome ? (
+                  <>
+                    <a href={homeAnchor('features')} className={menuItemClass} role="menuitem" onClick={() => setMenuOpen(false)}>
+                      Features
+                    </a>
+                    <a href={homeAnchor('how-it-works')} className={menuItemClass} role="menuitem" onClick={() => setMenuOpen(false)}>
+                      How it works
+                    </a>
+                    <a href={homeAnchor('faq')} className={menuItemClass} role="menuitem" onClick={() => setMenuOpen(false)}>
+                      FAQ
+                    </a>
+                  </>
+                ) : (
+                  <>
+                    <NavLink to="/how-it-works" className={menuItemClass} role="menuitem" onClick={() => setMenuOpen(false)}>
+                      How it works
+                    </NavLink>
+                    <NavLink
+                      to="/built-for-live-work"
+                      className={menuItemClass}
+                      role="menuitem"
+                      onClick={() => setMenuOpen(false)}
+                    >
+                      Built for live work
+                    </NavLink>
+                  </>
+                )}
                 <NavLink to="/docs" className={menuItemClass} role="menuitem" onClick={() => setMenuOpen(false)}>
                   Docs
                 </NavLink>
-                <a
-                  href={downloadSectionHref()}
-                  className={menuItemClass}
-                  role="menuitem"
-                  onClick={() => setMenuOpen(false)}
-                >
-                  Download <span className={cn('font-medium', menuSecondaryClass)}>(on page)</span>
-                </a>
                 <GlowCta
                   href={SITE.downloadSetupExeUrl}
                   className="mt-1 block w-full py-3 text-center text-sm"

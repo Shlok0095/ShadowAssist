@@ -2181,16 +2181,21 @@ body.marketing-dark .marketing-blob--violet {
 /* ─── Futuristic marketing layer (animated-website inspired) ─── */
 body.marketing-dark {
   --futura-cyan: #22d3ee;
-  --futura-violet: #a78bfa;
-  --futura-blue: #60a5fa;
+  --futura-violet: #6366f1;
+  --futura-blue: #3b82f6;
+  --bg: #0c0c0e;
+  background-color: var(--bg);
+  background-image:
+    radial-gradient(ellipse 85% 55% at 50% -18%, rgba(59, 130, 246, 0.08), transparent 58%),
+    radial-gradient(ellipse 45% 40% at 100% 0%, rgba(34, 211, 238, 0.04), transparent 48%);
 }
 
 .futura-bg__mesh {
   position: absolute;
   inset: 0;
   background:
-    radial-gradient(ellipse 90% 60% at 50% -25%, rgba(34, 211, 238, 0.14), transparent 55%),
-    radial-gradient(ellipse 55% 45% at 100% 15%, rgba(139, 92, 246, 0.12), transparent 50%),
+    radial-gradient(ellipse 90% 60% at 50% -25%, rgba(59, 130, 246, 0.12), transparent 55%),
+    radial-gradient(ellipse 55% 45% at 100% 15%, rgba(34, 211, 238, 0.08), transparent 50%),
     radial-gradient(ellipse 50% 40% at 0% 80%, rgba(59, 130, 246, 0.1), transparent 48%);
 }
 
@@ -2296,12 +2301,51 @@ body.marketing-dark {
 }
 
 .futura-gradient-text {
-  background: linear-gradient(120deg, #60a5fa 0%, #a78bfa 38%, #22d3ee 72%, #60a5fa 100%);
+  background: linear-gradient(120deg, #60a5fa 0%, #3b82f6 40%, #22d3ee 72%, #60a5fa 100%);
   background-size: 200% auto;
   -webkit-background-clip: text;
   background-clip: text;
   color: transparent;
   animation: gradient-shift 8s ease-in-out infinite;
+}
+
+.va-gradient-text {
+  background: linear-gradient(120deg, #60a5fa 0%, #3b82f6 38%, #93c5fd 62%, #22d3ee 100%);
+  background-size: 200% auto;
+  -webkit-background-clip: text;
+  background-clip: text;
+  color: transparent;
+  animation: gradient-shift 8s ease-in-out infinite;
+}
+
+.va-glass-card {
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-top-color: rgba(255, 255, 255, 0.14);
+  background: linear-gradient(165deg, rgba(18, 18, 22, 0.95) 0%, rgba(12, 12, 14, 0.88) 100%);
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.06),
+    0 20px 50px -24px rgba(0, 0, 0, 0.65);
+}
+
+.va-stat-num {
+  background: linear-gradient(135deg, #93c5fd 0%, #3b82f6 50%, #22d3ee 100%);
+  -webkit-background-clip: text;
+  background-clip: text;
+  color: transparent;
+}
+
+.va-video-slot {
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.04),
+    0 24px 60px -28px rgba(59, 130, 246, 0.15);
+}
+
+.va-download-card {
+  transition: border-color 0.25s ease;
+}
+
+.va-download-card:hover {
+  border-color: rgba(59, 130, 246, 0.22);
 }
 
 .futura-glass-chip {
@@ -2347,15 +2391,15 @@ body.marketing-dark {
 }
 
 .futura-cta {
-  background: linear-gradient(180deg, rgba(15, 23, 42, 0.95), rgba(3, 7, 18, 0.98));
+  background: linear-gradient(180deg, rgba(18, 18, 22, 0.98), rgba(12, 12, 14, 0.99));
   box-shadow:
     0 0 0 1px rgba(255, 255, 255, 0.06),
-    0 16px 48px -16px rgba(34, 211, 238, 0.25);
+    0 16px 48px -16px rgba(59, 130, 246, 0.28);
 }
 
 .futura-cta__ring {
   padding: 1px;
-  background: linear-gradient(135deg, rgba(34, 211, 238, 0.55), rgba(139, 92, 246, 0.45), rgba(59, 130, 246, 0.5));
+  background: linear-gradient(135deg, rgba(59, 130, 246, 0.55), rgba(34, 211, 238, 0.45), rgba(96, 165, 250, 0.5));
   mask:
     linear-gradient(#fff 0 0) content-box,
     linear-gradient(#fff 0 0);
@@ -2399,12 +2443,12 @@ body.marketing-dark a.futura-cta:hover {
 
 .futura-marquee__fade-l {
   left: 0;
-  background: linear-gradient(90deg, #050508, transparent);
+  background: linear-gradient(90deg, #0c0c0e, transparent);
 }
 
 .futura-marquee__fade-r {
   right: 0;
-  background: linear-gradient(270deg, #050508, transparent);
+  background: linear-gradient(270deg, #0c0c0e, transparent);
 }
 
 body.marketing-dark .marketing-blob--cyan {
@@ -2417,13 +2461,5 @@ body.marketing-dark .marketing-blob--blue {
 }
 
 body.marketing-dark .marketing-blob--violet {
-  background: rgba(139, 92, 246, 0.32);
-}
-
-body.marketing-dark {
-  --bg: #050508;
-  background-color: var(--bg);
-  background-image:
-    radial-gradient(ellipse 85% 55% at 50% -18%, rgba(34, 211, 238, 0.06), transparent 58%),
-    radial-gradient(ellipse 45% 40% at 100% 0%, rgba(139, 92, 246, 0.05), transparent 48%);
+  background: rgba(99, 102, 241, 0.28);
 }

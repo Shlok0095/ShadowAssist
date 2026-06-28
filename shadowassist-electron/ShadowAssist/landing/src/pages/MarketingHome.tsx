@@ -1,294 +1,326 @@
 import { Link } from 'react-router-dom'
-import { motion, useReducedMotion } from 'framer-motion'
-import { HeroLiveMock } from '@/components/home/HeroLiveMock'
+import { FaqAccordion } from '@/components/FaqAccordion'
+import { DownloadBlock } from '@/components/marketing/DownloadBlock'
 import { FeatureMarquee } from '@/components/marketing/FeatureMarquee'
-import { GlowCta } from '@/components/marketing/GlowCta'
 import { ScrollReveal } from '@/components/marketing/ScrollReveal'
-import { SITE } from '@/config/site'
-import { useRollingReleaseMeta } from '@/hooks/useRollingReleaseMeta'
+import { VideoPlaceholder } from '@/components/marketing/VideoPlaceholder'
+import { APP_VERSION, SITE } from '@/config/site'
 
-function IconMic({ className = '' }: { className?: string }) {
-  return (
-    <svg className={className} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" aria-hidden>
-      <path d="M12 14a3 3 0 003-3V6a3 3 0 10-6 0v5a3 3 0 003 3z" />
-      <path d="M8 11v1a4 4 0 004 4M16 12v-1M12 19v2M8 21h8" strokeLinecap="round" />
-    </svg>
-  )
-}
+const PLATFORMS = ['Zoom', 'Google Meet', 'Microsoft Teams', 'Webex', 'Slack Huddles'] as const
 
-function IconScreen({ className = '' }: { className?: string }) {
-  return (
-    <svg className={className} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" aria-hidden>
-      <rect x="3" y="4" width="18" height="14" rx="2" />
-      <path d="M8 21h8M12 18v3" strokeLinecap="round" />
-    </svg>
-  )
-}
-
-function IconBolt({ className = '' }: { className?: string }) {
-  return (
-    <svg className={className} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" aria-hidden>
-      <path d="M13 2L4 14h7l-1 8 10-14h-7l0-6z" strokeLinejoin="round" />
-    </svg>
-  )
-}
-
-function IconEye({ className = '' }: { className?: string }) {
-  return (
-    <svg className={className} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" aria-hidden>
-      <path d="M2 12s4-7 10-7 10 7 10 7-4 7-10 7S2 12 2 12z" />
-      <circle cx="12" cy="12" r="3" />
-    </svg>
-  )
-}
-
-function IconCalendar({ className = '' }: { className?: string }) {
-  return (
-    <svg className={className} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" aria-hidden>
-      <rect x="3" y="5" width="18" height="16" rx="2" />
-      <path d="M3 10h18M8 3v4M16 3v4" strokeLinecap="round" />
-      <path d="M8 14h2M12 14h2M16 14h2M8 17h2M12 17h2" strokeLinecap="round" />
-    </svg>
-  )
-}
-
-const bento = [
+const MEETING_STEPS = [
   {
-    icon: IconMic,
-    title: 'Real-time Listening',
-    desc: 'Explicit toggles; capture the last utterance, not a vague “always on” mic graph.',
+    num: '01',
+    title: 'VeilAssist listens in real time',
+    body: 'Dual-path mic + system audio with on-device or cloud STT. The overlay picks up who said what while you stay in the call.',
+    videoLabel: 'Live listening & transcript',
   },
   {
-    icon: IconBolt,
-    title: 'Instant Answers',
-    desc: 'Token stream in the overlay; no context switch when the meeting is moving.',
+    num: '02',
+    title: 'Instant help when you need it',
+    body: 'Ctrl+Enter sends your screen and recent speech to a vision model. Answers stream live in the overlay and on your phone companion.',
+    videoLabel: 'Assist hotkey & streaming answer',
   },
   {
-    icon: IconScreen,
-    title: 'Understands Your Screen',
-    desc: 'Optional viewport text informs the model—grounding without pasting shots.',
-  },
-  {
-    icon: IconCalendar,
-    title: 'Meetings & recaps',
-    desc: 'Optional Google Calendar; bullet summaries after Listen/Stop, saved locally across restarts.',
-  },
-  {
-    icon: IconEye,
-    title: 'Works Invisibly',
-    desc: 'Hotkey-first, compact chrome—only visible when you summon it.',
+    num: '03',
+    title: 'Notes and recaps after the call',
+    body: 'Optional session summaries, meeting search, and calendar hooks — stored locally on your machine, not in our cloud.',
+    videoLabel: 'Meeting recap & summaries',
   },
 ] as const
 
-const shipped = [
+const FEATURE_DEMOS = [
   {
-    title: 'Meetings tab',
-    body:
-      'Connect Google Calendar with your own OAuth app credentials. See upcoming accepted meetings and optionally get Windows notifications before start time.',
+    title: 'Screen-aware answers',
+    desc: 'Vision models read your actual screen — code, slides, docs — without copy-paste.',
+    videoLabel: 'Screen capture + vision assist',
   },
   {
-    title: 'Meeting summaries',
-    body:
-      'Each Listen session (Start → Stop) can produce a concise bullet summary. Pick a session by time range and read the recap from that session.',
+    title: 'Phone companion',
+    desc: 'Stream the same AI response to your phone over local Wi‑Fi while the overlay stays on desktop.',
+    videoLabel: 'Phone link companion',
   },
   {
-    title: 'Recaps that survive restarts',
-    body:
-      'Session summaries are stored in your local app data so they stay after you quit or reboot. Clear past summaries from Settings when you want.',
+    title: 'Undetectable overlay',
+    desc: 'Content protection, compact chrome, and hotkey-first UX — visible only when you summon it.',
+    videoLabel: 'Overlay & invisibility',
   },
   {
-    title: 'System prompt',
-    body:
-      'A built-in default system prompt ships with the app; override it in Profile when you need a custom voice.',
+    title: 'Profile & context modes',
+    desc: 'Resume, job description, and reference files routed intelligently into each answer.',
+    videoLabel: 'Context modes & routing',
+  },
+] as const
+
+const UNDETECTABLE = [
+  {
+    title: 'No meeting bots',
+    body: 'VeilAssist never joins your call as a participant. Nothing extra on the guest list.',
+  },
+  {
+    title: 'Invisible to screen share',
+    body: 'The overlay uses content protection so it does not appear in recordings or shared screens.',
+  },
+  {
+    title: 'Moves with your eyes',
+    body: 'Drag the panel anywhere on screen — position it where you are already looking.',
+  },
+] as const
+
+const STATS = [
+  { n: '12+', label: 'Languages', detail: 'English, Hindi, Hinglish, and cloud STT languages.' },
+  { n: '<1s', label: 'First token', detail: 'Streaming answers in overlay and phone companion together.' },
+  { n: 'BYOK', label: 'Your keys', detail: 'Groq, OpenAI, Anthropic, NVIDIA NIM — credentials stay local.' },
+] as const
+
+const FAQ = [
+  {
+    q: 'Why real-time assist instead of a notetaker only?',
+    a: 'Most tools summarize after the meeting. VeilAssist helps while the conversation is still happening — when you need the answer, not tomorrow.',
+  },
+  {
+    q: 'Is VeilAssist detectable in meetings?',
+    a: 'There is no bot join link. The Windows overlay uses content protection and stays off shared screens. You control when it is visible.',
+  },
+  {
+    q: 'Do I need an account or subscription?',
+    a: 'No. Download the app, paste your own model API key in Settings, and go. We do not host your keys or charge a platform fee.',
+  },
+  {
+    q: 'What providers are supported?',
+    a: 'Vision-capable chat models from Groq, OpenAI, Anthropic, NVIDIA NIM, OpenRouter, and custom OpenAI-compatible endpoints.',
+  },
+  {
+    q: 'Does it work on Mac?',
+    a: 'Windows 10/11 today. macOS is on the roadmap.',
   },
 ] as const
 
 export function MarketingHome() {
-  const releaseMeta = useRollingReleaseMeta()
-  const reduceMotion = useReducedMotion()
-
   return (
     <div className="relative min-w-0 font-sans text-white antialiased">
-      {/* Hero */}
-      <section className="relative overflow-hidden px-4 pb-10 pt-12 sm:px-8 sm:pb-14 sm:pt-16 md:px-10 lg:px-14 xl:px-16">
-        <div className="relative z-[1] mx-auto grid w-full max-w-[90rem] gap-14 lg:grid-cols-[1.05fr_0.95fr] lg:items-center lg:gap-x-16 xl:gap-x-20">
-          <div className="min-w-0 text-center lg:text-left">
-            <ScrollReveal>
-              <div className="mb-5 inline-flex items-center gap-2 rounded-full border border-cyan-500/20 bg-cyan-500/[0.06] px-4 py-1.5 font-mono text-[10px] uppercase tracking-[0.28em] text-cyan-300/90 sm:text-[11px]">
-                <span className="h-1.5 w-1.5 rounded-full bg-cyan-400 shadow-[0_0_12px_2px_rgba(34,211,238,0.55)] motion-safe:animate-pulse" />
-                Windows desktop app
-              </div>
-              <h1 className="font-display text-[1.85rem] font-bold leading-[1.06] tracking-[-0.03em] sm:text-4xl md:text-5xl lg:text-[3.15rem] xl:text-[3.45rem]">
-                <span className="block text-white">AI overlay</span>
-                <span className="futura-gradient-text mt-1 block">for live meetings</span>
-              </h1>
-            </ScrollReveal>
-
-            <ScrollReveal delay={0.08} className="mt-6">
-              <p className="mx-auto max-w-2xl font-mono text-[0.8125rem] leading-[1.8] tracking-wide text-zinc-400 sm:text-sm lg:mx-0 lg:max-w-[38rem]">
-                Fuse optional audio and viewport signals into one overlay—BYOK, provider-direct TLS, no baked-in keys.
-                Answers stream in a slim panel while the meeting keeps moving.
-              </p>
-              <div className="futura-glass-chip mx-auto mt-5 max-w-2xl px-4 py-3 text-left font-mono text-[0.7rem] leading-relaxed tracking-wide text-zinc-500 sm:text-xs lg:mx-0">
-                <span className="text-cyan-300/90">Floating overlay</span>
-                <span className="text-zinc-600"> · </span>
-                Tray-resident, hotkey-friendly—no second monitor or browser tab hand-off.
-              </div>
-            </ScrollReveal>
-
-            <ScrollReveal delay={0.14} className="mt-9 flex flex-col items-center gap-4 lg:items-start">
-              <GlowCta href={SITE.downloadSetupExeUrl} size="lg" className="w-full max-w-sm sm:w-auto">
-                Download for Windows
-                <svg className="h-4 w-4 transition-transform duration-300 group-hover:translate-x-0.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" aria-hidden>
-                  <path d="M5 12h14M13 6l6 6-6 6" strokeLinecap="round" strokeLinejoin="round" />
-                </svg>
-              </GlowCta>
-              <p className="font-mono text-xs tracking-wide text-zinc-600">macOS · roadmap</p>
-              <p className="font-mono text-[11px] tracking-wide text-zinc-600">
-                <Link to="/how-it-works" className="text-zinc-500 transition-colors hover:text-cyan-300/90">
-                  How it works
-                </Link>
-                <span className="mx-2 text-zinc-700">·</span>
-                <Link to="/built-for-live-work" className="text-zinc-500 transition-colors hover:text-cyan-300/90">
-                  Built for live work
-                </Link>
-              </p>
-            </ScrollReveal>
-          </div>
-
-          <ScrollReveal delay={0.1} className="relative min-w-0 w-full lg:justify-self-end">
-            <div className="futura-mock-frame relative">
-              <div className="futura-mock-frame__halo" aria-hidden />
-              {!reduceMotion ? (
-                <motion.div
-                  className="absolute -inset-px rounded-[1.35rem] opacity-60"
-                  style={{
-                    background:
-                      'conic-gradient(from 180deg, rgba(34,211,238,0.35), rgba(139,92,246,0.25), rgba(59,130,246,0.3), rgba(34,211,238,0.35))',
-                  }}
-                  animate={{ rotate: 360 }}
-                  transition={{ duration: 18, repeat: Infinity, ease: 'linear' }}
-                  aria-hidden
-                />
-              ) : null}
-              <HeroLiveMock className="relative z-[1] ring-1 ring-white/10" />
-            </div>
+      {/* ── Hero ── */}
+      <section className="relative overflow-hidden px-4 pb-8 pt-14 sm:px-8 sm:pt-20 md:px-10 lg:px-14 xl:px-16">
+        <div className="relative z-[1] mx-auto max-w-4xl text-center">
+          <ScrollReveal>
+            <p className="mb-4 inline-flex items-center gap-2 rounded-full border border-blue-500/20 bg-blue-500/[0.08] px-4 py-1.5 font-mono text-[10px] uppercase tracking-[0.28em] text-blue-300/90 sm:text-[11px]">
+              <span className="h-1.5 w-1.5 rounded-full bg-blue-400 shadow-[0_0_12px_2px_rgba(59,130,246,0.55)] motion-safe:animate-pulse" />
+              Windows · v{APP_VERSION}
+            </p>
+            <h1 className="font-display text-[2rem] font-extrabold leading-[1.05] tracking-[-0.04em] sm:text-5xl md:text-[3.25rem] lg:text-[3.75rem]">
+              <span className="block text-white">Undetectable AI</span>
+              <span className="va-gradient-text mt-1 block">for live meetings</span>
+            </h1>
           </ScrollReveal>
+
+          <ScrollReveal delay={0.08} className="mt-6">
+            <p className="mx-auto max-w-2xl text-base leading-[1.65] text-zinc-400 sm:text-lg">
+              VeilAssist streams real-time answers on your screen while the call is still happening — grounded in what
+              you see and hear. No bot joins the room.
+            </p>
+          </ScrollReveal>
+
+          <ScrollReveal delay={0.12} className="mt-10">
+            <DownloadBlock layout="hero" />
+            <p className="mt-4 font-mono text-xs text-zinc-600">macOS · coming later</p>
+          </ScrollReveal>
+        </div>
+
+        <ScrollReveal delay={0.15} className="relative z-[1] mx-auto mt-14 max-w-5xl">
+          <VideoPlaceholder label="Product overview — full walkthrough" aspect="wide" />
+        </ScrollReveal>
+      </section>
+
+      {/* Demo quote strip (Cluely-style) */}
+      <section className="border-y border-white/[0.06] bg-white/[0.02] px-4 py-12 sm:px-8 md:px-10">
+        <div className="mx-auto max-w-3xl text-center">
+          <p className="font-display text-lg font-semibold text-zinc-300 sm:text-xl">What should I say?</p>
+          <blockquote className="mt-4 rounded-2xl border border-white/[0.08] bg-[#121216]/80 px-6 py-5 text-left text-sm leading-relaxed text-zinc-300 sm:text-base">
+            “Walk them through the trade-off between latency and consistency in this architecture — keep it to three
+            bullets they can repeat out loud.”
+          </blockquote>
+          <p className="mt-4 font-mono text-[11px] uppercase tracking-widest text-zinc-600">
+            Ctrl+Enter · Assist from screen + audio
+          </p>
         </div>
       </section>
 
       <FeatureMarquee />
 
-      {/* Shipped */}
+      {/* How it helps */}
       <section
-        id="app-features"
-        className="scroll-mt-24 border-t border-white/[0.06] px-4 py-16 sm:px-8 md:px-10 lg:px-14 xl:px-16"
+        id="how-it-works"
+        className="scroll-mt-24 border-t border-white/[0.06] px-4 py-20 sm:px-8 md:px-10 lg:px-14 xl:px-16"
       >
-        <div className="mx-auto w-full max-w-[90rem]">
+        <div className="mx-auto max-w-[90rem]">
           <ScrollReveal>
-            <p className="text-center font-mono text-xs font-medium uppercase tracking-[0.24em] text-cyan-400/70">
-              In the product
-            </p>
-            <h2 className="mt-3 text-center font-display text-2xl font-bold tracking-[-0.02em] text-white sm:text-3xl md:text-[2.15rem]">
-              What the Windows app includes
+            <p className="text-center font-mono text-xs uppercase tracking-[0.24em] text-blue-400/70">During the call</p>
+            <h2 className="mt-3 text-center font-display text-2xl font-bold tracking-[-0.03em] text-white sm:text-3xl md:text-4xl">
+              How VeilAssist helps in a meeting
             </h2>
-            <p className="mx-auto mt-3 max-w-3xl text-center font-mono text-sm leading-relaxed tracking-wide text-zinc-500">
-              Calendar hooks, session recaps, and persona controls sit alongside the overlay and tray—same matte chrome
-              throughout.
+          </ScrollReveal>
+
+          <div className="mt-16 flex flex-col gap-20 lg:gap-24">
+            {MEETING_STEPS.map((step, i) => (
+              <ScrollReveal key={step.num} delay={i * 0.05}>
+                <div
+                  className={`grid items-center gap-10 lg:grid-cols-2 lg:gap-16 ${i % 2 === 1 ? 'lg:[direction:rtl]' : ''}`}
+                >
+                  <div className={i % 2 === 1 ? 'lg:[direction:ltr]' : ''}>
+                    <span className="font-display text-5xl font-extrabold tracking-tighter text-blue-500/30">
+                      {step.num}
+                    </span>
+                    <h3 className="mt-2 font-display text-xl font-bold text-white sm:text-2xl">{step.title}</h3>
+                    <p className="mt-3 max-w-lg text-sm leading-relaxed text-zinc-500 sm:text-base">{step.body}</p>
+                  </div>
+                  <div className={i % 2 === 1 ? 'lg:[direction:ltr]' : ''}>
+                    <VideoPlaceholder label={step.videoLabel} />
+                  </div>
+                </div>
+              </ScrollReveal>
+            ))}
+          </div>
+        </div>
+      </section>
+
+      {/* Feature demos */}
+      <section
+        id="features"
+        className="scroll-mt-24 border-t border-white/[0.06] bg-white/[0.015] px-4 py-20 sm:px-8 md:px-10 lg:px-14 xl:px-16"
+      >
+        <div className="mx-auto max-w-[90rem]">
+          <ScrollReveal>
+            <h2 className="text-center font-display text-2xl font-bold tracking-[-0.03em] text-white sm:text-3xl">
+              Built for how you actually work
+            </h2>
+            <p className="mx-auto mt-3 max-w-2xl text-center text-sm text-zinc-500 sm:text-base">
+              Feature demos will be added here — placeholders below are reserved for your recordings.
             </p>
           </ScrollReveal>
 
-          <div className="mt-12 grid gap-4 sm:grid-cols-2 xl:grid-cols-4 xl:gap-5">
-            {shipped.map((row, i) => (
-              <ScrollReveal key={row.title} delay={i * 0.06}>
-                <article className="futura-card group flex h-full flex-col p-6 sm:p-7">
-                  <h3 className="font-display text-lg font-semibold tracking-[-0.01em] text-white">{row.title}</h3>
-                  <p className="mt-2 flex-1 text-sm leading-relaxed tracking-wide text-zinc-500 transition-colors group-hover:text-zinc-400">
-                    {row.body}
-                  </p>
+          <div className="mt-14 grid gap-10 sm:grid-cols-2">
+            {FEATURE_DEMOS.map((f, i) => (
+              <ScrollReveal key={f.title} delay={i * 0.06}>
+                <article className="va-glass-card flex h-full flex-col overflow-hidden rounded-2xl">
+                  <VideoPlaceholder label={f.videoLabel} className="rounded-none border-0 [&>div]:rounded-none" />
+                  <div className="flex flex-1 flex-col p-6">
+                    <h3 className="font-display text-lg font-semibold text-white">{f.title}</h3>
+                    <p className="mt-2 text-sm leading-relaxed text-zinc-500">{f.desc}</p>
+                  </div>
+                </article>
+              </ScrollReveal>
+            ))}
+          </div>
+        </div>
+      </section>
+
+      {/* Undetectable */}
+      <section className="border-t border-white/[0.06] px-4 py-20 sm:px-8 md:px-10 lg:px-14 xl:px-16">
+        <div className="mx-auto max-w-[90rem]">
+          <ScrollReveal>
+            <h2 className="text-center font-display text-2xl font-bold tracking-[-0.03em] text-white sm:text-3xl">
+              Undetectable in every way
+            </h2>
+            <p className="mx-auto mt-3 max-w-xl text-center text-sm text-zinc-500">
+              Designed to stay off the record — not on the participant list.
+            </p>
+          </ScrollReveal>
+
+          <div className="mt-12 grid gap-4 md:grid-cols-3">
+            {UNDETECTABLE.map((item, i) => (
+              <ScrollReveal key={item.title} delay={i * 0.06}>
+                <article className="va-glass-card h-full rounded-2xl p-6 sm:p-7">
+                  <h3 className="font-display text-lg font-semibold text-white">{item.title}</h3>
+                  <p className="mt-2 text-sm leading-relaxed text-zinc-500">{item.body}</p>
                 </article>
               </ScrollReveal>
             ))}
           </div>
 
-          <ScrollReveal delay={0.2} className="mt-10 text-center">
-            <Link
-              to="/docs/getting-started"
-              className="font-mono text-sm text-zinc-500 underline decoration-cyan-500/30 underline-offset-4 transition-colors hover:text-cyan-300/90"
-            >
-              Step-by-step: Getting started →
-            </Link>
+          <ScrollReveal delay={0.12} className="mt-12">
+            <VideoPlaceholder label="Undetectable overlay — screen share test" aspect="wide" />
           </ScrollReveal>
         </div>
       </section>
 
-      {/* Bento */}
-      <section id="features" className="scroll-mt-24 border-t border-white/[0.06] px-4 py-16 sm:px-8 md:px-10 lg:px-14 xl:px-16">
-        <div className="mx-auto w-full max-w-[90rem]">
-          <ScrollReveal>
-            <h2 className="text-center font-display text-xl font-bold tracking-[-0.02em] text-white sm:text-2xl md:text-[1.85rem]">
-              Features
-            </h2>
-            <p className="mx-auto mt-3 max-w-3xl text-center font-mono text-sm leading-relaxed tracking-wide text-zinc-500">
-              Listening, low-latency answers, screen grounding, and a compact overlay surface—one panel.
-            </p>
-          </ScrollReveal>
-
-          <div className="mt-12 grid grid-cols-2 gap-3 sm:mx-auto sm:max-w-2xl lg:max-w-4xl">
-            {bento.map((card, i) => (
-              <ScrollReveal
-                key={card.title}
-                delay={i * 0.05}
-                className={i === 4 ? 'col-span-2 flex justify-center' : 'min-w-0'}
-              >
-                <article
-                  className={
-                    i === 4
-                      ? 'futura-card group flex h-full min-h-[10.25rem] w-full max-w-[calc(50%-0.375rem)] flex-col p-4 sm:min-h-[9.75rem] sm:max-w-[calc((100%-0.75rem)/2)] sm:p-5'
-                      : 'futura-card group flex h-full min-h-[10.25rem] w-full min-w-0 flex-col p-4 sm:min-h-[9.75rem] sm:p-5'
-                  }
-                >
-                  <div className="mb-3 flex h-9 w-9 shrink-0 items-center justify-center rounded-lg border border-cyan-500/15 bg-cyan-500/[0.06] text-cyan-300/80 transition-colors group-hover:border-cyan-400/30 group-hover:text-cyan-200">
-                    <card.icon className="h-4 w-4" />
-                  </div>
-                  <h3 className="font-display text-base font-semibold leading-snug tracking-[-0.01em] text-white">
-                    {card.title}
-                  </h3>
-                  <p className="mt-1.5 text-xs leading-relaxed tracking-wide text-zinc-500 line-clamp-4 sm:text-[0.8125rem]">
-                    {card.desc}
-                  </p>
-                </article>
-              </ScrollReveal>
+      {/* Platforms */}
+      <section className="border-t border-white/[0.06] px-4 py-14 sm:px-8">
+        <ScrollReveal>
+          <p className="text-center font-mono text-[10px] uppercase tracking-[0.28em] text-zinc-600">
+            Works alongside
+          </p>
+          <ul className="mt-6 flex flex-wrap items-center justify-center gap-x-8 gap-y-3">
+            {PLATFORMS.map((p) => (
+              <li key={p} className="font-display text-sm font-semibold text-zinc-500 sm:text-base">
+                {p}
+              </li>
             ))}
+          </ul>
+        </ScrollReveal>
+      </section>
+
+      {/* Stats */}
+      <section className="border-t border-white/[0.06] bg-[#121216]/50 px-4 py-16 sm:px-8">
+        <div className="mx-auto grid max-w-4xl gap-10 sm:grid-cols-3 sm:gap-6">
+          {STATS.map((s, i) => (
+            <ScrollReveal key={s.label} delay={i * 0.05}>
+              <div className="text-center">
+                <span className="va-stat-num font-display text-4xl font-extrabold tracking-tight sm:text-5xl">
+                  {s.n}
+                </span>
+                <span className="mt-2 block font-display text-sm font-bold text-white">{s.label}</span>
+                <p className="mt-2 text-xs leading-relaxed text-zinc-500">{s.detail}</p>
+              </div>
+            </ScrollReveal>
+          ))}
+        </div>
+      </section>
+
+      {/* BYOK */}
+      <section id="byok" className="scroll-mt-24 border-t border-white/[0.06] px-4 py-16 sm:px-8 md:px-10">
+        <ScrollReveal>
+          <div className="mx-auto max-w-2xl text-center">
+            <h2 className="font-display text-xl font-bold text-white sm:text-2xl">Bring your own keys</h2>
+            <p className="mt-3 text-sm leading-relaxed text-zinc-500 sm:text-base">
+              Pick Groq, OpenAI, Anthropic, or NVIDIA NIM — credentials live in local Settings, not our servers. You
+              pay your provider directly.
+            </p>
+            <Link
+              to="/docs/getting-started"
+              className="mt-4 inline-block font-mono text-sm text-blue-400/90 underline decoration-blue-500/30 underline-offset-4 hover:text-blue-300"
+            >
+              Getting started guide →
+            </Link>
           </div>
+        </ScrollReveal>
+      </section>
+
+      {/* FAQ */}
+      <section id="faq" className="scroll-mt-24 border-t border-white/[0.06] px-4 py-20 sm:px-8 md:px-10">
+        <div className="mx-auto max-w-2xl">
+          <ScrollReveal>
+            <h2 className="text-center font-display text-2xl font-bold text-white sm:text-3xl">FAQ</h2>
+          </ScrollReveal>
+          <ScrollReveal delay={0.08} className="mt-10">
+            <FaqAccordion items={[...FAQ]} />
+          </ScrollReveal>
         </div>
       </section>
 
       {/* Download */}
-      <section id="download" className="scroll-mt-24 border-t border-white/[0.06] px-4 py-20 sm:px-8 md:px-10 lg:px-14 xl:px-16">
-        <div className="mx-auto w-full max-w-3xl text-center">
+      <section
+        id="download"
+        className="scroll-mt-24 border-t border-white/[0.06] px-4 py-20 sm:px-8 md:px-10 lg:px-14 xl:px-16"
+      >
+        <div className="mx-auto max-w-3xl text-center">
           <ScrollReveal>
-            <h2 className="font-display text-2xl font-bold tracking-[-0.02em] text-white sm:text-3xl md:text-[2.1rem]">
-              Ready when the room is
+            <h2 className="font-display text-2xl font-bold tracking-[-0.03em] text-white sm:text-3xl md:text-4xl">
+              Meeting AI that helps during the call
             </h2>
-            <p className="mt-3 font-mono text-sm tracking-wide text-zinc-500">
-              NSIS installer · no account gate · credentials stay local after first launch.
-            </p>
-            {releaseMeta.kind === 'ok' ? (
-              <p className="mt-2 font-mono text-[11px] tracking-wide text-zinc-600">
-                Latest build{' '}
-                <span className="text-cyan-400/80">{releaseMeta.tag.replace(/^v/i, '')}</span>
-                {releaseMeta.updatedLabel ? ` · ${releaseMeta.updatedLabel}` : null}
-              </p>
-            ) : null}
+            <p className="mt-3 text-sm text-zinc-500 sm:text-base">Try VeilAssist on your next meeting today.</p>
           </ScrollReveal>
-
-          <ScrollReveal delay={0.1} className="relative mx-auto mt-10 max-w-md">
-            <div className="futura-download-glow pointer-events-none absolute inset-0" aria-hidden />
-            <GlowCta href={SITE.downloadSetupExeUrl} size="lg" className="relative z-[1] w-full">
-              Download for Windows
-            </GlowCta>
-            <p className="mt-4 font-mono text-xs tracking-wide text-zinc-600">macOS client · on the roadmap</p>
+          <ScrollReveal delay={0.1} className="mt-10">
+            <DownloadBlock />
           </ScrollReveal>
         </div>
       </section>
@@ -297,15 +329,23 @@ export function MarketingHome() {
         <div className="mx-auto flex w-full max-w-[90rem] flex-col items-center justify-between gap-4 sm:flex-row">
           <span className="font-display text-sm font-semibold tracking-tight text-zinc-400">{SITE.name}</span>
           <div className="flex flex-wrap justify-center gap-x-5 gap-y-2 font-mono text-xs tracking-wide">
-            <Link to="/legal/privacy" className="text-zinc-500 no-underline transition-colors hover:text-cyan-300/90">
+            <Link to="/legal/privacy" className="text-zinc-500 no-underline transition-colors hover:text-blue-300/90">
               Privacy
             </Link>
-            <Link to="/legal/terms" className="text-zinc-500 no-underline transition-colors hover:text-cyan-300/90">
+            <Link to="/legal/terms" className="text-zinc-500 no-underline transition-colors hover:text-blue-300/90">
               Terms
             </Link>
-            <Link to="/docs" className="text-zinc-500 no-underline transition-colors hover:text-cyan-300/90">
+            <Link to="/docs" className="text-zinc-500 no-underline transition-colors hover:text-blue-300/90">
               Docs
             </Link>
+            <a
+              href={SITE.repoUrl}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="text-zinc-500 no-underline transition-colors hover:text-blue-300/90"
+            >
+              GitHub
+            </a>
           </div>
           <p className="font-mono text-[11px] tracking-wide text-zinc-600">
             © {new Date().getFullYear()} {SITE.name}

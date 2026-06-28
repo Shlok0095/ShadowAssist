@@ -17,7 +17,7 @@ export function GlowCta({ href, children, className, size = 'md', external = tru
       onClick={onClick}
       {...(external ? { target: '_blank', rel: 'noopener noreferrer' } : {})}
       className={cn(
-        'futura-cta group relative inline-flex items-center justify-center overflow-hidden rounded-2xl font-display font-semibold tracking-wide text-white no-underline transition-transform duration-300 hover:scale-[1.03] active:scale-[0.99] focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-cyan-400/60',
+        'futura-cta group relative inline-flex items-center justify-center overflow-hidden rounded-2xl font-display font-semibold tracking-wide text-white no-underline transition-transform duration-300 hover:scale-[1.03] active:scale-[0.99] focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-blue-400/60',
         size === 'lg' ? 'px-10 py-4 text-lg' : 'px-8 py-3.5 text-base',
         className,
       )}

@@ -13,8 +13,11 @@ const siteOrigin = String(import.meta.env.VITE_SITE_ORIGIN ?? '').replace(/\/$/,
 export const DOWNLOAD_ROUTES = {
   windowsSetup: '/download',
   windowsSetupBeta: '/download/beta',
-  windowsPortable: '/download/windows-portable',
+  windowsPortable: '/download/portable',
 } as const
+
+/** App marketing version — keep in sync with electron package.json. */
+export const APP_VERSION = '1.0.0'
 
 function releaseAssetUrl(file: string, tag = rollingTag) {
   return `https://github.com/${repoOwner}/${repoName}/releases/download/${tag}/${file}`
@@ -50,6 +53,10 @@ export const SITE = {
   /** Staging / beta installer — vanity /download/beta (Vercel → GitHub latest-stag). */
   get downloadSetupBetaExeUrl() {
     return vanityDownloadPath(DOWNLOAD_ROUTES.windowsSetupBeta)
+  },
+  /** Portable exe — vanity /download/portable (Vercel → GitHub latest-stag). */
+  get downloadPortablePageUrl() {
+    return vanityDownloadPath(DOWNLOAD_ROUTES.windowsPortable)
   },
   /** Direct GitHub fallback (stable stag rolling release). */
   get downloadSetupExeDirectUrl() {

@@ -22,6 +22,16 @@
       "source": "/download/beta",
       "destination": "https://github.com/Shlok0095/VeilAssist/releases/download/latest-stag/VeilAssist-Setup.exe",
       "permanent": false
+    },
+    {
+      "source": "/download/portable",
+      "destination": "https://github.com/Shlok0095/VeilAssist/releases/download/latest-stag/VeilAssist.exe",
+      "permanent": false
+    },
+    {
+      "source": "/download/checksums",
+      "destination": "https://github.com/Shlok0095/VeilAssist/releases/download/latest-stag/SHA256SUMS.txt",
+      "permanent": false
     }
   ]
 }
