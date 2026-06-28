@@ -1,355 +1,261 @@
 import { Link } from 'react-router-dom'
 import { FaqAccordion } from '@/components/FaqAccordion'
-import { DownloadBlock } from '@/components/marketing/DownloadBlock'
-import { FeatureMarquee } from '@/components/marketing/FeatureMarquee'
+import { MediaSlot } from '@/components/marketing/MediaSlot'
+import { OverlayHeroMock } from '@/components/marketing/OverlayHeroMock'
 import { ScrollReveal } from '@/components/marketing/ScrollReveal'
-import { VideoPlaceholder } from '@/components/marketing/VideoPlaceholder'
-import { APP_VERSION, SITE } from '@/config/site'
-
-const PLATFORMS = ['Zoom', 'Google Meet', 'Microsoft Teams', 'Webex', 'Slack Huddles'] as const
-
-const MEETING_STEPS = [
-  {
-    num: '01',
-    title: 'VeilAssist listens in real time',
-    body: 'Dual-path mic + system audio with on-device or cloud STT. The overlay picks up who said what while you stay in the call.',
-    videoLabel: 'Live listening & transcript',
-  },
-  {
-    num: '02',
-    title: 'Instant help when you need it',
-    body: 'Ctrl+Enter sends your screen and recent speech to a vision model. Answers stream live in the overlay and on your phone companion.',
-    videoLabel: 'Assist hotkey & streaming answer',
-  },
-  {
-    num: '03',
-    title: 'Notes and recaps after the call',
-    body: 'Optional session summaries, meeting search, and calendar hooks — stored locally on your machine, not in our cloud.',
-    videoLabel: 'Meeting recap & summaries',
-  },
-] as const
-
-const FEATURE_DEMOS = [
-  {
-    title: 'Screen-aware answers',
-    desc: 'Vision models read your actual screen — code, slides, docs — without copy-paste.',
-    videoLabel: 'Screen capture + vision assist',
-  },
-  {
-    title: 'Phone companion',
-    desc: 'Stream the same AI response to your phone over local Wi‑Fi while the overlay stays on desktop.',
-    videoLabel: 'Phone link companion',
-  },
-  {
-    title: 'Undetectable overlay',
-    desc: 'Content protection, compact chrome, and hotkey-first UX — visible only when you summon it.',
-    videoLabel: 'Overlay & invisibility',
-  },
-  {
-    title: 'Profile & context modes',
-    desc: 'Resume, job description, and reference files routed intelligently into each answer.',
-    videoLabel: 'Context modes & routing',
-  },
-] as const
+import { WindowsDownloadButton } from '@/components/marketing/WindowsDownloadButton'
+import { MEDIA } from '@/config/mediaManifest'
+import { SITE } from '@/config/site'
 
 const UNDETECTABLE = [
   {
-    title: 'No meeting bots',
-    body: 'VeilAssist never joins your call as a participant. Nothing extra on the guest list.',
+    title: "Doesn't join meetings.",
+    body: 'VeilAssist never joins your call — no bots on the guest list.',
+    label: 'Participants list · no bots',
   },
   {
-    title: 'Invisible to screen share',
-    body: 'The overlay uses content protection so it does not appear in recordings or shared screens.',
+    title: 'Invisible to screen share.',
+    body: 'Content protection keeps the overlay off recordings and shared screens.',
+    label: 'Screen share comparison',
   },
   {
-    title: 'Moves with your eyes',
-    body: 'Drag the panel anywhere on screen — position it where you are already looking.',
+    title: 'Follows your eyes.',
+    body: 'Move the panel anywhere — position it where you are already looking.',
+    label: 'Movable overlay · keyboard hint',
   },
 ] as const
 
 const STATS = [
-  { n: '12+', label: 'Languages', detail: 'English, Hindi, Hinglish, and cloud STT languages.' },
-  { n: '<1s', label: 'First token', detail: 'Streaming answers in overlay and phone companion together.' },
-  { n: 'BYOK', label: 'Your keys', detail: 'Groq, OpenAI, Anthropic, NVIDIA NIM — credentials stay local.' },
+  { n: '12+', title: 'Languages', body: 'English, Hindi, Hinglish, and cloud STT languages.' },
+  { n: '300ms', title: 'Response time', body: 'Fast streaming to overlay and phone companion together.' },
+  { n: '95%', title: 'Transcription accuracy', body: 'Dual-path mic + system audio with local or cloud STT.' },
 ] as const
 
 const FAQ = [
   {
-    q: 'Why real-time assist instead of a notetaker only?',
-    a: 'Most tools summarize after the meeting. VeilAssist helps while the conversation is still happening — when you need the answer, not tomorrow.',
+    q: 'Why real-time vs. a regular AI notetaker?',
+    a: 'Most tools summarize after the meeting. VeilAssist helps while the conversation is still happening.',
   },
+  { q: 'Who is VeilAssist for?', a: 'Live interviews, sales calls, standups, and any meeting where you need help in the moment.' },
+  { q: 'Is VeilAssist free?', a: 'The app is free to download. You bring your own API keys — you pay your model provider directly.' },
   {
-    q: 'Is VeilAssist detectable in meetings?',
-    a: 'There is no bot join link. The Windows overlay uses content protection and stays off shared screens. You control when it is visible.',
+    q: 'How is it undetectable in meetings?',
+    a: 'No bot join link. The overlay uses content protection and stays off shared screens until you summon it.',
   },
-  {
-    q: 'Do I need an account or subscription?',
-    a: 'No. Download the app, paste your own model API key in Settings, and go. We do not host your keys or charge a platform fee.',
-  },
-  {
-    q: 'What providers are supported?',
-    a: 'Vision-capable chat models from Groq, OpenAI, Anthropic, NVIDIA NIM, OpenRouter, and custom OpenAI-compatible endpoints.',
-  },
-  {
-    q: 'Does it work on Mac?',
-    a: 'Windows 10/11 today. macOS is on the roadmap.',
-  },
+  { q: 'What languages and apps are supported?', a: '12+ STT languages. Works alongside Zoom, Meet, Teams, Webex, and more.' },
+  { q: 'Can I talk to customer support?', a: 'Open an issue on GitHub or email from the repo — we respond on best effort.' },
 ] as const
 
 export function MarketingHome() {
   return (
-    <div className="relative min-w-0 font-sans text-white antialiased">
-      {/* ── Hero ── */}
-      <section className="relative overflow-hidden px-4 pb-8 pt-14 sm:px-8 sm:pt-20 md:px-10 lg:px-14 xl:px-16">
-        <div className="relative z-[1] mx-auto max-w-4xl text-center">
+    <div className="va-page">
+      {/* ── Hero (Cluely: centered serif headline + one hero visual) ── */}
+      <section className="va-hero">
+        <div className="va-container va-hero__copy">
           <ScrollReveal>
-            <p className="mb-4 inline-flex items-center gap-2 rounded-full border border-blue-500/20 bg-blue-500/[0.08] px-4 py-1.5 font-mono text-[10px] uppercase tracking-[0.28em] text-blue-300/90 sm:text-[11px]">
-              <span className="h-1.5 w-1.5 rounded-full bg-blue-400 shadow-[0_0_12px_2px_rgba(59,130,246,0.55)] motion-safe:animate-pulse" />
-              Windows · v{APP_VERSION}
-            </p>
-            <h1 className="font-display text-[2rem] font-extrabold leading-[1.05] tracking-[-0.04em] sm:text-5xl md:text-[3.25rem] lg:text-[3.75rem]">
-              <span className="block text-white">Undetectable AI</span>
-              <span className="va-gradient-text mt-1 block">for live meetings</span>
+            <h1 className="va-hero__title">
+              <span className="block">#1 Undetectable AI</span>
+              <span className="block">for Meetings</span>
             </h1>
-          </ScrollReveal>
-
-          <ScrollReveal delay={0.08} className="mt-6">
-            <p className="mx-auto max-w-2xl text-base leading-[1.65] text-zinc-400 sm:text-lg">
-              VeilAssist streams real-time answers on your screen while the call is still happening — grounded in what
-              you see and hear. No bot joins the room.
+            <hr className="va-hero__rule" />
+            <p className="va-hero__lede">
+              VeilAssist gives <strong>real-time answers</strong> and meeting notes — all while staying completely
+              undetectable on your screen.
             </p>
-          </ScrollReveal>
-
-          <ScrollReveal delay={0.12} className="mt-10">
-            <DownloadBlock layout="hero" />
-            <p className="mt-4 font-mono text-xs text-zinc-600">macOS · coming later</p>
+            <div className="va-hero__cta">
+              <WindowsDownloadButton />
+            </div>
           </ScrollReveal>
         </div>
 
-        <ScrollReveal delay={0.15} className="relative z-[1] mx-auto mt-14 max-w-5xl">
-          <VideoPlaceholder label="Product overview — full walkthrough" aspect="wide" />
+        <ScrollReveal delay={0.08} className="va-hero__visual-wrap">
+          {MEDIA.heroVideo ? (
+            <div className="va-hero__peek va-hero__peek--video">
+              <MediaSlot label="Product hero video" kind="hero" src={MEDIA.heroVideo} />
+            </div>
+          ) : (
+            <div className="va-hero__peek">
+              <OverlayHeroMock />
+            </div>
+          )}
         </ScrollReveal>
       </section>
 
-      {/* Demo quote strip (Cluely-style) */}
-      <section className="border-y border-white/[0.06] bg-white/[0.02] px-4 py-12 sm:px-8 md:px-10">
-        <div className="mx-auto max-w-3xl text-center">
-          <p className="font-display text-lg font-semibold text-zinc-300 sm:text-xl">What should I say?</p>
-          <blockquote className="mt-4 rounded-2xl border border-white/[0.08] bg-[#121216]/80 px-6 py-5 text-left text-sm leading-relaxed text-zinc-300 sm:text-base">
-            “Walk them through the trade-off between latency and consistency in this architecture — keep it to three
-            bullets they can repeat out loud.”
-          </blockquote>
-          <p className="mt-4 font-mono text-[11px] uppercase tracking-widest text-zinc-600">
-            Ctrl+Enter · Assist from screen + audio
-          </p>
-        </div>
-      </section>
-
-      <FeatureMarquee />
-
-      {/* How it helps */}
-      <section
-        id="how-it-works"
-        className="scroll-mt-24 border-t border-white/[0.06] px-4 py-20 sm:px-8 md:px-10 lg:px-14 xl:px-16"
-      >
-        <div className="mx-auto max-w-[90rem]">
+      {/* ── How during meeting (two cards) ── */}
+      <section id="how-it-works" className="va-section scroll-mt-20">
+        <div className="va-container">
           <ScrollReveal>
-            <p className="text-center font-mono text-xs uppercase tracking-[0.24em] text-blue-400/70">During the call</p>
-            <h2 className="mt-3 text-center font-display text-2xl font-bold tracking-[-0.03em] text-white sm:text-3xl md:text-4xl">
-              How VeilAssist helps in a meeting
-            </h2>
+            <h2 className="va-section__title va-section__title--center">How VeilAssist helps during a meeting</h2>
           </ScrollReveal>
 
-          <div className="mt-16 flex flex-col gap-20 lg:gap-24">
-            {MEETING_STEPS.map((step, i) => (
-              <ScrollReveal key={step.num} delay={i * 0.05}>
-                <div
-                  className={`grid items-center gap-10 lg:grid-cols-2 lg:gap-16 ${i % 2 === 1 ? 'lg:[direction:rtl]' : ''}`}
-                >
-                  <div className={i % 2 === 1 ? 'lg:[direction:ltr]' : ''}>
-                    <span className="font-display text-5xl font-extrabold tracking-tighter text-blue-500/30">
-                      {step.num}
-                    </span>
-                    <h3 className="mt-2 font-display text-xl font-bold text-white sm:text-2xl">{step.title}</h3>
-                    <p className="mt-3 max-w-lg text-sm leading-relaxed text-zinc-500 sm:text-base">{step.body}</p>
-                  </div>
-                  <div className={i % 2 === 1 ? 'lg:[direction:ltr]' : ''}>
-                    <VideoPlaceholder label={step.videoLabel} />
-                  </div>
+          <div className="va-meeting-grid">
+            <ScrollReveal>
+              <article className="va-meeting-card va-meeting-card--accent">
+                <h3 className="va-meeting-card__head">
+                  VeilAssist <span className="va-pill">listens</span> in to the conversation
+                </h3>
+                <p className="va-meeting-card__sub">
+                  It picks up context in real time — mic and system audio — so it can help when you need it.
+                </p>
+                <div className="va-meeting-card__media">
+                  {MEDIA.meetingListenClip ? (
+                    <MediaSlot label="Listening UI clip" kind="mini" src={MEDIA.meetingListenClip} />
+                  ) : (
+                    <MediaSlot label="Listening UI · waveform + timer" kind="mini" />
+                  )}
                 </div>
-              </ScrollReveal>
-            ))}
-          </div>
-        </div>
-      </section>
-
-      {/* Feature demos */}
-      <section
-        id="features"
-        className="scroll-mt-24 border-t border-white/[0.06] bg-white/[0.015] px-4 py-20 sm:px-8 md:px-10 lg:px-14 xl:px-16"
-      >
-        <div className="mx-auto max-w-[90rem]">
-          <ScrollReveal>
-            <h2 className="text-center font-display text-2xl font-bold tracking-[-0.03em] text-white sm:text-3xl">
-              Built for how you actually work
-            </h2>
-            <p className="mx-auto mt-3 max-w-2xl text-center text-sm text-zinc-500 sm:text-base">
-              Feature demos will be added here — placeholders below are reserved for your recordings.
-            </p>
-          </ScrollReveal>
-
-          <div className="mt-14 grid gap-10 sm:grid-cols-2">
-            {FEATURE_DEMOS.map((f, i) => (
-              <ScrollReveal key={f.title} delay={i * 0.06}>
-                <article className="va-glass-card flex h-full flex-col overflow-hidden rounded-2xl">
-                  <VideoPlaceholder label={f.videoLabel} className="rounded-none border-0 [&>div]:rounded-none" />
-                  <div className="flex flex-1 flex-col p-6">
-                    <h3 className="font-display text-lg font-semibold text-white">{f.title}</h3>
-                    <p className="mt-2 text-sm leading-relaxed text-zinc-500">{f.desc}</p>
-                  </div>
-                </article>
-              </ScrollReveal>
-            ))}
-          </div>
-        </div>
-      </section>
-
-      {/* Undetectable */}
-      <section className="border-t border-white/[0.06] px-4 py-20 sm:px-8 md:px-10 lg:px-14 xl:px-16">
-        <div className="mx-auto max-w-[90rem]">
-          <ScrollReveal>
-            <h2 className="text-center font-display text-2xl font-bold tracking-[-0.03em] text-white sm:text-3xl">
-              Undetectable in every way
-            </h2>
-            <p className="mx-auto mt-3 max-w-xl text-center text-sm text-zinc-500">
-              Designed to stay off the record — not on the participant list.
-            </p>
-          </ScrollReveal>
-
-          <div className="mt-12 grid gap-4 md:grid-cols-3">
-            {UNDETECTABLE.map((item, i) => (
-              <ScrollReveal key={item.title} delay={i * 0.06}>
-                <article className="va-glass-card h-full rounded-2xl p-6 sm:p-7">
-                  <h3 className="font-display text-lg font-semibold text-white">{item.title}</h3>
-                  <p className="mt-2 text-sm leading-relaxed text-zinc-500">{item.body}</p>
-                </article>
-              </ScrollReveal>
-            ))}
-          </div>
-
-          <ScrollReveal delay={0.12} className="mt-12">
-            <VideoPlaceholder label="Undetectable overlay — screen share test" aspect="wide" />
-          </ScrollReveal>
-        </div>
-      </section>
-
-      {/* Platforms */}
-      <section className="border-t border-white/[0.06] px-4 py-14 sm:px-8">
-        <ScrollReveal>
-          <p className="text-center font-mono text-[10px] uppercase tracking-[0.28em] text-zinc-600">
-            Works alongside
-          </p>
-          <ul className="mt-6 flex flex-wrap items-center justify-center gap-x-8 gap-y-3">
-            {PLATFORMS.map((p) => (
-              <li key={p} className="font-display text-sm font-semibold text-zinc-500 sm:text-base">
-                {p}
-              </li>
-            ))}
-          </ul>
-        </ScrollReveal>
-      </section>
-
-      {/* Stats */}
-      <section className="border-t border-white/[0.06] bg-[#121216]/50 px-4 py-16 sm:px-8">
-        <div className="mx-auto grid max-w-4xl gap-10 sm:grid-cols-3 sm:gap-6">
-          {STATS.map((s, i) => (
-            <ScrollReveal key={s.label} delay={i * 0.05}>
-              <div className="text-center">
-                <span className="va-stat-num font-display text-4xl font-extrabold tracking-tight sm:text-5xl">
-                  {s.n}
-                </span>
-                <span className="mt-2 block font-display text-sm font-bold text-white">{s.label}</span>
-                <p className="mt-2 text-xs leading-relaxed text-zinc-500">{s.detail}</p>
-              </div>
+              </article>
             </ScrollReveal>
-          ))}
+
+            <ScrollReveal delay={0.06}>
+              <article className="va-meeting-card va-meeting-card--glass">
+                <h3 className="va-meeting-card__head">
+                  When you need help, VeilAssist <span className="va-spark">✦</span> assists instantly
+                </h3>
+                <p className="va-meeting-card__sub">Hit Ctrl+Enter and VeilAssist helps you with AI in the moment.</p>
+                <div className="va-meeting-card__media">
+                  {MEDIA.meetingAssistClip ? (
+                    <MediaSlot label="Assist UI clip" kind="mini" src={MEDIA.meetingAssistClip} />
+                  ) : (
+                    <MediaSlot label="Assist overlay · screen + answer" kind="mini" />
+                  )}
+                </div>
+              </article>
+            </ScrollReveal>
+          </div>
         </div>
       </section>
 
-      {/* BYOK */}
-      <section id="byok" className="scroll-mt-24 border-t border-white/[0.06] px-4 py-16 sm:px-8 md:px-10">
-        <ScrollReveal>
-          <div className="mx-auto max-w-2xl text-center">
-            <h2 className="font-display text-xl font-bold text-white sm:text-2xl">Bring your own keys</h2>
-            <p className="mt-3 text-sm leading-relaxed text-zinc-500 sm:text-base">
-              Pick Groq, OpenAI, Anthropic, or NVIDIA NIM — credentials live in local Settings, not our servers. You
-              pay your provider directly.
-            </p>
-            <Link
-              to="/docs/getting-started"
-              className="mt-4 inline-block font-mono text-sm text-blue-400/90 underline decoration-blue-500/30 underline-offset-4 hover:text-blue-300"
-            >
-              Getting started guide →
-            </Link>
-          </div>
-        </ScrollReveal>
-      </section>
-
-      {/* FAQ */}
-      <section id="faq" className="scroll-mt-24 border-t border-white/[0.06] px-4 py-20 sm:px-8 md:px-10">
-        <div className="mx-auto max-w-2xl">
+      {/* ── Instant meeting notes (one large image frame) ── */}
+      <section className="va-section va-section--tint">
+        <div className="va-container va-container--narrow">
           <ScrollReveal>
-            <h2 className="text-center font-display text-2xl font-bold text-white sm:text-3xl">FAQ</h2>
+            <h2 className="va-section__title va-section__title--center">Instant meeting notes</h2>
+            <p className="va-section__lede va-section__lede--center">
+              The easiest way to get concise, local session recaps after Listen.
+            </p>
           </ScrollReveal>
           <ScrollReveal delay={0.08} className="mt-10">
+            <div className="va-frame-lavender">
+              <MediaSlot
+                label="Meeting notes / summary screenshot"
+                kind="wide"
+                src={MEDIA.notesScreenshot || undefined}
+              />
+            </div>
+          </ScrollReveal>
+        </div>
+      </section>
+
+      {/* ── Undetectable (3 cards + image each) ── */}
+      <section id="features" className="va-section scroll-mt-20">
+        <div className="va-container">
+          <ScrollReveal>
+            <h2 className="va-section__title va-section__title--center">Undetectable in every way</h2>
+            <p className="va-section__lede va-section__lede--center">Suite of features to use VeilAssist without a trace.</p>
+          </ScrollReveal>
+
+          <div className="va-undetect-grid">
+            {UNDETECTABLE.map((item, i) => (
+              <ScrollReveal key={item.title} delay={i * 0.05}>
+                <article className="va-undetect-card">
+                  <MediaSlot
+                    label={item.label}
+                    kind="feature"
+                    src={MEDIA.undetectable[i] || undefined}
+                    className="rounded-b-none border-0"
+                  />
+                  <div className="va-undetect-card__body">
+                    <h3>{item.title}</h3>
+                    <p>{item.body}</p>
+                  </div>
+                </article>
+              </ScrollReveal>
+            ))}
+          </div>
+        </div>
+      </section>
+
+      {/* ── Real-time transcription (image left, stats right) ── */}
+      <section className="va-section va-section--border">
+        <div className="va-container va-split">
+          <ScrollReveal>
+            <div className="va-frame-soft">
+              <MediaSlot
+                label="Live transcript / session UI screenshot"
+                kind="feature"
+                src={MEDIA.transcriptionScreenshot || undefined}
+              />
+            </div>
+          </ScrollReveal>
+          <ScrollReveal delay={0.06}>
+            <div className="va-split__copy">
+              <h2 className="va-section__title">Real-time transcription</h2>
+              <ul className="va-stat-list">
+                {STATS.map((s) => (
+                  <li key={s.title}>
+                    <span className="va-stat-list__n">{s.n}</span>
+                    <div>
+                      <strong>{s.title}</strong>
+                      <p>{s.body}</p>
+                    </div>
+                  </li>
+                ))}
+              </ul>
+            </div>
+          </ScrollReveal>
+        </div>
+      </section>
+
+      {/* ── FAQ ── */}
+      <section id="faq" className="va-section scroll-mt-20">
+        <div className="va-container va-container--narrow">
+          <ScrollReveal>
+            <h2 className="va-section__title">Frequently asked questions</h2>
+          </ScrollReveal>
+          <ScrollReveal delay={0.06} className="mt-8">
             <FaqAccordion items={[...FAQ]} />
           </ScrollReveal>
         </div>
       </section>
 
-      {/* Download */}
-      <section
-        id="download"
-        className="scroll-mt-24 border-t border-white/[0.06] px-4 py-20 sm:px-8 md:px-10 lg:px-14 xl:px-16"
-      >
-        <div className="mx-auto max-w-3xl text-center">
+      {/* ── Footer CTA (Cluely bottom) ── */}
+      <section id="download" className="va-footer-cta scroll-mt-20">
+        <div className="va-container va-footer-cta__inner">
           <ScrollReveal>
-            <h2 className="font-display text-2xl font-bold tracking-[-0.03em] text-white sm:text-3xl md:text-4xl">
-              Meeting AI that helps during the call
-            </h2>
-            <p className="mt-3 text-sm text-zinc-500 sm:text-base">Try VeilAssist on your next meeting today.</p>
+            <div className="va-footer-cta__text">
+              <h2>Meeting AI that helps during the call, not after.</h2>
+              <p>Try VeilAssist on your next meeting today.</p>
+              <WindowsDownloadButton size="md" />
+              <p className="va-footer-cta__alt">
+                <a href={SITE.downloadPortablePageUrl}>Portable exe</a>
+                <span aria-hidden> · </span>
+                <a href={SITE.releasesRollingUrl}>All releases</a>
+              </p>
+            </div>
           </ScrollReveal>
-          <ScrollReveal delay={0.1} className="mt-10">
-            <DownloadBlock />
+          <ScrollReveal delay={0.08} className="va-footer-cta__decor">
+            {MEDIA.footerDecor ? (
+              <MediaSlot label="Footer 3D keys decor" kind="feature" src={MEDIA.footerDecor} />
+            ) : (
+              <MediaSlot label="3D keyboard keys · ⌘ + Enter" kind="feature" className="max-w-sm" />
+            )}
           </ScrollReveal>
         </div>
       </section>
 
-      <footer className="border-t border-white/[0.06] px-4 py-8 sm:px-8 md:px-10 lg:px-14 xl:px-16">
-        <div className="mx-auto flex w-full max-w-[90rem] flex-col items-center justify-between gap-4 sm:flex-row">
-          <span className="font-display text-sm font-semibold tracking-tight text-zinc-400">{SITE.name}</span>
-          <div className="flex flex-wrap justify-center gap-x-5 gap-y-2 font-mono text-xs tracking-wide">
-            <Link to="/legal/privacy" className="text-zinc-500 no-underline transition-colors hover:text-blue-300/90">
-              Privacy
-            </Link>
-            <Link to="/legal/terms" className="text-zinc-500 no-underline transition-colors hover:text-blue-300/90">
-              Terms
-            </Link>
-            <Link to="/docs" className="text-zinc-500 no-underline transition-colors hover:text-blue-300/90">
-              Docs
-            </Link>
-            <a
-              href={SITE.repoUrl}
-              target="_blank"
-              rel="noopener noreferrer"
-              className="text-zinc-500 no-underline transition-colors hover:text-blue-300/90"
-            >
+      <footer className="va-site-foot">
+        <div className="va-container va-site-foot__inner">
+          <span className="font-semibold text-zinc-300">{SITE.name}</span>
+          <nav className="flex flex-wrap justify-center gap-x-5 gap-y-1 text-sm">
+            <Link to="/legal/privacy">Privacy</Link>
+            <Link to="/legal/terms">Terms</Link>
+            <Link to="/docs">Docs</Link>
+            <a href={SITE.repoUrl} target="_blank" rel="noopener noreferrer">
               GitHub
             </a>
-          </div>
-          <p className="font-mono text-[11px] tracking-wide text-zinc-600">
-            © {new Date().getFullYear()} {SITE.name}
-          </p>
+          </nav>
+          <span className="text-xs text-zinc-600">© {new Date().getFullYear()}</span>
         </div>
       </footer>
     </div>
