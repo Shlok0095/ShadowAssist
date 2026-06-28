@@ -13,13 +13,9 @@ export function Shell() {
   const isHome = pathname === '/' || pathname === ''
 
   useEffect(() => {
-    document.body.classList.toggle('marketing-dark', isMarketingSurface)
-    document.body.classList.toggle('va-marketing', isMarketingSurface)
-    document.body.classList.toggle('ds-marketing', isMarketingSurface)
+    document.body.classList.toggle('light-marketing', isMarketingSurface)
     return () => {
-      document.body.classList.remove('marketing-dark')
-      document.body.classList.remove('va-marketing')
-      document.body.classList.remove('ds-marketing')
+      document.body.classList.remove('light-marketing')
     }
   }, [isMarketingSurface])
 

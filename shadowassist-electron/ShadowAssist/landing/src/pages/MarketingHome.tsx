@@ -1,70 +1,91 @@
-import { useRef } from 'react'
-import { Link } from 'react-router-dom'
-import { DsFaqAccordion } from '@/components/marketing/DsFaqAccordion'
-import { MarketingFooter } from '@/components/marketing/MarketingFooter'
-import { MediaPlaceholder } from '@/components/marketing/MediaPlaceholder'
-import {
-  PricingSection,
-  StatsBar,
-  TestimonialsMarquee,
-} from '@/components/marketing/MarketingSections'
-import { RippleButton, WindowsIcon } from '@/components/marketing/RippleButton'
-import { TiltCard, useHeroCursor } from '@/components/marketing/TiltCard'
+import { useState } from 'react'
+import { LightFaq } from '@/components/marketing/LightFaq'
+import { LightFooter } from '@/components/marketing/LightFooter'
+import { LightButton, WindowsIcon } from '@/components/marketing/LightButton'
+import { DockIcons, MacosCard } from '@/components/marketing/MacosCard'
 import { MEDIA } from '@/config/mediaManifest'
 import { SITE } from '@/config/site'
 import { useRevealObserver } from '@/hooks/useReveal'
 
-const FEATURES = [
+const STEPS = [
   {
-    icon: (
-      <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" aria-hidden>
-        <path d="M12 1a3 3 0 00-3 3v8a3 3 0 006 0V4a3 3 0 00-3-3z" />
-        <path d="M19 10v2a7 7 0 01-14 0v-2M12 19v4M8 23h8" />
-      </svg>
-    ),
-    title: 'Listens in real time',
-    body: 'Mic and system audio feed live context — no bot joins your meeting.',
+    label: 'Step 01',
+    heading: 'Listens in to the conversation',
+    body: 'VeilAssist picks up mic and system audio in real time — so it understands context before you ask.',
+    reverse: false,
+    media: MEDIA.meetingListenClip,
   },
   {
-    icon: (
-      <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" aria-hidden>
-        <path d="M12 2l2.4 7.4H22l-6 4.6 2.3 7L12 17.8 5.7 21l2.3-7-6-4.6h7.6L12 2z" />
-      </svg>
-    ),
-    title: 'Instant AI assist',
-    body: 'Hit Ctrl+Enter for streaming answers grounded in your screen and conversation.',
+    label: 'Step 02',
+    heading: 'Assists you instantly',
+    body: 'Press Ctrl+Enter and get streaming answers grounded in your screen and what was just said.',
+    reverse: true,
+    media: MEDIA.meetingAssistClip,
   },
   {
-    icon: (
-      <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" aria-hidden>
-        <rect x="3" y="11" width="18" height="11" rx="2" />
-        <path d="M7 11V7a5 5 0 0110 0v4" />
-      </svg>
-    ),
-    title: 'Undetectable by design',
-    body: 'Content protection keeps the overlay off recordings and shared screens.',
+    label: 'Step 03',
+    heading: 'Recaps when you are done',
+    body: 'End Listen for a concise local summary — action items, decisions, and follow-ups without a bot in the room.',
+    reverse: false,
+    media: MEDIA.notesScreenshot,
   },
 ] as const
 
-const SPOTLIGHTS = [
+const BENTO = [
   {
-    chip: 'Live overlay',
-    title: 'AI that helps during the call',
-    body: 'VeilAssist streams answers to your overlay and phone companion together — while the meeting is still happening.',
-    checks: ['Real-time token streaming', 'Screen + audio context', 'Ctrl+Enter hotkey assist', 'No post-meeting wait'],
-    link: { label: 'See how it works →', href: '#how-it-works' as string, to: undefined as string | undefined },
-    badges: ['⚡ Instant', '🔒 Private'],
-    reverse: false,
+    wide: true,
+    purple: false,
+    dark: false,
+    title: "Doesn't join meetings",
+    body: 'VeilAssist never joins your call — no bots on the guest list, ever.',
+    media: MEDIA.undetectable[0],
   },
   {
-    chip: 'Meeting notes',
-    title: 'Instant session recaps',
-    body: 'After Listen, get concise local summaries — action items, decisions, and follow-ups without sending audio to the cloud.',
-    checks: ['Local session storage', 'Summary + transcript tabs', 'Shareable export', 'Works offline after capture'],
-    link: { label: 'Read the docs →', href: undefined as string | undefined, to: '/docs' },
-    badges: ['📝 Notes', '✦ Smart'],
-    reverse: true,
+    wide: false,
+    purple: true,
+    dark: false,
+    title: 'Invisible to screen share',
+    body: 'Content protection keeps the overlay off recordings and shared screens.',
+    media: MEDIA.undetectable[1],
   },
+  {
+    wide: false,
+    purple: false,
+    dark: false,
+    title: 'Follows your eyes',
+    body: 'Move the panel anywhere — position it where you are already looking.',
+    media: MEDIA.undetectable[2],
+  },
+  {
+    wide: true,
+    purple: false,
+    dark: true,
+    title: 'Ctrl+Enter to assist',
+    body: 'Summon help without breaking flow.',
+    code: 'Ctrl + Enter  →  instant AI assist',
+  },
+  {
+    wide: false,
+    purple: false,
+    dark: false,
+    title: 'Compatible with every tool',
+    body: 'Works alongside the apps you already use for live calls.',
+    compat: true,
+  },
+] as const
+
+const STATS = [
+  { n: '12+', label: 'Languages', body: 'English, Hindi, Hinglish, and cloud STT languages.' },
+  { n: '300ms', label: 'Response time', body: 'Fast streaming to overlay and phone companion together.' },
+  { n: '95%', label: 'Transcription accuracy', body: 'Dual-path mic + system audio with local or cloud STT.' },
+] as const
+
+const COMPAT = [
+  { label: 'Zoom', abbr: 'Z' },
+  { label: 'Meet', abbr: 'G' },
+  { label: 'Teams', abbr: 'T' },
+  { label: 'Webex', abbr: 'W' },
+  { label: 'Slack', abbr: 'S' },
 ] as const
 
 const FAQ = [
@@ -83,174 +104,218 @@ const FAQ = [
 ] as const
 
 export function MarketingHome() {
-  const heroRef = useRef<HTMLElement>(null)
+  const [deviceTab, setDeviceTab] = useState<'mobile' | 'tablet' | 'desktop'>('desktop')
   useRevealObserver()
-  useHeroCursor(heroRef)
 
   return (
-    <div className="ds-page">
+    <div className="lm-page">
       {/* Hero */}
-      <section ref={heroRef} className="ds-hero">
-        <div className="ds-hero__grid" aria-hidden />
-        <span className="orb ds-hero__orb-1" aria-hidden />
-        <span className="orb ds-hero__orb-2" aria-hidden />
-        <span className="ds-hero__cursor-glow" aria-hidden />
+      <section className="lm-hero">
+        <span className="lm-blob lm-blob--purple" aria-hidden />
+        <span className="lm-blob lm-blob--cyan" aria-hidden />
+        <span className="lm-blob lm-blob--pink" aria-hidden />
 
-        <div className="ds-container">
-          <div className="ds-hero__content reveal">
-            <div className="ds-hero__badge">
-              <span className="ds-hero__badge-dot" aria-hidden />
-              New · Hotkey-powered AI
-              <span aria-hidden> → </span>
+        <div className="lm-container">
+          <div className="lm-hero__content reveal">
+            <div className="lm-eyebrow">
+              <span className="lm-eyebrow__dot" aria-hidden />
+              New · Hotkey-triggered AI assistant
             </div>
 
-            <h1 className="ds-hero__title">
-              Your AI Copilot,
+            <h1 className="lm-hero__title">
+              Your AI copilot,
               <br />
-              Always On
+              always <em>invisible</em>,
               <br />
-              <span className="gradient-text">One Hotkey Away.</span>
+              always ready.
             </h1>
 
-            <p className="ds-hero__sub">
-              VeilAssist gives real-time answers and meeting notes — completely undetectable on your screen. No bots. No
-              waiting until after the call.
+            <p className="lm-hero__sub">
+              VeilAssist gives real-time answers and meeting notes — completely undetectable on your screen. No bots.
+              No waiting until after the call.
             </p>
 
-            <div className="ds-hero__ctas">
-              <RippleButton href={SITE.downloadSetupExeUrl}>
+            <div className="lm-hero__ctas">
+              <LightButton href={SITE.downloadSetupExeUrl}>
                 <WindowsIcon />
-                Get for Windows
-              </RippleButton>
-              <RippleButton href={SITE.downloadPortablePageUrl} variant="secondary">
+                Download for Windows
+              </LightButton>
+              <LightButton href={SITE.downloadPortablePageUrl} variant="secondary">
                 Portable exe
-              </RippleButton>
+              </LightButton>
             </div>
 
-            <div className="ds-hero__social">
-              <div className="ds-hero__avatars" aria-hidden>
-                {[0, 1, 2, 3, 4].map((i) => (
-                  <span key={i} className="ds-hero__avatar" />
-                ))}
-              </div>
-              <p className="ds-hero__social-text">
-                Trusted by <strong>5,000+</strong> engineers, PMs, and founders
-              </p>
-              <span className="ds-hero__stars" aria-label="4.9 out of 5 stars">
-                ★★★★★
-              </span>
-              <span className="ds-hero__social-text">(4.9/5)</span>
-            </div>
+            <p className="lm-hero__platform">Available on Windows 10+</p>
           </div>
 
-          <div className="ds-hero__media-wrap reveal">
-            <div className="ds-hero__media-tilt">
-              <MediaPlaceholder variant="hero" src={MEDIA.heroVideo || undefined} />
-              <div className="ds-hero__media-fade" aria-hidden />
+          <div className="lm-hero-product reveal">
+            <div className="lm-hero-product__stage">
+              <DockIcons />
+              <MacosCard src={MEDIA.heroVideo || undefined} />
             </div>
+            <div className="lm-hero-shimmer" aria-hidden />
           </div>
         </div>
       </section>
 
-      {/* Features grid */}
-      <section id="how-it-works" className="ds-section scroll-mt-24">
-        <div className="ds-container">
-          <div className="ds-section__head--center reveal">
-            <p className="ds-section__eyebrow">How it works</p>
-            <h2 className="ds-section__title">Built for live meetings</h2>
-            <p className="ds-section__sub">Everything you need to stay sharp when the pressure is on.</p>
-          </div>
-
-          <div className="ds-features-grid reveal-stagger">
-            {FEATURES.map((f) => (
-              <TiltCard key={f.title} className="reveal ds-feature-card">
-                <div className="ds-feature-card__icon">{f.icon}</div>
-                <h3 className="ds-feature-card__title">{f.title}</h3>
-                <p className="ds-feature-card__body">{f.body}</p>
-              </TiltCard>
-            ))}
-          </div>
+      {/* Divider band */}
+      <section id="how-it-works" className="lm-band scroll-mt-nav">
+        <div className="lm-container reveal">
+          <h2 className="lm-band__title">How VeilAssist helps during a meeting</h2>
+          <p className="lm-band__sub">Real-time context, instant assist, and local recaps — all without joining your call.</p>
         </div>
       </section>
 
-      <StatsBar />
-
-      {/* Spotlight rows */}
-      <section id="features" className="ds-section scroll-mt-24">
-        <div className="ds-container">
-          {SPOTLIGHTS.map((row, idx) => (
+      {/* Step rows */}
+      <section className="lm-steps">
+        <div className="lm-container">
+          {STEPS.map((step) => (
             <div
-              key={row.title}
-              className={`ds-spotlight${row.reverse ? ' ds-spotlight--reverse' : ''}${idx > 0 ? ' ds-spotlight--spaced' : ''}`}
+              key={step.label}
+              className={`lm-step-row reveal${step.reverse ? ' lm-step-row--reverse' : ''}`}
             >
-              <div className="reveal">
-                <span className="ds-spotlight__chip">{row.chip}</span>
-                <h3 className="ds-spotlight__title">{row.title}</h3>
-                <p className="ds-spotlight__body">{row.body}</p>
-                <ul className="ds-spotlight__list">
-                  {row.checks.map((c) => (
-                    <li key={c}>
-                      <span className="ds-spotlight__check" aria-hidden>
-                        ✓
-                      </span>
-                      {c}
-                    </li>
-                  ))}
-                </ul>
-                {row.link.to ? (
-                  <Link to={row.link.to} className="ds-spotlight__link">
-                    {row.link.label}
-                  </Link>
-                ) : (
-                  <a href={row.link.href} className="ds-spotlight__link">
-                    {row.link.label}
-                  </a>
-                )}
+              <div>
+                <p className="lm-step-label">{step.label}</p>
+                <h3 className="lm-step-heading">{step.heading}</h3>
+                <p className="lm-step-body">{step.body}</p>
               </div>
-              <div className="ds-spotlight__visual reveal">
-                <span className="ds-float-badge ds-float-badge--tl">{row.badges[0]}</span>
-                <span className="ds-float-badge ds-float-badge--br">{row.badges[1]}</span>
-                <MediaPlaceholder variant="spotlight" />
+              <div className="lm-step-row__visual">
+                <MacosCard src={step.media || undefined} />
               </div>
             </div>
           ))}
         </div>
       </section>
 
-      <PricingSection />
-      <TestimonialsMarquee />
+      {/* Instant meeting notes */}
+      <section className="lm-feature-wide">
+        <div className="lm-container">
+          <h2 className="lm-feature-wide__title reveal">Instant meeting notes</h2>
+          <p className="lm-feature-wide__sub reveal">
+            The easiest way to get concise, local session recaps after Listen.
+          </p>
+
+          <div className="lm-device-tabs reveal" role="tablist" aria-label="Device preview">
+            {(['mobile', 'tablet', 'desktop'] as const).map((tab) => (
+              <button
+                key={tab}
+                type="button"
+                role="tab"
+                aria-selected={deviceTab === tab}
+                className={`lm-device-tab${deviceTab === tab ? ' active' : ''}`}
+                onClick={() => setDeviceTab(tab)}
+              >
+                {tab.charAt(0).toUpperCase() + tab.slice(1)}
+              </button>
+            ))}
+          </div>
+
+          <div className="lm-wide-card reveal" aria-label="Meeting notes preview">
+            <div className="lm-wide-card__bar" aria-hidden>
+              <span className="macos-card__dot macos-card__dot--red" />
+              <span className="macos-card__dot macos-card__dot--yellow" />
+              <span className="macos-card__dot macos-card__dot--green" />
+            </div>
+          </div>
+        </div>
+      </section>
+
+      {/* Bento — undetectable */}
+      <section id="features" className="lm-bento-section scroll-mt-nav">
+        <div className="lm-container">
+          <div className="lm-bento-section__head reveal">
+            <h2 className="lm-band__title">Undetectable in every way</h2>
+            <p className="lm-band__sub">Suite of features to use VeilAssist without a trace.</p>
+          </div>
+
+          <div className="lm-bento-grid reveal-group">
+            {BENTO.map((card) => (
+              <article
+                key={card.title}
+                className={`reveal lm-bento-card${card.wide ? ' lm-bento-card--wide' : ''}${card.purple ? ' lm-bento-card--purple' : ''}${card.dark ? ' lm-bento-card--dark' : ''}`}
+              >
+                <h3 className="lm-bento-card__title">{card.title}</h3>
+                <p className="lm-bento-card__body">{card.body}</p>
+                {'code' in card && card.code ? <p className="lm-bento-code">{card.code}</p> : null}
+                {'compat' in card && card.compat ? (
+                  <div className="lm-compat-logos">
+                    {COMPAT.map((c) => (
+                      <div key={c.label} className="lm-compat-item">
+                        <span className="lm-compat-icon">{c.abbr}</span>
+                        <span className="lm-compat-label">{c.label}</span>
+                      </div>
+                    ))}
+                  </div>
+                ) : null}
+                {'media' in card && card.media ? (
+                  <div style={{ marginTop: '1.5rem' }}>
+                    <MacosCard wide src={card.media} />
+                  </div>
+                ) : null}
+              </article>
+            ))}
+          </div>
+        </div>
+      </section>
+
+      {/* Stats */}
+      <section className="lm-stats">
+        <div className="lm-container">
+          <div className="lm-stats__grid reveal">
+            {STATS.map((s) => (
+              <div key={s.label} className="lm-stats__cell">
+                <p className="lm-stats__num">{s.n}</p>
+                <p className="lm-stats__label">{s.label}</p>
+                <p className="lm-stats__body">{s.body}</p>
+              </div>
+            ))}
+          </div>
+        </div>
+      </section>
+
+      {/* Wide screenshot */}
+      <section className="lm-screenshot-section">
+        <div className="lm-container reveal">
+          <p className="lm-screenshot-label">Live transcript</p>
+          <div className="lm-screenshot-card" aria-label="Transcript preview">
+            {MEDIA.transcriptionScreenshot ? (
+              <img src={MEDIA.transcriptionScreenshot} alt="" loading="lazy" />
+            ) : null}
+          </div>
+        </div>
+      </section>
 
       {/* FAQ */}
-      <section id="faq" className="ds-section scroll-mt-24">
-        <div className="ds-container">
-          <div className="reveal">
-            <p className="ds-section__eyebrow">FAQ</p>
-            <h2 className="ds-section__title">Frequently asked questions</h2>
-          </div>
-          <div className="mt-8">
-            <DsFaqAccordion items={[...FAQ]} />
-          </div>
+      <section id="faq" className="lm-faq-section scroll-mt-nav">
+        <div className="lm-container">
+          <h2 className="lm-faq-section__title reveal">Frequently asked questions</h2>
+          <LightFaq items={[...FAQ]} />
         </div>
       </section>
 
       {/* Final CTA */}
-      <section id="download" className="ds-final-cta scroll-mt-24">
-        <div className="ds-container reveal">
-          <h2 className="ds-final-cta__title gradient-text">Meeting AI that helps during the call, not after.</h2>
-          <p className="ds-final-cta__sub">Try VeilAssist on your next meeting today.</p>
-          <div className="ds-final-cta__btns">
-            <RippleButton href={SITE.downloadSetupExeUrl}>
+      <section id="download" className="lm-final-cta scroll-mt-nav">
+        <div className="lm-container reveal">
+          <div className="lm-kbd-row" aria-hidden>
+            <span className="lm-kbd">Ctrl</span>
+            <span className="lm-kbd-plus">+</span>
+            <span className="lm-kbd">↵</span>
+          </div>
+          <h2 className="lm-final-cta__title">Meeting AI that helps during the call, not after.</h2>
+          <p className="lm-final-cta__sub">Try VeilAssist on your next meeting today.</p>
+          <div className="lm-final-cta__btns">
+            <LightButton href={SITE.downloadSetupExeUrl}>
               <WindowsIcon />
-              Get for Windows
-            </RippleButton>
-            <RippleButton href={SITE.releasesRollingUrl} variant="secondary">
+              Download for Windows
+            </LightButton>
+            <LightButton href={SITE.releasesRollingUrl} variant="secondary">
               All releases
-            </RippleButton>
+            </LightButton>
           </div>
         </div>
       </section>
 
-      <MarketingFooter />
+      <LightFooter />
     </div>
   )
 }
