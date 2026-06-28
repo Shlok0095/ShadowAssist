@@ -123,34 +123,95 @@ body.light-marketing .glow {
 }
 
 .lm-nav__inner {
-  display: flex;
+  display: grid;
+  grid-template-columns: auto 1fr auto;
   align-items: center;
-  justify-content: space-between;
+  gap: var(--space-4);
   height: 100%;
   max-width: var(--container-max);
   margin-inline: auto;
   padding-inline: var(--container-x);
-  position: relative;
+}
+
+.lm-nav__logo {
+  justify-self: start;
 }
 
 .lm-nav__logo img {
   height: 2rem;
   width: auto;
+  display: block;
 }
 
 .lm-nav__links {
   display: none;
   align-items: center;
+  justify-content: center;
   gap: var(--space-8);
-  position: absolute;
-  left: 50%;
-  transform: translateX(-50%);
+  justify-self: center;
 }
 
 @media (min-width: 768px) {
   .lm-nav__links {
     display: flex;
   }
+}
+
+.lm-nav__actions {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  justify-self: end;
+}
+
+.lm-nav__download {
+  display: none;
+}
+
+@media (min-width: 768px) {
+  .lm-nav__download {
+    display: inline-flex;
+  }
+
+  .lm-nav__menu-btn {
+    display: none;
+  }
+}
+
+.lm-drawer__download {
+  margin-top: var(--space-4);
+  width: 100%;
+  justify-content: center;
+}
+
+/* Single download button (header + mobile drawer only) */
+.lm-download-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.45rem;
+  padding: 8px 18px;
+  border-radius: var(--radius-pill);
+  background: var(--btn-primary-bg);
+  color: var(--btn-primary-fg) !important;
+  font-size: var(--text-sm);
+  font-weight: 600;
+  text-decoration: none !important;
+  box-shadow: var(--shadow-sm);
+  white-space: nowrap;
+  transition: all 150ms ease;
+  line-height: 1;
+}
+
+.lm-download-btn:hover {
+  background: #1e2235;
+  transform: translateY(-1px);
+  box-shadow: var(--shadow-md);
+}
+
+.lm-download-btn:focus-visible {
+  outline: 2px solid var(--accent-main);
+  outline-offset: 3px;
 }
 
 .lm-nav__link {
@@ -164,6 +225,90 @@ body.light-marketing .glow {
 .lm-nav__link:hover,
 .lm-nav__link.active {
   color: var(--text-primary);
+}
+
+/* ── Space-portfolio inspired (light adapt) ── */
+.sp-starfield {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  z-index: 0;
+  opacity: 0.55;
+  background-image:
+    radial-gradient(1px 1px at 10% 20%, rgba(107, 127, 212, 0.45), transparent),
+    radial-gradient(1px 1px at 30% 65%, rgba(147, 115, 249, 0.35), transparent),
+    radial-gradient(1px 1px at 70% 15%, rgba(99, 212, 219, 0.4), transparent),
+    radial-gradient(1px 1px at 85% 55%, rgba(107, 127, 212, 0.35), transparent),
+    radial-gradient(1px 1px at 50% 40%, rgba(124, 106, 255, 0.25), transparent),
+    radial-gradient(1.5px 1.5px at 22% 88%, rgba(107, 127, 212, 0.3), transparent),
+    radial-gradient(1.5px 1.5px at 92% 78%, rgba(147, 115, 249, 0.28), transparent);
+  background-size: 100% 100%;
+}
+
+.sp-welcome-box {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-2);
+  padding: 8px 16px 8px 12px;
+  margin-bottom: var(--space-6);
+  border-radius: var(--radius-pill);
+  border: 1px solid rgba(112, 66, 248, 0.35);
+  background: rgba(255, 255, 255, 0.72);
+  backdrop-filter: blur(6px);
+  box-shadow: inset 0 -4px 12px rgba(164, 143, 255, 0.12);
+  font-size: var(--text-xs);
+  font-weight: 500;
+  color: var(--accent-main);
+  letter-spacing: 0.02em;
+}
+
+.sp-gradient-text {
+  background: linear-gradient(90deg, #6b7fd4 0%, #9b7fd4 50%, #6b9fe8 100%);
+  -webkit-background-clip: text;
+  background-clip: text;
+  -webkit-text-fill-color: transparent;
+}
+
+.sp-btn-glow {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 12px 28px;
+  border-radius: var(--radius-pill);
+  font-size: var(--text-sm);
+  font-weight: 600;
+  color: var(--text-primary) !important;
+  text-decoration: none !important;
+  background:
+    linear-gradient(180deg, rgba(107, 127, 212, 0) 0%, rgba(107, 127, 212, 0.14) 100%),
+    rgba(113, 47, 255, 0.08);
+  border: 1px solid rgba(112, 66, 248, 0.25);
+  box-shadow: inset 0 0 12px rgba(191, 151, 255, 0.2);
+  transition: all 0.25s ease;
+}
+
+.sp-btn-glow:hover {
+  background:
+    linear-gradient(180deg, rgba(107, 127, 212, 0) 0%, rgba(107, 127, 212, 0.22) 100%),
+    rgba(113, 47, 255, 0.14);
+  box-shadow: inset 0 0 16px rgba(191, 151, 255, 0.35);
+  transform: translateY(-1px);
+}
+
+.sp-btn-glow:focus-visible {
+  outline: 2px solid var(--accent-main);
+  outline-offset: 3px;
+}
+
+.lm-final-cta__hint {
+  margin-top: var(--space-6);
+  font-size: var(--text-sm);
+  color: var(--text-tertiary);
+}
+
+.lm-final-cta__hint strong {
+  color: var(--text-secondary);
+  font-weight: 600;
 }
 
 .lm-btn {
@@ -223,20 +368,6 @@ body.light-marketing .glow {
   border-color: var(--border-strong);
 }
 
-.lm-nav__cta {
-  display: none;
-}
-
-@media (min-width: 768px) {
-  .lm-nav__cta {
-    display: inline-flex;
-  }
-
-  .lm-nav__menu-btn {
-    display: none;
-  }
-}
-
 .lm-nav__menu-btn {
   display: flex;
   align-items: center;
@@ -283,11 +414,6 @@ body.light-marketing .glow {
 
 .lm-drawer__link:hover {
   background: var(--bg-soft);
-}
-
-.lm-drawer__cta {
-  margin-top: var(--space-4);
-  width: 100%;
 }
 
 /* ── Hero ── */
@@ -396,7 +522,6 @@ body.light-marketing .glow {
 
 .lm-hero__title em {
   font-style: normal;
-  color: var(--accent-main);
 }
 
 .lm-hero__sub {
@@ -781,8 +906,9 @@ body.light-marketing .glow {
 }
 
 .lm-bento-card:hover {
-  box-shadow: var(--shadow-lg);
+  box-shadow: var(--shadow-lg), inset 0 0 20px rgba(164, 143, 255, 0.08);
   transform: translateY(-2px);
+  border-color: rgba(112, 66, 248, 0.2);
 }
 
 @media (min-width: 1024px) {

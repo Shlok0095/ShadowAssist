@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react'
 import { NavLink, useLocation } from 'react-router-dom'
-import { LightButton, WindowsIcon } from '@/components/marketing/LightButton'
+import { DownloadButton } from '@/components/marketing/DownloadButton'
 import { SITE } from '@/config/site'
 import brandLogo from '../../../logo.png'
 
@@ -38,9 +38,7 @@ export function Header() {
             <NavLink to="/docs" className="text-zinc-600 no-underline hover:text-zinc-900">
               Docs
             </NavLink>
-            <a href={SITE.downloadSetupExeUrl} className="font-semibold text-zinc-900 no-underline">
-              Download
-            </a>
+            <DownloadButton />
           </nav>
         </div>
       </header>
@@ -83,19 +81,18 @@ export function Header() {
             </NavLink>
           </nav>
 
-          <LightButton href={SITE.downloadSetupExeUrl} size="sm" className="lm-nav__cta">
-            Download
-          </LightButton>
-
-          <button
-            type="button"
-            className="lm-nav__menu-btn"
-            aria-expanded={drawerOpen}
-            aria-label="Open menu"
-            onClick={() => setDrawerOpen(true)}
-          >
-            ☰
-          </button>
+          <div className="lm-nav__actions">
+            <DownloadButton className="lm-nav__download" />
+            <button
+              type="button"
+              className="lm-nav__menu-btn"
+              aria-expanded={drawerOpen}
+              aria-label="Open menu"
+              onClick={() => setDrawerOpen(true)}
+            >
+              ☰
+            </button>
+          </div>
         </div>
       </header>
 
@@ -115,10 +112,7 @@ export function Header() {
             <NavLink to="/docs" className="lm-drawer__link" onClick={() => setDrawerOpen(false)}>
               Docs
             </NavLink>
-            <LightButton href={SITE.downloadSetupExeUrl} size="sm" className="lm-drawer__cta">
-              <WindowsIcon />
-              Download
-            </LightButton>
+            <DownloadButton className="lm-drawer__download" />
           </div>
         </>
       ) : null}

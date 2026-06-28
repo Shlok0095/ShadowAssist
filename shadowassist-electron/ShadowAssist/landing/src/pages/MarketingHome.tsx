@@ -1,10 +1,9 @@
 import { useState, type CSSProperties } from 'react'
 import { LightFaq } from '@/components/marketing/LightFaq'
 import { LightFooter } from '@/components/marketing/LightFooter'
-import { LightButton, WindowsIcon } from '@/components/marketing/LightButton'
 import { CompatLogos, DockIcons, MacosCard } from '@/components/marketing/MacosCard'
+import { StarfieldBg } from '@/components/marketing/StarfieldBg'
 import { MEDIA } from '@/config/mediaManifest'
-import { SITE } from '@/config/site'
 import { useRevealObserver } from '@/hooks/useReveal'
 
 const STEPS = [
@@ -93,23 +92,24 @@ export function MarketingHome() {
   return (
     <div className="lm-page">
       <section className="lm-hero">
+        <StarfieldBg />
         <span className="lm-blob lm-blob--purple" aria-hidden />
         <span className="lm-blob lm-blob--cyan" aria-hidden />
         <span className="lm-blob lm-blob--pink" aria-hidden />
 
         <div className="lm-container">
           <div className="lm-hero__content reveal">
-            <div className="lm-eyebrow">
+            <div className="sp-welcome-box">
               <span className="lm-eyebrow__dot" aria-hidden />
-              New · Hotkey-triggered AI assistant
+              <span>Undetectable AI for live meetings</span>
             </div>
 
             <h1 className="lm-hero__title">
               Your AI copilot,
               <br />
-              always <em>invisible</em>,
+              always <span className="sp-gradient-text">invisible</span>,
               <br />
-              always ready.
+              always <span className="sp-gradient-text">ready</span>.
             </h1>
 
             <p className="lm-hero__sub">
@@ -118,16 +118,12 @@ export function MarketingHome() {
             </p>
 
             <div className="lm-hero__ctas">
-              <LightButton href={SITE.downloadSetupExeUrl}>
-                <WindowsIcon />
-                Download for Windows
-              </LightButton>
-              <LightButton href={SITE.downloadPortablePageUrl} variant="secondary">
-                Portable exe
-              </LightButton>
+              <a href="#how-it-works" className="sp-btn-glow">
+                See how it works
+              </a>
             </div>
 
-            <p className="lm-hero__platform">Available on Windows 10+</p>
+            <p className="lm-hero__platform">Windows 10+ · Download from the header</p>
           </div>
 
           <div className="lm-hero-product reveal">
@@ -270,15 +266,9 @@ export function MarketingHome() {
           </div>
           <h2 className="lm-final-cta__title">Meeting AI that helps during the call, not after.</h2>
           <p className="lm-final-cta__sub">Try VeilAssist on your next meeting today.</p>
-          <div className="lm-final-cta__btns">
-            <LightButton href={SITE.downloadSetupExeUrl}>
-              <WindowsIcon />
-              Download for Windows
-            </LightButton>
-            <LightButton href={SITE.releasesRollingUrl} variant="secondary">
-              All releases
-            </LightButton>
-          </div>
+          <p className="lm-final-cta__hint">
+            Use <strong>Download</strong> in the navigation bar to get the Windows installer.
+          </p>
         </div>
       </section>
 
