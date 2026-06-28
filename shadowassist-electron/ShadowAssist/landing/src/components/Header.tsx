@@ -1,6 +1,8 @@
 import { useEffect, useRef, useState } from 'react'
 import { NavLink, useLocation } from 'react-router-dom'
-import { WindowsDownloadButton } from '@/components/marketing/WindowsDownloadButton'
+import { RippleButton, WindowsIcon } from '@/components/marketing/RippleButton'
+import { useNavScroll } from '@/components/marketing/TiltCard'
+import { SITE } from '@/config/site'
 import brandLogo from '../../../logo.png'
 
 function homeAnchor(id: string) {
@@ -11,92 +13,117 @@ function homeAnchor(id: string) {
 export function Header() {
   const { pathname } = useLocation()
   const isHome = pathname === '/' || pathname === ''
-  const [menuOpen, setMenuOpen] = useState(false)
-  const wrapRef = useRef<HTMLDivElement>(null)
+  const isMarketing = isHome || pathname === '/how-it-works' || pathname === '/built-for-live-work'
+  const scrolled = useNavScroll()
+  const [drawerOpen, setDrawerOpen] = useState(false)
 
   useEffect(() => {
-    setMenuOpen(false)
+    setDrawerOpen(false)
   }, [pathname])
 
-  useEffect(() => {
-    if (!menuOpen) return
-    const onDoc = (e: MouseEvent) => {
-      if (wrapRef.current && !wrapRef.current.contains(e.target as Node)) setMenuOpen(false)
-    }
-    document.addEventListener('mousedown', onDoc)
-    return () => document.removeEventListener('mousedown', onDoc)
-  }, [menuOpen])
+  if (!isMarketing) {
+    return (
+      <header className="site-header border-b border-zinc-200 bg-white/90 px-4 py-3 backdrop-blur md:px-8">
+        <div className="mx-auto flex max-w-6xl items-center justify-between gap-4">
+          <NavLink to="/" className="font-bold text-zinc-900 no-underline">
+            {SITE.name}
+          </NavLink>
+          <nav className="flex items-center gap-6 text-sm">
+            <NavLink to="/docs" className="text-zinc-600 no-underline hover:text-zinc-900">
+              Docs
+            </NavLink>
+            <a href={SITE.downloadSetupExeUrl} className="font-semibold text-blue-600 no-underline">
+              Download
+            </a>
+          </nav>
+        </div>
+      </header>
+    )
+  }
 
-  const anchor = (href: string, label: string) => (
-    <a href={href} className="va-nav-link">
-      {label}
-    </a>
-  )
+  const linkCls = (active: boolean) => `ds-nav__link${active ? ' active' : ''}`
 
   return (
-    <header className="va-header">
-      <div className="va-header__inner">
-      <NavLink to="/" end className="va-brand" aria-label="VeilAssist home">
-        <img src={brandLogo} alt="" width={140} height={36} className="h-8 w-auto object-contain sm:h-9" />
-      </NavLink>
+    <>
+      <header className={`ds-nav${scrolled ? ' scrolled' : ''}`}>
+        <div className="ds-nav__inner">
+          <NavLink to="/" end className="ds-nav__logo" aria-label={`${SITE.name} home`}>
+            <img src={brandLogo} alt="" />
+          </NavLink>
 
-      <nav className="hidden items-center gap-8 md:flex">
-        {isHome ? (
-          <>
-            {anchor(homeAnchor('how-it-works'), 'How it works')}
-            {anchor(homeAnchor('features'), 'Undetectability')}
-          </>
-        ) : (
-          <>
-            <NavLink to="/how-it-works" className="va-nav-link">
+          <nav className="ds-nav__links" aria-label="Main">
+            {isHome ? (
+              <>
+                <a href={homeAnchor('how-it-works')} className={linkCls(false)}>
+                  How it works
+                </a>
+                <a href={homeAnchor('features')} className={linkCls(false)}>
+                  Features
+                </a>
+                <a href={homeAnchor('pricing')} className={linkCls(false)}>
+                  Pricing
+                </a>
+              </>
+            ) : (
+              <>
+                <NavLink to="/how-it-works" className={({ isActive }) => linkCls(isActive)}>
+                  How it works
+                </NavLink>
+                <NavLink to="/built-for-live-work" className={({ isActive }) => linkCls(isActive)}>
+                  Built for live work
+                </NavLink>
+              </>
+            )}
+            <NavLink to="/docs" className={({ isActive }) => linkCls(isActive)}>
+              Docs
+            </NavLink>
+          </nav>
+
+          <div className="ds-nav__cta-desktop">
+            <RippleButton href={SITE.downloadSetupExeUrl} size="sm">
+              <WindowsIcon />
+              Get for Windows
+            </RippleButton>
+          </div>
+
+          <button
+            type="button"
+            className="ds-nav__hamburger"
+            aria-expanded={drawerOpen}
+            aria-label="Open menu"
+            onClick={() => setDrawerOpen(true)}
+          >
+            ☰
+          </button>
+        </div>
+      </header>
+
+      {drawerOpen ? (
+        <>
+          <button type="button" className="ds-drawer-backdrop" aria-label="Close menu" onClick={() => setDrawerOpen(false)} />
+          <div className="ds-drawer" role="dialog" aria-modal="true">
+            <a href={homeAnchor('how-it-works')} className="ds-drawer__link" onClick={() => setDrawerOpen(false)}>
               How it works
+            </a>
+            <a href={homeAnchor('features')} className="ds-drawer__link" onClick={() => setDrawerOpen(false)}>
+              Features
+            </a>
+            <a href={homeAnchor('pricing')} className="ds-drawer__link" onClick={() => setDrawerOpen(false)}>
+              Pricing
+            </a>
+            <a href={homeAnchor('faq')} className="ds-drawer__link" onClick={() => setDrawerOpen(false)}>
+              FAQ
+            </a>
+            <NavLink to="/docs" className="ds-drawer__link" onClick={() => setDrawerOpen(false)}>
+              Docs
             </NavLink>
-            <NavLink to="/built-for-live-work" className="va-nav-link">
-              Built for live work
-            </NavLink>
-          </>
-        )}
-        <NavLink to="/docs" className="va-nav-link">
-          Docs
-        </NavLink>
-      </nav>
-
-      <div className="hidden md:block">
-        <WindowsDownloadButton size="md" />
-      </div>
-
-      <div className="flex items-center gap-2 md:hidden" ref={wrapRef}>
-        <WindowsDownloadButton size="md" className="!px-4 !py-2 !text-xs" />
-        <button
-          type="button"
-          aria-expanded={menuOpen}
-          aria-label="Menu"
-          className="va-menu-btn"
-          onClick={() => setMenuOpen((o) => !o)}
-        >
-          ⋯
-        </button>
-        {menuOpen ? (
-          <>
-            <button type="button" className="va-menu-backdrop" aria-label="Close" onClick={() => setMenuOpen(false)} />
-            <div className="va-menu-panel">
-              <NavLink to="/" className="va-menu-item" onClick={() => setMenuOpen(false)}>
-                Home
-              </NavLink>
-              <a href={homeAnchor('how-it-works')} className="va-menu-item" onClick={() => setMenuOpen(false)}>
-                How it works
-              </a>
-              <a href={homeAnchor('faq')} className="va-menu-item" onClick={() => setMenuOpen(false)}>
-                FAQ
-              </a>
-              <NavLink to="/docs" className="va-menu-item" onClick={() => setMenuOpen(false)}>
-                Docs
-              </NavLink>
-            </div>
-          </>
-        ) : null}
-      </div>
-    </div>
-    </header>
+            <RippleButton href={SITE.downloadSetupExeUrl} size="sm" className="ds-drawer__cta">
+              <WindowsIcon />
+              Get for Windows
+            </RippleButton>
+          </div>
+        </>
+      ) : null}
+    </>
   )
 }

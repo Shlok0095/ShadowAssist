@@ -1,34 +1,70 @@
+import { useRef } from 'react'
 import { Link } from 'react-router-dom'
-import { FaqAccordion } from '@/components/FaqAccordion'
-import { MediaSlot } from '@/components/marketing/MediaSlot'
-import { OverlayHeroMock } from '@/components/marketing/OverlayHeroMock'
-import { ScrollReveal } from '@/components/marketing/ScrollReveal'
-import { WindowsDownloadButton } from '@/components/marketing/WindowsDownloadButton'
+import { DsFaqAccordion } from '@/components/marketing/DsFaqAccordion'
+import { MarketingFooter } from '@/components/marketing/MarketingFooter'
+import { MediaPlaceholder } from '@/components/marketing/MediaPlaceholder'
+import {
+  PricingSection,
+  StatsBar,
+  TestimonialsMarquee,
+} from '@/components/marketing/MarketingSections'
+import { RippleButton, WindowsIcon } from '@/components/marketing/RippleButton'
+import { TiltCard, useHeroCursor } from '@/components/marketing/TiltCard'
 import { MEDIA } from '@/config/mediaManifest'
 import { SITE } from '@/config/site'
+import { useRevealObserver } from '@/hooks/useReveal'
 
-const UNDETECTABLE = [
+const FEATURES = [
   {
-    title: "Doesn't join meetings.",
-    body: 'VeilAssist never joins your call — no bots on the guest list.',
-    label: 'Participants list · no bots',
+    icon: (
+      <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" aria-hidden>
+        <path d="M12 1a3 3 0 00-3 3v8a3 3 0 006 0V4a3 3 0 00-3-3z" />
+        <path d="M19 10v2a7 7 0 01-14 0v-2M12 19v4M8 23h8" />
+      </svg>
+    ),
+    title: 'Listens in real time',
+    body: 'Mic and system audio feed live context — no bot joins your meeting.',
   },
   {
-    title: 'Invisible to screen share.',
+    icon: (
+      <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" aria-hidden>
+        <path d="M12 2l2.4 7.4H22l-6 4.6 2.3 7L12 17.8 5.7 21l2.3-7-6-4.6h7.6L12 2z" />
+      </svg>
+    ),
+    title: 'Instant AI assist',
+    body: 'Hit Ctrl+Enter for streaming answers grounded in your screen and conversation.',
+  },
+  {
+    icon: (
+      <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" aria-hidden>
+        <rect x="3" y="11" width="18" height="11" rx="2" />
+        <path d="M7 11V7a5 5 0 0110 0v4" />
+      </svg>
+    ),
+    title: 'Undetectable by design',
     body: 'Content protection keeps the overlay off recordings and shared screens.',
-    label: 'Screen share comparison',
-  },
-  {
-    title: 'Follows your eyes.',
-    body: 'Move the panel anywhere — position it where you are already looking.',
-    label: 'Movable overlay · keyboard hint',
   },
 ] as const
 
-const STATS = [
-  { n: '12+', title: 'Languages', body: 'English, Hindi, Hinglish, and cloud STT languages.' },
-  { n: '300ms', title: 'Response time', body: 'Fast streaming to overlay and phone companion together.' },
-  { n: '95%', title: 'Transcription accuracy', body: 'Dual-path mic + system audio with local or cloud STT.' },
+const SPOTLIGHTS = [
+  {
+    chip: 'Live overlay',
+    title: 'AI that helps during the call',
+    body: 'VeilAssist streams answers to your overlay and phone companion together — while the meeting is still happening.',
+    checks: ['Real-time token streaming', 'Screen + audio context', 'Ctrl+Enter hotkey assist', 'No post-meeting wait'],
+    link: { label: 'See how it works →', href: '#how-it-works' as string, to: undefined as string | undefined },
+    badges: ['⚡ Instant', '🔒 Private'],
+    reverse: false,
+  },
+  {
+    chip: 'Meeting notes',
+    title: 'Instant session recaps',
+    body: 'After Listen, get concise local summaries — action items, decisions, and follow-ups without sending audio to the cloud.',
+    checks: ['Local session storage', 'Summary + transcript tabs', 'Shareable export', 'Works offline after capture'],
+    link: { label: 'Read the docs →', href: undefined as string | undefined, to: '/docs' },
+    badges: ['📝 Notes', '✦ Smart'],
+    reverse: true,
+  },
 ] as const
 
 const FAQ = [
@@ -47,217 +83,174 @@ const FAQ = [
 ] as const
 
 export function MarketingHome() {
+  const heroRef = useRef<HTMLElement>(null)
+  useRevealObserver()
+  useHeroCursor(heroRef)
+
   return (
-    <div className="va-page">
-      {/* ── Hero (Cluely: centered serif headline + one hero visual) ── */}
-      <section className="va-hero">
-        <div className="va-container va-hero__copy">
-          <ScrollReveal>
-            <h1 className="va-hero__title">
-              <span className="block">#1 Undetectable AI</span>
-              <span className="block">for Meetings</span>
+    <div className="ds-page">
+      {/* Hero */}
+      <section ref={heroRef} className="ds-hero">
+        <div className="ds-hero__grid" aria-hidden />
+        <span className="orb ds-hero__orb-1" aria-hidden />
+        <span className="orb ds-hero__orb-2" aria-hidden />
+        <span className="ds-hero__cursor-glow" aria-hidden />
+
+        <div className="ds-container">
+          <div className="ds-hero__content reveal">
+            <div className="ds-hero__badge">
+              <span className="ds-hero__badge-dot" aria-hidden />
+              New · Hotkey-powered AI
+              <span aria-hidden> → </span>
+            </div>
+
+            <h1 className="ds-hero__title">
+              Your AI Copilot,
+              <br />
+              Always On
+              <br />
+              <span className="gradient-text">One Hotkey Away.</span>
             </h1>
-            <hr className="va-hero__rule" />
-            <p className="va-hero__lede">
-              VeilAssist gives <strong>real-time answers</strong> and meeting notes — all while staying completely
-              undetectable on your screen.
+
+            <p className="ds-hero__sub">
+              VeilAssist gives real-time answers and meeting notes — completely undetectable on your screen. No bots. No
+              waiting until after the call.
             </p>
-            <div className="va-hero__cta">
-              <WindowsDownloadButton />
+
+            <div className="ds-hero__ctas">
+              <RippleButton href={SITE.downloadSetupExeUrl}>
+                <WindowsIcon />
+                Get for Windows
+              </RippleButton>
+              <RippleButton href={SITE.downloadPortablePageUrl} variant="secondary">
+                Portable exe
+              </RippleButton>
             </div>
-          </ScrollReveal>
-        </div>
 
-        <ScrollReveal delay={0.08} className="va-hero__visual-wrap">
-          {MEDIA.heroVideo ? (
-            <div className="va-hero__peek va-hero__peek--video">
-              <MediaSlot label="Product hero video" kind="hero" src={MEDIA.heroVideo} />
+            <div className="ds-hero__social">
+              <div className="ds-hero__avatars" aria-hidden>
+                {[0, 1, 2, 3, 4].map((i) => (
+                  <span key={i} className="ds-hero__avatar" />
+                ))}
+              </div>
+              <p className="ds-hero__social-text">
+                Trusted by <strong>5,000+</strong> engineers, PMs, and founders
+              </p>
+              <span className="ds-hero__stars" aria-label="4.9 out of 5 stars">
+                ★★★★★
+              </span>
+              <span className="ds-hero__social-text">(4.9/5)</span>
             </div>
-          ) : (
-            <div className="va-hero__peek">
-              <OverlayHeroMock />
+          </div>
+
+          <div className="ds-hero__media-wrap reveal">
+            <div className="ds-hero__media-tilt">
+              <MediaPlaceholder variant="hero" src={MEDIA.heroVideo || undefined} />
+              <div className="ds-hero__media-fade" aria-hidden />
             </div>
-          )}
-        </ScrollReveal>
-      </section>
-
-      {/* ── How during meeting (two cards) ── */}
-      <section id="how-it-works" className="va-section scroll-mt-20">
-        <div className="va-container">
-          <ScrollReveal>
-            <h2 className="va-section__title va-section__title--center">How VeilAssist helps during a meeting</h2>
-          </ScrollReveal>
-
-          <div className="va-meeting-grid">
-            <ScrollReveal>
-              <article className="va-meeting-card va-meeting-card--accent">
-                <h3 className="va-meeting-card__head">
-                  VeilAssist <span className="va-pill">listens</span> in to the conversation
-                </h3>
-                <p className="va-meeting-card__sub">
-                  It picks up context in real time — mic and system audio — so it can help when you need it.
-                </p>
-                <div className="va-meeting-card__media">
-                  {MEDIA.meetingListenClip ? (
-                    <MediaSlot label="Listening UI clip" kind="mini" src={MEDIA.meetingListenClip} />
-                  ) : (
-                    <MediaSlot label="Listening UI · waveform + timer" kind="mini" />
-                  )}
-                </div>
-              </article>
-            </ScrollReveal>
-
-            <ScrollReveal delay={0.06}>
-              <article className="va-meeting-card va-meeting-card--glass">
-                <h3 className="va-meeting-card__head">
-                  When you need help, VeilAssist <span className="va-spark">✦</span> assists instantly
-                </h3>
-                <p className="va-meeting-card__sub">Hit Ctrl+Enter and VeilAssist helps you with AI in the moment.</p>
-                <div className="va-meeting-card__media">
-                  {MEDIA.meetingAssistClip ? (
-                    <MediaSlot label="Assist UI clip" kind="mini" src={MEDIA.meetingAssistClip} />
-                  ) : (
-                    <MediaSlot label="Assist overlay · screen + answer" kind="mini" />
-                  )}
-                </div>
-              </article>
-            </ScrollReveal>
           </div>
         </div>
       </section>
 
-      {/* ── Instant meeting notes (one large image frame) ── */}
-      <section className="va-section va-section--tint">
-        <div className="va-container va-container--narrow">
-          <ScrollReveal>
-            <h2 className="va-section__title va-section__title--center">Instant meeting notes</h2>
-            <p className="va-section__lede va-section__lede--center">
-              The easiest way to get concise, local session recaps after Listen.
-            </p>
-          </ScrollReveal>
-          <ScrollReveal delay={0.08} className="mt-10">
-            <div className="va-frame-lavender">
-              <MediaSlot
-                label="Meeting notes / summary screenshot"
-                kind="wide"
-                src={MEDIA.notesScreenshot || undefined}
-              />
-            </div>
-          </ScrollReveal>
-        </div>
-      </section>
+      {/* Features grid */}
+      <section id="how-it-works" className="ds-section scroll-mt-24">
+        <div className="ds-container">
+          <div className="ds-section__head--center reveal">
+            <p className="ds-section__eyebrow">How it works</p>
+            <h2 className="ds-section__title">Built for live meetings</h2>
+            <p className="ds-section__sub">Everything you need to stay sharp when the pressure is on.</p>
+          </div>
 
-      {/* ── Undetectable (3 cards + image each) ── */}
-      <section id="features" className="va-section scroll-mt-20">
-        <div className="va-container">
-          <ScrollReveal>
-            <h2 className="va-section__title va-section__title--center">Undetectable in every way</h2>
-            <p className="va-section__lede va-section__lede--center">Suite of features to use VeilAssist without a trace.</p>
-          </ScrollReveal>
-
-          <div className="va-undetect-grid">
-            {UNDETECTABLE.map((item, i) => (
-              <ScrollReveal key={item.title} delay={i * 0.05}>
-                <article className="va-undetect-card">
-                  <MediaSlot
-                    label={item.label}
-                    kind="feature"
-                    src={MEDIA.undetectable[i] || undefined}
-                    className="rounded-b-none border-0"
-                  />
-                  <div className="va-undetect-card__body">
-                    <h3>{item.title}</h3>
-                    <p>{item.body}</p>
-                  </div>
-                </article>
-              </ScrollReveal>
+          <div className="ds-features-grid reveal-stagger">
+            {FEATURES.map((f) => (
+              <TiltCard key={f.title} className="reveal ds-feature-card">
+                <div className="ds-feature-card__icon">{f.icon}</div>
+                <h3 className="ds-feature-card__title">{f.title}</h3>
+                <p className="ds-feature-card__body">{f.body}</p>
+              </TiltCard>
             ))}
           </div>
         </div>
       </section>
 
-      {/* ── Real-time transcription (image left, stats right) ── */}
-      <section className="va-section va-section--border">
-        <div className="va-container va-split">
-          <ScrollReveal>
-            <div className="va-frame-soft">
-              <MediaSlot
-                label="Live transcript / session UI screenshot"
-                kind="feature"
-                src={MEDIA.transcriptionScreenshot || undefined}
-              />
+      <StatsBar />
+
+      {/* Spotlight rows */}
+      <section id="features" className="ds-section scroll-mt-24">
+        <div className="ds-container">
+          {SPOTLIGHTS.map((row, idx) => (
+            <div
+              key={row.title}
+              className={`ds-spotlight${row.reverse ? ' ds-spotlight--reverse' : ''}${idx > 0 ? ' ds-spotlight--spaced' : ''}`}
+            >
+              <div className="reveal">
+                <span className="ds-spotlight__chip">{row.chip}</span>
+                <h3 className="ds-spotlight__title">{row.title}</h3>
+                <p className="ds-spotlight__body">{row.body}</p>
+                <ul className="ds-spotlight__list">
+                  {row.checks.map((c) => (
+                    <li key={c}>
+                      <span className="ds-spotlight__check" aria-hidden>
+                        ✓
+                      </span>
+                      {c}
+                    </li>
+                  ))}
+                </ul>
+                {row.link.to ? (
+                  <Link to={row.link.to} className="ds-spotlight__link">
+                    {row.link.label}
+                  </Link>
+                ) : (
+                  <a href={row.link.href} className="ds-spotlight__link">
+                    {row.link.label}
+                  </a>
+                )}
+              </div>
+              <div className="ds-spotlight__visual reveal">
+                <span className="ds-float-badge ds-float-badge--tl">{row.badges[0]}</span>
+                <span className="ds-float-badge ds-float-badge--br">{row.badges[1]}</span>
+                <MediaPlaceholder variant="spotlight" />
+              </div>
             </div>
-          </ScrollReveal>
-          <ScrollReveal delay={0.06}>
-            <div className="va-split__copy">
-              <h2 className="va-section__title">Real-time transcription</h2>
-              <ul className="va-stat-list">
-                {STATS.map((s) => (
-                  <li key={s.title}>
-                    <span className="va-stat-list__n">{s.n}</span>
-                    <div>
-                      <strong>{s.title}</strong>
-                      <p>{s.body}</p>
-                    </div>
-                  </li>
-                ))}
-              </ul>
-            </div>
-          </ScrollReveal>
+          ))}
         </div>
       </section>
 
-      {/* ── FAQ ── */}
-      <section id="faq" className="va-section scroll-mt-20">
-        <div className="va-container va-container--narrow">
-          <ScrollReveal>
-            <h2 className="va-section__title">Frequently asked questions</h2>
-          </ScrollReveal>
-          <ScrollReveal delay={0.06} className="mt-8">
-            <FaqAccordion items={[...FAQ]} />
-          </ScrollReveal>
+      <PricingSection />
+      <TestimonialsMarquee />
+
+      {/* FAQ */}
+      <section id="faq" className="ds-section scroll-mt-24">
+        <div className="ds-container">
+          <div className="reveal">
+            <p className="ds-section__eyebrow">FAQ</p>
+            <h2 className="ds-section__title">Frequently asked questions</h2>
+          </div>
+          <div className="mt-8">
+            <DsFaqAccordion items={[...FAQ]} />
+          </div>
         </div>
       </section>
 
-      {/* ── Footer CTA (Cluely bottom) ── */}
-      <section id="download" className="va-footer-cta scroll-mt-20">
-        <div className="va-container va-footer-cta__inner">
-          <ScrollReveal>
-            <div className="va-footer-cta__text">
-              <h2>Meeting AI that helps during the call, not after.</h2>
-              <p>Try VeilAssist on your next meeting today.</p>
-              <WindowsDownloadButton size="md" />
-              <p className="va-footer-cta__alt">
-                <a href={SITE.downloadPortablePageUrl}>Portable exe</a>
-                <span aria-hidden> · </span>
-                <a href={SITE.releasesRollingUrl}>All releases</a>
-              </p>
-            </div>
-          </ScrollReveal>
-          <ScrollReveal delay={0.08} className="va-footer-cta__decor">
-            {MEDIA.footerDecor ? (
-              <MediaSlot label="Footer 3D keys decor" kind="feature" src={MEDIA.footerDecor} />
-            ) : (
-              <MediaSlot label="3D keyboard keys · ⌘ + Enter" kind="feature" className="max-w-sm" />
-            )}
-          </ScrollReveal>
+      {/* Final CTA */}
+      <section id="download" className="ds-final-cta scroll-mt-24">
+        <div className="ds-container reveal">
+          <h2 className="ds-final-cta__title gradient-text">Meeting AI that helps during the call, not after.</h2>
+          <p className="ds-final-cta__sub">Try VeilAssist on your next meeting today.</p>
+          <div className="ds-final-cta__btns">
+            <RippleButton href={SITE.downloadSetupExeUrl}>
+              <WindowsIcon />
+              Get for Windows
+            </RippleButton>
+            <RippleButton href={SITE.releasesRollingUrl} variant="secondary">
+              All releases
+            </RippleButton>
+          </div>
         </div>
       </section>
 
-      <footer className="va-site-foot">
-        <div className="va-container va-site-foot__inner">
-          <span className="font-semibold text-zinc-300">{SITE.name}</span>
-          <nav className="flex flex-wrap justify-center gap-x-5 gap-y-1 text-sm">
-            <Link to="/legal/privacy">Privacy</Link>
-            <Link to="/legal/terms">Terms</Link>
-            <Link to="/docs">Docs</Link>
-            <a href={SITE.repoUrl} target="_blank" rel="noopener noreferrer">
-              GitHub
-            </a>
-          </nav>
-          <span className="text-xs text-zinc-600">© {new Date().getFullYear()}</span>
-        </div>
-      </footer>
+      <MarketingFooter />
     </div>
   )
 }
