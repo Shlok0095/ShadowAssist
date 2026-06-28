@@ -1,8 +1,8 @@
-import { useState } from 'react'
+import { useState, type CSSProperties } from 'react'
 import { LightFaq } from '@/components/marketing/LightFaq'
 import { LightFooter } from '@/components/marketing/LightFooter'
 import { LightButton, WindowsIcon } from '@/components/marketing/LightButton'
-import { DockIcons, MacosCard } from '@/components/marketing/MacosCard'
+import { CompatLogos, DockIcons, MacosCard } from '@/components/marketing/MacosCard'
 import { MEDIA } from '@/config/mediaManifest'
 import { SITE } from '@/config/site'
 import { useRevealObserver } from '@/hooks/useReveal'
@@ -13,21 +13,22 @@ const STEPS = [
     heading: 'Listens in to the conversation',
     body: 'VeilAssist picks up mic and system audio in real time — so it understands context before you ask.',
     reverse: false,
-    media: MEDIA.meetingListenClip,
+    screenshot: MEDIA.meetingListenScreenshot,
   },
   {
     label: 'Step 02',
     heading: 'Assists you instantly',
     body: 'Press Ctrl+Enter and get streaming answers grounded in your screen and what was just said.',
     reverse: true,
-    media: MEDIA.meetingAssistClip,
+    screenshot: MEDIA.meetingAssistScreenshot,
   },
   {
     label: 'Step 03',
     heading: 'Recaps when you are done',
     body: 'End Listen for a concise local summary — action items, decisions, and follow-ups without a bot in the room.',
     reverse: false,
-    media: MEDIA.notesScreenshot,
+    screenshot: MEDIA.notesScreenshot,
+    tall: true,
   },
 ] as const
 
@@ -38,7 +39,6 @@ const BENTO = [
     dark: false,
     title: "Doesn't join meetings",
     body: 'VeilAssist never joins your call — no bots on the guest list, ever.',
-    media: MEDIA.undetectable[0],
   },
   {
     wide: false,
@@ -46,18 +46,9 @@ const BENTO = [
     dark: false,
     title: 'Invisible to screen share',
     body: 'Content protection keeps the overlay off recordings and shared screens.',
-    media: MEDIA.undetectable[1],
   },
   {
     wide: false,
-    purple: false,
-    dark: false,
-    title: 'Follows your eyes',
-    body: 'Move the panel anywhere — position it where you are already looking.',
-    media: MEDIA.undetectable[2],
-  },
-  {
-    wide: true,
     purple: false,
     dark: true,
     title: 'Ctrl+Enter to assist',
@@ -65,7 +56,7 @@ const BENTO = [
     code: 'Ctrl + Enter  →  instant AI assist',
   },
   {
-    wide: false,
+    wide: true,
     purple: false,
     dark: false,
     title: 'Compatible with every tool',
@@ -78,14 +69,6 @@ const STATS = [
   { n: '12+', label: 'Languages', body: 'English, Hindi, Hinglish, and cloud STT languages.' },
   { n: '300ms', label: 'Response time', body: 'Fast streaming to overlay and phone companion together.' },
   { n: '95%', label: 'Transcription accuracy', body: 'Dual-path mic + system audio with local or cloud STT.' },
-] as const
-
-const COMPAT = [
-  { label: 'Zoom', abbr: 'Z' },
-  { label: 'Meet', abbr: 'G' },
-  { label: 'Teams', abbr: 'T' },
-  { label: 'Webex', abbr: 'W' },
-  { label: 'Slack', abbr: 'S' },
 ] as const
 
 const FAQ = [
@@ -109,7 +92,6 @@ export function MarketingHome() {
 
   return (
     <div className="lm-page">
-      {/* Hero */}
       <section className="lm-hero">
         <span className="lm-blob lm-blob--purple" aria-hidden />
         <span className="lm-blob lm-blob--cyan" aria-hidden />
@@ -151,14 +133,13 @@ export function MarketingHome() {
           <div className="lm-hero-product reveal">
             <div className="lm-hero-product__stage">
               <DockIcons />
-              <MacosCard src={MEDIA.heroVideo || undefined} />
+              <MacosCard src={MEDIA.heroOverlayScreenshot || undefined} />
             </div>
             <div className="lm-hero-shimmer" aria-hidden />
           </div>
         </div>
       </section>
 
-      {/* Divider band */}
       <section id="how-it-works" className="lm-band scroll-mt-nav">
         <div className="lm-container reveal">
           <h2 className="lm-band__title">How VeilAssist helps during a meeting</h2>
@@ -166,7 +147,6 @@ export function MarketingHome() {
         </div>
       </section>
 
-      {/* Step rows */}
       <section className="lm-steps">
         <div className="lm-container">
           {STEPS.map((step) => (
@@ -180,14 +160,13 @@ export function MarketingHome() {
                 <p className="lm-step-body">{step.body}</p>
               </div>
               <div className="lm-step-row__visual">
-                <MacosCard src={step.media || undefined} />
+                <MacosCard tall={'tall' in step && step.tall} src={step.screenshot || undefined} />
               </div>
             </div>
           ))}
         </div>
       </section>
 
-      {/* Instant meeting notes */}
       <section className="lm-feature-wide">
         <div className="lm-container">
           <h2 className="lm-feature-wide__title reveal">Instant meeting notes</h2>
@@ -216,11 +195,13 @@ export function MarketingHome() {
               <span className="macos-card__dot macos-card__dot--yellow" />
               <span className="macos-card__dot macos-card__dot--green" />
             </div>
+            {MEDIA.wideNotesScreenshot ? (
+              <img src={MEDIA.wideNotesScreenshot} alt="" className="lm-wide-card__img" loading="lazy" />
+            ) : null}
           </div>
         </div>
       </section>
 
-      {/* Bento — undetectable */}
       <section id="features" className="lm-bento-section scroll-mt-nav">
         <div className="lm-container">
           <div className="lm-bento-section__head reveal">
@@ -229,38 +210,27 @@ export function MarketingHome() {
           </div>
 
           <div className="lm-bento-grid reveal-group">
-            {BENTO.map((card) => (
+            {BENTO.map((card, i) => (
               <article
                 key={card.title}
                 className={`reveal lm-bento-card${card.wide ? ' lm-bento-card--wide' : ''}${card.purple ? ' lm-bento-card--purple' : ''}${card.dark ? ' lm-bento-card--dark' : ''}`}
+                style={{ '--i': i } as CSSProperties}
               >
                 <h3 className="lm-bento-card__title">{card.title}</h3>
                 <p className="lm-bento-card__body">{card.body}</p>
                 {'code' in card && card.code ? <p className="lm-bento-code">{card.code}</p> : null}
-                {'compat' in card && card.compat ? (
-                  <div className="lm-compat-logos">
-                    {COMPAT.map((c) => (
-                      <div key={c.label} className="lm-compat-item">
-                        <span className="lm-compat-icon">{c.abbr}</span>
-                        <span className="lm-compat-label">{c.label}</span>
-                      </div>
-                    ))}
-                  </div>
-                ) : null}
-                {'media' in card && card.media ? (
-                  <div style={{ marginTop: '1.5rem' }}>
-                    <MacosCard wide src={card.media} />
-                  </div>
-                ) : null}
+                {'compat' in card && card.compat ? <CompatLogos /> : null}
               </article>
             ))}
           </div>
         </div>
       </section>
 
-      {/* Stats */}
       <section className="lm-stats">
         <div className="lm-container">
+          <div className="lm-stats__head reveal">
+            <h2 className="lm-band__title">Real-time transcription</h2>
+          </div>
           <div className="lm-stats__grid reveal">
             {STATS.map((s) => (
               <div key={s.label} className="lm-stats__cell">
@@ -273,7 +243,6 @@ export function MarketingHome() {
         </div>
       </section>
 
-      {/* Wide screenshot */}
       <section className="lm-screenshot-section">
         <div className="lm-container reveal">
           <p className="lm-screenshot-label">Live transcript</p>
@@ -285,7 +254,6 @@ export function MarketingHome() {
         </div>
       </section>
 
-      {/* FAQ */}
       <section id="faq" className="lm-faq-section scroll-mt-nav">
         <div className="lm-container">
           <h2 className="lm-faq-section__title reveal">Frequently asked questions</h2>
@@ -293,7 +261,6 @@ export function MarketingHome() {
         </div>
       </section>
 
-      {/* Final CTA */}
       <section id="download" className="lm-final-cta scroll-mt-nav">
         <div className="lm-container reveal">
           <div className="lm-kbd-row" aria-hidden>
