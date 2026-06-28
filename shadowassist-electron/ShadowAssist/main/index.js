@@ -1988,6 +1988,11 @@ function setupIPC() {
     productName: 'VeilAssist',
   }))
   ipcMain.handle('help:get-doc', () => {
+    try {
+      const { loadUserGuideMarkdown } = require('../lib/userGuideDoc')
+      const guide = loadUserGuideMarkdown()
+      if (guide) return guide
+    } catch (_) {}
     const candidates = [
       path.join(__dirname, '..', 'HOW_IT_WORKS.md'),
       path.join(app.getAppPath(), 'HOW_IT_WORKS.md'),
@@ -1997,7 +2002,7 @@ function setupIPC() {
         if (fs.existsSync(p)) return fs.readFileSync(p, 'utf8')
       } catch (_) {}
     }
-    return 'Documentation file (HOW_IT_WORKS.md) was not found in this build.'
+    return 'Documentation was not found in this build.'
   })
   ipcMain.handle('logs:open-folder', async () => {
     const dir = debugLog.getLogDir()

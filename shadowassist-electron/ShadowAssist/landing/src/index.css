@@ -1267,6 +1267,33 @@ code {
   gap: 0.2rem;
 }
 
+.docs-side__group {
+  margin-top: 0.65rem;
+}
+
+.docs-side__group-title {
+  margin: 0 0 0.25rem 0.45rem;
+  font-size: 0.62rem;
+  font-weight: 600;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: var(--muted);
+  opacity: 0.85;
+}
+
+.docs-hub__section {
+  margin-bottom: 1.75rem;
+}
+
+.docs-hub__section-title {
+  margin: 0 0 0.75rem;
+  font-size: 0.72rem;
+  font-weight: 700;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: var(--muted);
+}
+
 .docs-side__a {
   display: block;
   padding: 0.4rem 0.5rem;

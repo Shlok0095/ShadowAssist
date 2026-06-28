@@ -23,10 +23,14 @@ Output: `landing/dist/`. `404.html` is a copy of `index.html` so client-side rou
 
 ## Content sources
 
-- **How it works** — `../HOW_IT_WORKS.md` (imported at build time as raw markdown).
+- **User guide** — `../docs/user-guide/*.md` (14 sections; imported via `src/config/docsNav.ts`).
+- **Getting started** — `src/content/getting-started.md`.
+- **Shipping** — `../docs/LAUNCH_END_TO_END.md`.
 - **Terms / privacy** — `../legal/terms.txt` and `../legal/privacy.txt`.
 
-Changing those files triggers **Deploy landing** when you push to `stag` (see workflow `paths`).
+In-app **Settings → Help** loads the same user-guide sections via `lib/userGuideDoc.js`.
+
+Changing guide files triggers **Deploy landing** when you push to `stag` (see workflow `paths`).
 
 ## Deploy
 
@@ -39,9 +43,11 @@ Live URL pattern: `https://<user>.github.io/<repo>/`
 | Path | Content |
 |------|---------|
 | `/` | Home |
-| `/docs` | Docs index |
-| `/docs/how-it-works` | Full HOW_IT_WORKS |
-| `/legal/terms` | Terms summary |
-| `/legal/privacy` | Privacy summary |
+| `/docs` | Docs hub |
+| `/docs/getting-started` | Download & first launch |
+| `/docs/overview` … `/docs/troubleshooting` | Feature guides (14 chapters) |
+| `/docs/shipping` | Release & CI (maintainers) |
+| `/legal/terms` | Terms |
+| `/legal/privacy` | Privacy |
 
 Downloads still resolve the latest release assets via the GitHub API (`src/lib/releases.ts`).

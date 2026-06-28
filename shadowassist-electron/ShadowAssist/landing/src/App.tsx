@@ -7,7 +7,7 @@ import { DocsShipping } from '@/pages/DocsShipping'
 import { Home } from '@/pages/Home'
 import { MarketingBuiltForLive } from '@/pages/MarketingBuiltForLive'
 import { MarketingHowItWorks } from '@/pages/MarketingHowItWorks'
-import { HowItWorks } from '@/pages/HowItWorks'
+import { DocGuidePage } from '@/pages/DocGuidePage'
 import { LegalPage } from '@/pages/LegalPage'
 import terms from '../../legal/terms.txt?raw'
 import privacy from '../../legal/privacy.txt?raw'
@@ -22,8 +22,9 @@ export default function App() {
         <Route path="docs" element={<DocsLayout />}>
           <Route index element={<DocsHome />} />
           <Route path="getting-started" element={<DocsGettingStarted />} />
-          <Route path="how-it-works" element={<HowItWorks />} />
+          <Route path="how-it-works" element={<Navigate to="/docs/overview" replace />} />
           <Route path="shipping" element={<DocsShipping />} />
+          <Route path=":slug" element={<DocGuidePage />} />
         </Route>
         <Route
           path="legal/terms"
