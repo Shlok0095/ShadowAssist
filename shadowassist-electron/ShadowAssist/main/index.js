@@ -41,41 +41,153 @@ if (!gotLock) {
   })
 } else {
 const store = require('../lib/store')
+const { isPointInBounds, resolveOverlayMouseCapture } = require('../lib/overlayMousePolicy')
 const { resolveSystemPrompt } = require('../lib/defaultSystemPrompt')
 const { getAnswerStyleSuffix } = require('../lib/answerStyle')
-const contextVectorStore = require('../lib/contextVectorStore')
-const {
-  extractRetrievalQuery,
-} = require('../lib/contextProfiles')
 const {
   normalizePromptsList,
   formatActivePromptBlock,
   formatNotesTemplateBlock,
+  formatReferenceFilesBlock,
   getActivePrompt,
   pushPromptHistory,
-  promptContent,
   KNOWLEDGE_BASE_MAX,
 } = require('../lib/contextPrompts')
-const googleCalendar = require('../lib/googleCalendar')
-const rapidOcr = require('../lib/windowsOcr')
-store.runDataMigration()
 const hotkeys = require('../lib/hotkeys')
 const screenCapture = require('../lib/screenCapture')
+const screenshotQueue = require('../lib/screenshotQueue')
 const providers = require('../lib/providers')
 const {
   getTranscriptionRequestConfig,
   NATIVE_STT_PROVIDER_IDS,
 } = require('../lib/transcriptionRouting')
-const { transcribeLinearPcm } = require('../lib/nvidiaRivaStt')
 const sessionMemory = require('../lib/sessionMemory')
-const listenSessionSummaries = require('../lib/listenSessionSummaries')
-const { parseTranscriptEchoForDisplay } = require('../lib/transcriptEchoDisplay')
+const sessionRecorder = require('../lib/sessionRecorder')
+const { createMeetingSessionsStore } = require('../lib/meetingSessions')
+const { generateMeetingSummary } = require('../lib/meetingSummary')
+const { parsePlaybookFile } = require('../lib/playbookParser')
+const contextVectorStore = require('../lib/contextVectorStore')
 const { detectMeetingForegroundOrScan, MEETING_POLL_MS } = require('../lib/meetingForegroundWindows')
+const googleCalendar = require('../lib/googleCalendar')
+const { routeContext, formatAnswerContractBlock, formatDomainRoutingBlock } = require('../lib/contextRouter')
+const { modeTemplateFromPrompt } = require('../lib/answerPlanner')
+const meetingRecall = require('../lib/meetingRecall')
+const { createLongTermMemoryStore } = require('../lib/longTermMemory')
+const { detectMeetingMode, findPromptForTemplate, buildPromptFromStarterTemplate } = require('../lib/meetingModeDetector')
+const { parseTranscriptEchoForDisplay } = require('../lib/transcriptEchoDisplay')
+const localStt = require('../lib/localStt')
+const cloudRestStt = require('../lib/cloudRestStt')
+const streamingStt = require('../lib/streamingSttRouter')
+const { parseResumeTree, parseJdTree, formatResumeBlock, formatJdBlock, formatResumeBlockV2, formatJdBlockV2, buildProfileTreeV2VoiceGuard } = require('../lib/profileTreeService')
+const debugLog = require('../lib/debugLog')
+const { sessionToMarkdown } = require('../lib/sessionExport')
+const { createHindsightClient } = require('../lib/hindsightClient')
+const { buildAiResponseLanguageBlock } = require('../lib/aiResponseLanguage.cjs')
+const { generateFollowUpDraft } = require('../lib/followUpDraft')
+const { createSkillsService } = require('../lib/skillsService')
+const { createVectorMemoryStore } = require('../lib/vectorMemory')
+const embeddingClient = require('../lib/embedding/embeddingClient')
+const { createHindsightLocalServer, DEFAULT_PORT: HINDSIGHT_LOCAL_PORT } = require('../lib/hindsightLocalServer')
+const { createPhoneLinkManager } = require('../lib/phoneLinkManager')
+const { createPhoneLinkMicIngest } = require('../lib/phoneLinkMicIngest')
+const { createPhoneMirrorManager } = require('../lib/phoneMirror/phoneMirrorManager')
+const { TimedCache } = require('../lib/timedCache')
 
-listenSessionSummaries.initPersistence({
-  load: () => store.get('listenSessionSummaries'),
-  save: (rows) => store.set('listenSessionSummaries', rows),
+store.runDataMigration()
+
+/** Short-lived cache for profile/context blocks on repeated asks in the same session. */
+const profileContextCache = new TimedCache(60_000, 32)
+
+function profileContextCacheKey(query, routeDecision) {
+  const rd = routeDecision
+    ? [
+        routeDecision.useActiveMode ? 1 : 0,
+        routeDecision.useReferenceFiles ? 1 : 0,
+        routeDecision.useResume ? 1 : 0,
+        routeDecision.useJd ? 1 : 0,
+        routeDecision.useMeetingSummary ? 1 : 0,
+        routeDecision.useHindsightRecall ? 1 : 0,
+        routeDecision.useHybridRag ? 1 : 0,
+      ].join('')
+    : 'all'
+  const rev = [
+    store.get('activeContextPromptId') || '',
+    (store.get('contextPrompts') || []).length,
+    String(store.get('resumeContext') || '').length,
+    String(store.get('jdContext') || '').length,
+    store.get('profileTreeV2Enabled') === true ? 1 : 0,
+    store.get('intelligenceRoutingEnabled') === false ? 0 : 1,
+    String(store.get('knowledgeBase') || '').length,
+  ].join('|')
+  return `${String(query || '').trim().slice(0, 220)}::${rd}::${rev}`
+}
+
+const meetingSessions = createMeetingSessionsStore(store)
+const skillsService = createSkillsService({
+  skillsRoot: path.join(app.getPath('userData'), 'skills'),
 })
+const vectorMemory = createVectorMemoryStore({
+  memoryRoot: path.join(app.getPath('userData'), 'memory'),
+  store,
+  embedClient: embeddingClient,
+})
+const longTermMemory = createLongTermMemoryStore(store)
+const hindsight = createHindsightClient({
+  store,
+  longTermMemory,
+  meetingRecall,
+  meetingSessions,
+  sessionRecorder,
+  contextVectorStore,
+  vectorMemory,
+})
+const hindsightLocalServer = createHindsightLocalServer({
+  storeGet: (k) => store.get(k),
+  longTermMemory,
+  vectorMemory,
+  port: HINDSIGHT_LOCAL_PORT,
+})
+const phoneLinkMic = createPhoneLinkMicIngest({
+  storeGet: (k) => store.get(k),
+  onTranscript: (text) => {
+    appendSessionTranscriptLine(`You (phone): ${text}`)
+  },
+  isActive: () =>
+    store.get('phoneLinkEnabled') === true
+    && store.get('phoneLinkRemoteMicEnabled') === true
+    && sessionActive,
+})
+const phoneLink = createPhoneLinkManager({
+  storeGet: (k) => store.get(k),
+  storeSet: (k, v) => store.set(k, v),
+  onMicChunk: (pcm) => phoneLinkMic.write(pcm),
+  onMicSpeechEnded: () => phoneLinkMic.notifySpeechEnded(),
+  isMicAllowed: () =>
+    store.get('phoneLinkEnabled') === true
+    && store.get('phoneLinkRemoteMicEnabled') === true
+    && sessionActive,
+})
+const phoneMirror = createPhoneMirrorManager({
+  storeGet: (k) => store.get(k),
+})
+try {
+  contextVectorStore.indexAllPrompts(store.get('contextPrompts') || [], store)
+  scheduleReferenceVectorEnrichment()
+} catch (e) {
+  console.warn('[context-index] startup:', e?.message || e)
+}
+
+function scheduleReferenceVectorEnrichment() {
+  if (store.get('referenceVectorIndexEnabled') !== true) return
+  setImmediate(() => {
+    contextVectorStore
+      .enrichAllPromptEmbeddings(store.get('contextPrompts') || [], store, embeddingClient)
+      .then((r) => {
+        if (r?.embedded) console.log('[context-vector] embedded reference chunks:', r.embedded)
+      })
+      .catch((e) => console.warn('[context-vector] enrich:', e?.message || e))
+  })
+}
 
 let aiClientModule = null
 function getAiClient() {
@@ -99,6 +211,18 @@ function getMeetingToastHtmlPath() {
   return path.join(__dirname, '..', 'renderer', 'meeting-toast', 'index.html')
 }
 
+function getLauncherHtmlPath() {
+  const built = path.join(__dirname, '..', 'out', 'launcher', 'index.html')
+  if (fs.existsSync(built)) return built
+  return path.join(__dirname, '..', 'renderer', 'launcher', 'index.html')
+}
+
+function getGlobalChatHtmlPath() {
+  const built = path.join(__dirname, '..', 'out', 'global-chat', 'index.html')
+  if (fs.existsSync(built)) return built
+  return path.join(__dirname, '..', 'renderer', 'global-chat', 'index.html')
+}
+
 /** Window / taskbar icon: dev uses repo root logo.png; packaged uses extraResources copy. */
 function resolveAppIconPath() {
   if (app.isPackaged) {
@@ -115,16 +239,26 @@ let settingsWindow = null
 let tray = null
 let sessionActive = false
 let overlayVisible = true
+/** Polls cursor vs overlay bounds when mouse passthrough is enabled. */
+let mousePassthroughPollTimer = null
+/** Last applied capture mode — avoids spamming setIgnoreMouseEvents every poll tick. */
+let overlayMouseCaptureApplied = null
 let savedOpacity = 0.92
-let screenOcrText = ''
-let lastOcrTime = 0
 let lastResponse = ''
 let llmResponseInFlight = false
 let currentAbortController = null
+/** Screenshot captured at Ctrl+Enter hotkey instant — used by the next handleAskAI call. */
+let pendingAskVisionB64 = null
 let consentWindow = null
 let onboardingWindow = null
 /** Top-right meeting chip — excluded from stealth content-protection list. */
 let meetingToastWindow = null
+/** Phase 4 — compact launcher window (tray menu). */
+let launcherWindow = null
+/** Phase 8 — standalone global chat window. */
+let globalChatWindow = null
+/** Routes streaming AI events to overlay or global chat. */
+let aiEventTarget = 'overlay'
 /** Once shown or dismissed, same `eventId` is not shown again for this app launch. */
 const meetingToastSuppressedEventIds = new Set()
 let meetingForegroundTickInFlight = false
@@ -132,11 +266,66 @@ let meetingForegroundTimer = null
 /** Tracks last-seen time per platform (for logging / future use). */
 const meetingActiveByPlatform = new Map()
 const MEETING_INACTIVE_CLEAR_MS = 5 * 60 * 1000
-let appCoreStarted = false
 let calendarReminderTimer = null
 const calendarReminderSentKeys = new Set()
 const CALENDAR_REMINDER_POLL_MS = 30 * 1000
-const sessionSummaryJobs = new Set()
+let appCoreStarted = false
+let lastModeDetectAt = 0
+let modeSuggestionSentThisSession = false
+/** Templates dismissed this Listen session — may re-suggest after cooldown if speech shifts. */
+const modeSuggestionDismissedAt = new Map()
+const MODE_DETECT_MIN_MS = 22000
+const MODE_DETECT_AFTER_DISMISS_MS = 45000
+
+function maybeDetectMeetingMode() {
+  if (!sessionActive) return
+  if (store.get('meetingModeAutoDetectEnabled') === false) return
+  const now = Date.now()
+  if (now - lastModeDetectAt < MODE_DETECT_MIN_MS) return
+  lastModeDetectAt = now
+
+  const blob = sessionRecorder.recentTranscriptText(40)
+  const hit = detectMeetingMode(blob)
+  if (!hit) return
+
+  if (modeSuggestionDismissedAt.has(hit.template)) {
+    const dismissedAt = modeSuggestionDismissedAt.get(hit.template) || 0
+    if (now - dismissedAt < MODE_DETECT_AFTER_DISMISS_MS) return
+  }
+
+  let prompts = normalizePromptsList(store.get('contextPrompts') || [])
+  let match = findPromptForTemplate(prompts, hit.template)
+
+  if (!match) {
+    const draft = buildPromptFromStarterTemplate(hit.template, prompts)
+    if (!draft) return
+    prompts = normalizePromptsList([...prompts, draft])
+    store.set('contextPrompts', prompts)
+    try {
+      contextVectorStore.indexAllPrompts(prompts, store)
+      scheduleReferenceVectorEnrichment()
+    } catch (e) {
+      console.warn('[mode-detect] index:', e?.message || e)
+    }
+    match = draft
+  }
+
+  const activeId = store.get('activeContextPromptId')
+  if (activeId === match.id) return
+
+  if (modeSuggestionSentThisSession) return
+
+  modeSuggestionSentThisSession = true
+  sendToOverlay('mode-suggestion', {
+    promptId: match.id,
+    modeName: match.name || hit.label,
+    label: hit.label,
+    confidence: hit.confidence,
+    reason: hit.reason,
+    template: hit.template,
+    autoCreated: !!match.autoProvisioned,
+  })
+}
 
 function createTrayIcon(active = false) {
   const size = 16
@@ -152,163 +341,6 @@ function createTrayIcon(active = false) {
     canvas[offset + 2] = color[2]; canvas[offset + 3] = a
   }
   return nativeImage.createFromBuffer(canvas, { width: size, height: size })
-}
-
-function buildSessionSummaryPrompt(session) {
-  const transcript = (session.transcript || []).map((t) => t.text).join('\n')
-  const asks = (session.asks || []).map((a, i) =>
-    `Q${i + 1}: ${a.question || '(implicit from transcript)'}\nA${i + 1}: ${a.response || '(no response)'}`
-  ).join('\n\n')
-  const interactions = (session.overlayInteractions || []).map((x) =>
-    `${x.at}: ${x.action} (${x.source || 'n/a'})`
-  ).join('\n')
-  return [
-    `SESSION RANGE: ${session.startedAt} -> ${session.endedAt || 'in-progress'}`,
-    `\nTRANSCRIPT:\n${transcript || '(empty)'}`,
-    `\nQ&A:\n${asks || '(none)'}`,
-    `\nOVERLAY INTERACTIONS:\n${interactions || '(none)'}`,
-  ].join('\n')
-}
-
-function buildFallbackSessionSummary(session) {
-  const lines = Array.isArray(session?.transcript) ? session.transcript : []
-  const asks = Array.isArray(session?.asks) ? session.asks : []
-  const responses = asks.filter((a) => String(a?.response || '').trim())
-  const uniqueSpeeches = Array.from(new Set(lines.map((t) => String(t?.text || '').trim()).filter(Boolean)))
-  const bullets = []
-  bullets.push(`- Session: ${session?.startedAt || 'unknown'} to ${session?.endedAt || 'unknown'}.`)
-  if (uniqueSpeeches[0]) bullets.push(`- Key point: ${uniqueSpeeches[0].slice(0, 140)}.`)
-  if (uniqueSpeeches[1]) bullets.push(`- Additional context: ${uniqueSpeeches[1].slice(0, 140)}.`)
-  bullets.push(`- Transcript activity: ${lines.length} captured lines.`)
-  bullets.push(`- Q&A activity: ${asks.length} prompts, ${responses.length} answered responses.`)
-  if (responses[0]?.response) bullets.push(`- Example response: ${String(responses[0].response).slice(0, 150)}.`)
-  return bullets.slice(0, 8).join('\n')
-}
-
-async function summarizeListenSessionInBackground(sessionId) {
-  if (!sessionId || sessionSummaryJobs.has(sessionId)) return
-  sessionSummaryJobs.add(sessionId)
-  listenSessionSummaries.markSummaryGenerating(sessionId)
-  try {
-    const session = listenSessionSummaries.getSummaryById(sessionId)
-    if (!session) throw new Error('Session not found')
-    const provider = store.get('provider') || 'groq'
-    const keyField = providers.getApiKeyField(provider)
-    const apiKey = store.get(keyField)
-    if (!apiKey) {
-      listenSessionSummaries.setSummaryReady(sessionId, buildFallbackSessionSummary(session))
-      sendToSettingsWindow('listen-session-summaries:update')
-      return
-    }
-    const getStore = (k) => store.get(k)
-    const model = providers.getModelForProvider(provider, getStore)
-    const messages = [
-      {
-        role: 'system',
-        content: [
-          'You summarize meeting sessions.',
-          'Output MUST be exactly one stylish bullet-point section.',
-          'No headings. No numbered lists. No intro/outro sentence.',
-          'Return 6 to 10 bullets, each one line, each under 22 words.',
-          'Use markdown "-" bullets only.',
-          'Each bullet should start with a short plain label, e.g. "- Decision: ...".',
-          'Do NOT use markdown emphasis characters (*, **, _, __) anywhere.',
-          'Cover only facts that actually appear in the session data.',
-          'If a category has no evidence, OMIT it entirely.',
-          'NEVER output placeholder bullets like "No blockers mentioned" or "No risks mentioned".',
-          'Prefer concrete details over generic statements.',
-          'At least 2 bullets must include specific technical/detail evidence from transcript/Q&A.',
-          'If a fact is uncertain, prefix that bullet with "(uncertain)".',
-          'Do not invent facts not present in input.',
-        ].join('\n'),
-      },
-      {
-        role: 'user',
-        content: buildSessionSummaryPrompt(session),
-      },
-    ]
-    let out = ''
-    for await (const token of getAiClient().streamChat(
-      provider,
-      apiKey,
-      { messages, model, maxTokens: 420 },
-      getStore,
-    )) {
-      out += token
-    }
-    const text = String(out || '').trim()
-    if (!text) throw new Error('LLM returned empty summary')
-    listenSessionSummaries.setSummaryReady(sessionId, text)
-    sendToSettingsWindow('listen-session-summaries:update')
-  } catch (e) {
-    const session = listenSessionSummaries.getSummaryById(sessionId)
-    const fallback = session ? buildFallbackSessionSummary(session) : ''
-    if (fallback) {
-      listenSessionSummaries.setSummaryReady(sessionId, fallback)
-    } else {
-      listenSessionSummaries.setSummaryError(sessionId, e?.message || 'Summary generation failed')
-    }
-    sendToSettingsWindow('listen-session-summaries:update')
-  } finally {
-    sessionSummaryJobs.delete(sessionId)
-  }
-}
-
-function stopCalendarReminderPoll() {
-  if (calendarReminderTimer) {
-    clearInterval(calendarReminderTimer)
-    calendarReminderTimer = null
-  }
-}
-
-function makeCalendarReminderKey(eventId, reminderMinutes) {
-  return `${String(eventId || '')}::${Number(reminderMinutes || 0)}`
-}
-
-function shouldNotifyForMeetingStart({ startIso, reminderMinutes }) {
-  const s = new Date(String(startIso || '')).getTime()
-  if (!Number.isFinite(s)) return false
-  const now = Date.now()
-  const target = s - Number(reminderMinutes || 0) * 60 * 1000
-  const lag = now - target
-  // Fire when target just passed in this polling window.
-  return lag >= 0 && lag <= CALENDAR_REMINDER_POLL_MS + 5000
-}
-
-async function runCalendarReminderTick() {
-  if (store.get('calendarRemindersEnabled') === false) return
-  const status = googleCalendar.getConnectionStatus((k) => store.get(k))
-  if (!status.connected) return
-  const reminderMinutes = Math.max(0, Number(store.get('calendarReminderMinutes') || 0))
-  try {
-    const out = await googleCalendar.listUpcomingAcceptedMeetings(
-      (k) => store.get(k),
-      (k, v) => store.set(k, v),
-    )
-    const meetings = Array.isArray(out?.meetings) ? out.meetings : []
-    for (const m of meetings) {
-      if (!shouldNotifyForMeetingStart({ startIso: m.start, reminderMinutes })) continue
-      const dedupeKey = makeCalendarReminderKey(m.id, reminderMinutes)
-      if (calendarReminderSentKeys.has(dedupeKey)) continue
-      calendarReminderSentKeys.add(dedupeKey)
-      const title = reminderMinutes > 0
-        ? `Meeting starts in ${reminderMinutes} min`
-        : 'Meeting is starting now'
-      const body = `${String(m.title || 'Upcoming meeting').slice(0, 120)}`
-      sendToOverlay('notify', { message: `📅 ${title}: ${body}` })
-      try {
-        new Notification({ title: 'VeilAssist', body: `${title}: ${body}` }).show()
-      } catch (_) {}
-    }
-  } catch (_) {}
-}
-
-function startCalendarReminderPoll() {
-  stopCalendarReminderPoll()
-  void runCalendarReminderTick()
-  calendarReminderTimer = setInterval(() => {
-    void runCalendarReminderTick()
-  }, CALENDAR_REMINDER_POLL_MS)
 }
 
 function getDisplayBounds() {
@@ -388,6 +420,7 @@ function createOverlayWindow() {
   overlayWindow.once('ready-to-show', () => {
     overlayWindow.show()
     applyContentProtectionAllWindows()
+    applyTaskbarVisibility()
     overlayWindow.setAlwaysOnTop(true, 'screen-saver')
     overlayWindow.setVisibleOnAllWorkspaces(true)
     overlayWindow.setFullScreenable(false)
@@ -396,10 +429,20 @@ function createOverlayWindow() {
     syncOverlayMouseCapture()
   })
   overlayWindow.webContents.on('dom-ready', () => applyContentProtectionAllWindows())
+  overlayWindow.webContents.on('did-finish-load', () => {
+    applyContentProtectionAllWindows()
+    syncOverlayMouseCapture()
+    // Re-sync after overlay reload — session-status may have fired before React mounted.
+    if (sessionActive) sendToOverlay('session-status', true)
+  })
   overlayWindow.webContents.on('did-fail-load', (_, code, desc, url) => {
     console.error('[overlay] did-fail-load', code, desc, url)
   })
-  overlayWindow.on('closed', () => { overlayWindow = null })
+  overlayWindow.on('closed', () => {
+    overlayWindow = null
+    overlayMouseCaptureApplied = null
+    stopMousePassthroughPoll()
+  })
   return overlayWindow
 }
 
@@ -408,23 +451,33 @@ function isStealthModeEnabled() {
   return store.get('stealth_mode') === true
 }
 
-/** Windows that must follow Stealth (content protection). Never include meeting toast or future summary window. */
-function getStealthManagedWindows() {
-  return [overlayWindow, settingsWindow, consentWindow, onboardingWindow].filter((w) => w && !w.isDestroyed())
-}
-
-function applyContentProtectionAllWindows() {
-  const enabled = isStealthModeEnabled()
-  for (const win of getStealthManagedWindows()) {
+/**
+ * Overlay content protection follows stealth toggle:
+ * - Visible mode (stealth OFF): protection OFF — you see the overlay; it can appear in screen shares.
+ * - Stealth mode (stealth ON): protection ON — hidden from screen capture, shares, and recordings.
+ * Ctrl+Enter capture uses hide()+opacity shield (see withOverlayExcludedFromScreenCapture).
+ */
+function applyOverlayContentProtection() {
+  if (overlayWindow && !overlayWindow.isDestroyed()) {
     try {
-      win.setContentProtection(enabled)
+      overlayWindow.setContentProtection(isStealthModeEnabled())
     } catch (_) {}
   }
 }
 
-function clearMeetingToastDedupe() {
-  meetingToastSuppressedEventIds.clear()
-  meetingActiveByPlatform.clear()
+/** Windows that must follow Stealth (content protection). Never include meeting toast or future summary window. */
+function getStealthManagedWindows() {
+  return [overlayWindow, settingsWindow, consentWindow, onboardingWindow, globalChatWindow].filter(
+    (w) => w && !w.isDestroyed(),
+  )
+}
+
+function applyContentProtectionAllWindows() {
+  applyOverlayContentProtection()
+  const stealthEnabled = isStealthModeEnabled()
+  for (const win of [settingsWindow, consentWindow, onboardingWindow].filter((w) => w && !w.isDestroyed())) {
+    try { win.setContentProtection(stealthEnabled) } catch (_) {}
+  }
 }
 
 function closeMeetingToastWindow() {
@@ -492,10 +545,8 @@ function showMeetingToastFromMain(payload) {
     meetingToastWindow.setAlwaysOnTop(true, 'screen-saver')
     meetingToastWindow.setVisibleOnAllWorkspaces(true)
   } catch (_) {}
-  console.log('[meeting-toast] creating window')
   meetingToastWindow.loadFile(getMeetingToastHtmlPath()).catch((e) => console.error('[meeting-toast] load', e))
   meetingToastWindow.once('ready-to-show', () => {
-    console.log('[meeting-toast] ready-to-show')
     if (meetingToastWindow && !meetingToastWindow.isDestroyed()) {
       try {
         meetingToastWindow.showInactive()
@@ -508,7 +559,6 @@ function showMeetingToastFromMain(payload) {
     }
   })
   meetingToastWindow.webContents.once('did-finish-load', () => {
-    console.log('[meeting-toast] did-finish-load')
     if (!meetingToastWindow || meetingToastWindow.isDestroyed()) return
     meetingToastWindow.webContents.send('meeting-toast-payload', {
       headline: headline.slice(0, 48),
@@ -520,7 +570,6 @@ function showMeetingToastFromMain(payload) {
     meetingToastWindow = null
   })
 
-  // Fallback for systems where transparent toast windows fail to render.
   setTimeout(() => {
     if (!meetingToastWindow || meetingToastWindow.isDestroyed()) return
     let visible = false
@@ -533,7 +582,6 @@ function showMeetingToastFromMain(payload) {
         title: 'VeilAssist',
         body: headline.slice(0, 80),
       }).show()
-      console.log('[meeting-toast] native notification fallback shown')
     } catch (e) {
       console.warn('[meeting-toast] native fallback failed:', e?.message || e)
     }
@@ -593,43 +641,105 @@ function startMeetingForegroundPoll() {
   meetingForegroundTimer = setInterval(runMeetingForegroundTick, MEETING_POLL_MS)
 }
 
+function stopCalendarReminderPoll() {
+  if (calendarReminderTimer) {
+    clearInterval(calendarReminderTimer)
+    calendarReminderTimer = null
+  }
+}
+
+function makeCalendarReminderKey(eventId, reminderMinutes) {
+  return `${String(eventId || '')}::${Number(reminderMinutes || 0)}`
+}
+
+function shouldNotifyForMeetingStart({ startIso, reminderMinutes }) {
+  const s = new Date(String(startIso || '')).getTime()
+  if (!Number.isFinite(s)) return false
+  const now = Date.now()
+  const target = s - Number(reminderMinutes || 0) * 60 * 1000
+  const lag = now - target
+  return lag >= 0 && lag <= CALENDAR_REMINDER_POLL_MS + 5000
+}
+
+async function runCalendarReminderTick() {
+  if (store.get('calendarRemindersEnabled') === false) return
+  const status = googleCalendar.getConnectionStatus((k) => store.get(k))
+  if (!status.connected) return
+  const reminderMinutes = Math.max(0, Number(store.get('calendarReminderMinutes') || 0))
+  try {
+    const out = await googleCalendar.listUpcomingAcceptedMeetings(
+      (k) => store.get(k),
+      (k, v) => store.set(k, v),
+    )
+    const meetings = Array.isArray(out?.meetings) ? out.meetings : []
+    for (const m of meetings) {
+      if (!shouldNotifyForMeetingStart({ startIso: m.start, reminderMinutes })) continue
+      const dedupeKey = makeCalendarReminderKey(m.id, reminderMinutes)
+      if (calendarReminderSentKeys.has(dedupeKey)) continue
+      calendarReminderSentKeys.add(dedupeKey)
+      const title = reminderMinutes > 0
+        ? `Meeting starts in ${reminderMinutes} min`
+        : 'Meeting is starting now'
+      const body = `${String(m.title || 'Upcoming meeting').slice(0, 120)}`
+      sendToOverlay('notify', { message: `📅 ${title}: ${body}` })
+      try {
+        new Notification({ title: 'VeilAssist', body: `${title}: ${body}` }).show()
+      } catch (_) {}
+    }
+  } catch (e) {
+    console.warn('[calendar-reminder] tick error:', e?.message || e)
+  }
+}
+
+function startCalendarReminderPoll() {
+  stopCalendarReminderPoll()
+  void runCalendarReminderTick()
+  calendarReminderTimer = setInterval(() => {
+    void runCalendarReminderTick()
+  }, CALENDAR_REMINDER_POLL_MS)
+}
+
+/** Compositor settle time after hiding overlay — matches Natively macOS v2.0.9 (150ms). */
+const CAPTURE_COMPOSITOR_MS = 150
+
 /**
- * Exclude the overlay from desktop capture during OCR/vision thumbnail grabs only.
- * - Stealth ON: setContentProtection(true) causes Windows DXGI Desktop Duplication to refuse ALL
- *   captures in the process — not just the protected window. We briefly lift protection for the
- *   ~60ms snapshot window, then restore it. The gap is imperceptible and the overlay stays hidden.
- * - Visible mode (stealth OFF): do NOT toggle opacity (Windows flickers visibly on every OCR tick).
- * - Overlay hidden via tray: brief opacity 0 so capture omits the chat UI.
+ * Natively-style capture wrapper: opacity 0 → hide() → compositor wait → snap → restore.
+ * Works in visible mode (content protection OFF): overlay is fully removed from the
+ * compositor so the background captures cleanly. Stealth mode briefly lifts protection
+ * while hidden so Windows DXGI can still grab the desktop.
  */
 async function withOverlayExcludedFromScreenCapture(fn) {
   if (!overlayWindow || overlayWindow.isDestroyed()) return fn()
 
-  if (isStealthModeEnabled()) {
-    // Temporarily drop content protection so DXGI/WGC can capture the desktop.
-    try {
-      overlayWindow.setContentProtection(false)
-      await new Promise((resolve) => setTimeout(resolve, 60))
-      return await fn()
-    } finally {
-      if (!overlayWindow.isDestroyed()) {
-        overlayWindow.setContentProtection(true)
-      }
-    }
-  }
+  const restoreAfterCapture = overlayVisible
+  const stealth = isStealthModeEnabled()
 
-  // Overlay visible: user sees it on screen — don't blink it for every OCR tick.
-  if (overlayVisible) {
-    return fn()
-  }
-
-  const previousOpacity = overlayWindow.getOpacity()
   try {
     overlayWindow.setOpacity(0)
-    await new Promise((resolve) => setTimeout(resolve, 50))
+    if (overlayWindow.isVisible()) {
+      overlayWindow.hide()
+    }
+    if (stealth) {
+      try { overlayWindow.setContentProtection(false) } catch (_) {}
+    }
+    await new Promise((resolve) => setTimeout(resolve, CAPTURE_COMPOSITOR_MS))
     return await fn()
   } finally {
     if (!overlayWindow.isDestroyed()) {
-      overlayWindow.setOpacity(previousOpacity)
+      applyOverlayContentProtection()
+      if (restoreAfterCapture) {
+        overlayWindow.setOpacity(savedOpacity)
+        if (!overlayWindow.isVisible()) {
+          overlayWindow.showInactive()
+        }
+        try {
+          overlayWindow.setAlwaysOnTop(true, 'screen-saver')
+          overlayWindow.setVisibleOnAllWorkspaces(true)
+        } catch (_) {}
+        syncOverlayMouseCapture()
+      } else {
+        overlayWindow.setOpacity(0)
+      }
     }
   }
 }
@@ -641,11 +751,12 @@ function showOverlay() {
     createOverlayWindow()
     return
   }
-  // Don't setOpacity before the window has been shown once — ready-to-show handles first paint
-  if (!overlayWindow.isDestroyed() && overlayWindow.isVisible()) {
+  if (!overlayWindow.isDestroyed()) {
+    if (!overlayWindow.isVisible()) overlayWindow.show()
     overlayWindow.setOpacity(savedOpacity)
     syncOverlayMouseCapture()
     applyContentProtectionAllWindows()
+    applyTaskbarVisibility()
   }
 }
 
@@ -656,27 +767,140 @@ function hideOverlay() {
     overlayWindow.setOpacity(0)
     syncOverlayMouseCapture()
     applyContentProtectionAllWindows()
+    applyTaskbarVisibility()
   }
 }
 
 function toggleOverlay() { overlayVisible ? hideOverlay() : showOverlay() }
 
+const MOUSE_PASSTHROUGH_POLL_MS = 50
+
+function stopMousePassthroughPoll() {
+  if (mousePassthroughPollTimer != null) {
+    clearInterval(mousePassthroughPollTimer)
+    mousePassthroughPollTimer = null
+  }
+}
+
+function applyOverlayMouseCapturePolicy(cursorInsideOverlay = false) {
+  if (!overlayWindow || overlayWindow.isDestroyed()) return
+  const policy = resolveOverlayMouseCapture({
+    overlayVisible,
+    passthroughEnabled: store.get('overlayMousePassthroughEnabled') === true,
+    cursorInsideOverlay,
+  })
+  const mode = policy.forward ? 'forward' : policy.ignore ? 'ignore' : 'capture'
+  if (overlayMouseCaptureApplied === mode) return
+  overlayMouseCaptureApplied = mode
+  if (policy.forward) {
+    overlayWindow.setIgnoreMouseEvents(true, { forward: true })
+  } else {
+    overlayWindow.setIgnoreMouseEvents(!!policy.ignore)
+  }
+}
+
+function tickMousePassthroughPoll() {
+  if (!overlayWindow || overlayWindow.isDestroyed() || !overlayVisible) {
+    stopMousePassthroughPoll()
+    return
+  }
+  if (store.get('overlayMousePassthroughEnabled') !== true) {
+    stopMousePassthroughPoll()
+    applyOverlayMouseCapturePolicy(false)
+    return
+  }
+  let inside = false
+  try {
+    const point = screen.getCursorScreenPoint()
+    inside = isPointInBounds(point, overlayWindow.getBounds())
+  } catch (_) {}
+  applyOverlayMouseCapturePolicy(inside)
+}
+
+function startMousePassthroughPoll() {
+  stopMousePassthroughPoll()
+  tickMousePassthroughPoll()
+  mousePassthroughPollTimer = setInterval(tickMousePassthroughPoll, MOUSE_PASSTHROUGH_POLL_MS)
+}
+
 /**
- * While the overlay is shown, capture all mouse input on the window (no forward).
- * `forward: true` lets hover reach Chromium but often lets wheel / interaction leak to apps behind
- * (misaligned with “floating assistant” UX — cf. Electron issues on setIgnoreMouseEvents + wheel).
+ * Overlay mouse capture — hidden overlay ignores all input.
+ * Passthrough mode polls cursor position: forward clicks only when cursor is outside the overlay
+ * window bounds so notch buttons remain clickable on hover.
  */
+function isSettingsWindowActive() {
+  return !!(
+    settingsWindow &&
+    !settingsWindow.isDestroyed() &&
+    settingsWindow.isVisible() &&
+    !settingsWindow.isMinimized()
+  )
+}
+
+/** One taskbar icon (overlay only). Visible mode: show when overlay or settings is open. Invisible: always hidden. */
+function shouldShowAppInTaskbar() {
+  if (isStealthModeEnabled()) return false
+  if (store.get('hideFromTaskbarEnabled') === true) return false
+  return overlayVisible || isSettingsWindowActive()
+}
+
+function restoreAppWindow(win) {
+  if (!win || win.isDestroyed()) return false
+  if (win.isMinimized()) win.restore()
+  if (!win.isVisible()) win.show()
+  win.focus()
+  try {
+    win.moveTop()
+  } catch (_) {}
+  return true
+}
+
+function applyTaskbarVisibility() {
+  const show = shouldShowAppInTaskbar()
+  if (overlayWindow && !overlayWindow.isDestroyed()) {
+    try {
+      overlayWindow.setSkipTaskbar(!show)
+    } catch (_) {}
+  }
+  // Settings / Global Chat never get their own taskbar entry (avoids duplicate icons and flash on restore).
+  for (const w of [settingsWindow, globalChatWindow, launcherWindow]) {
+    if (w && !w.isDestroyed()) {
+      try {
+        w.setSkipTaskbar(true)
+      } catch (_) {}
+    }
+  }
+}
+
 function syncOverlayMouseCapture() {
   if (!overlayWindow || overlayWindow.isDestroyed()) return
-  if (overlayVisible) overlayWindow.setIgnoreMouseEvents(false)
-  else overlayWindow.setIgnoreMouseEvents(true)
+  stopMousePassthroughPoll()
+  overlayMouseCaptureApplied = null
+  const policy = resolveOverlayMouseCapture({
+    overlayVisible,
+    passthroughEnabled: store.get('overlayMousePassthroughEnabled') === true,
+    cursorInsideOverlay: false,
+  })
+  if (policy.usePassthroughPoll) {
+    startMousePassthroughPoll()
+    return
+  }
+  applyOverlayMouseCapturePolicy(false)
 }
 
 let appQuitting = false
 /** Full exit: hotkeys, timers, capture workers, all windows, tray — then `app.quit()`. */
-function quitApplication() {
+async function quitApplication() {
   if (appQuitting) return
   appQuitting = true
+  stopMousePassthroughPoll()
+  if (sessionActive) {
+    try {
+      await stopSession()
+    } catch (e) {
+      console.warn('[quit] stopSession failed:', e?.message || e)
+    }
+  }
   try {
     hotkeys.unregisterAll()
   } catch (_) {}
@@ -687,11 +911,17 @@ function quitApplication() {
     sessionMemory.shutdown()
   } catch (_) {}
   try {
-    screenCapture.terminateOcr()
+    localStt.shutdown()
+    cloudRestStt.stopListening()
+    hindsightLocalServer.stop()
+    phoneLink.stop()
+    phoneLinkMic.stop()
+    phoneMirror.stop()
   } catch (_) {}
   stopMeetingForegroundPoll()
   closeMeetingToastWindow()
-  for (const w of [overlayWindow, settingsWindow, consentWindow, onboardingWindow]) {
+  stopCalendarReminderPoll()
+  for (const w of [overlayWindow, settingsWindow, consentWindow, onboardingWindow, globalChatWindow]) {
     try {
       if (w && !w.isDestroyed()) w.destroy()
     } catch (_) {}
@@ -700,6 +930,7 @@ function quitApplication() {
   settingsWindow = null
   consentWindow = null
   onboardingWindow = null
+  globalChatWindow = null
   try {
     if (tray) tray.destroy()
   } catch (_) {}
@@ -825,7 +1056,11 @@ function moveOverlay(dx, dy) {
 }
 
 function createSettingsWindow() {
-  if (settingsWindow) { settingsWindow.focus(); return }
+  if (restoreAppWindow(settingsWindow)) {
+    applyTaskbarVisibility()
+    return
+  }
+  settingsWindow = null
   const { width: sw, height: sh } = screen.getPrimaryDisplay().workAreaSize
   const w = Math.min(1320, Math.max(1024, Math.floor(sw * 0.88)))
   const h = Math.min(760, Math.max(560, Math.floor(sh * 0.82)))
@@ -839,6 +1074,7 @@ function createSettingsWindow() {
     transparent: true,
     backgroundColor: '#00000000',
     roundedCorners: true,
+    skipTaskbar: true,
     ...(APP_ICON ? { icon: APP_ICON } : {}),
     webPreferences: {
       preload: preloadPath,
@@ -851,8 +1087,115 @@ function createSettingsWindow() {
   settingsWindow.loadFile(useBuilt
     ? path.join(__dirname, '..', 'out', 'settings', 'index.html')
     : path.join(__dirname, '..', 'renderer', 'settings', 'index.html'))
-  settingsWindow.on('closed', () => { settingsWindow = null })
-  settingsWindow.once('ready-to-show', () => applyContentProtectionAllWindows())
+  settingsWindow.on('closed', () => {
+    settingsWindow = null
+    applyTaskbarVisibility()
+  })
+  settingsWindow.on('minimize', applyTaskbarVisibility)
+  settingsWindow.on('restore', applyTaskbarVisibility)
+  settingsWindow.on('show', applyTaskbarVisibility)
+  settingsWindow.on('hide', applyTaskbarVisibility)
+  settingsWindow.once('ready-to-show', () => {
+    applyContentProtectionAllWindows()
+    applyTaskbarVisibility()
+  })
+}
+
+function createGlobalChatWindow() {
+  if (restoreAppWindow(globalChatWindow)) return
+  globalChatWindow = null
+  const { width: sw, height: sh } = screen.getPrimaryDisplay().workAreaSize
+  const w = Math.min(720, Math.max(480, Math.floor(sw * 0.42)))
+  const h = Math.min(820, Math.max(520, Math.floor(sh * 0.72)))
+  globalChatWindow = new BrowserWindow({
+    width: w,
+    height: h,
+    minWidth: 420,
+    minHeight: 480,
+    center: true,
+    frame: true,
+    title: 'VeilAssist — Global Chat',
+    backgroundColor: '#0a0a0b',
+    skipTaskbar: true,
+    ...(APP_ICON ? { icon: APP_ICON } : {}),
+    webPreferences: {
+      preload: preloadPath,
+      contextIsolation: true,
+      nodeIntegration: false,
+      sandbox: false,
+      backgroundThrottling: false,
+    },
+  })
+  globalChatWindow.setMenuBarVisibility(false)
+  globalChatWindow.loadFile(getGlobalChatHtmlPath())
+  globalChatWindow.on('closed', () => { globalChatWindow = null })
+  globalChatWindow.once('ready-to-show', () => {
+    applyContentProtectionAllWindows()
+    applyTaskbarVisibility()
+  })
+}
+
+async function syncPhoneLinkAutoStart() {
+  const enabled = store.get('phoneLinkEnabled') === true
+  if (!enabled) {
+    phoneLink.stop()
+    return { ok: true, running: false }
+  }
+  try {
+    const out = await phoneLink.start()
+    if (sessionActive) phoneLink.pushState({ sessionActive: true })
+    return { ok: true, running: true, ...out }
+  } catch (e) {
+    console.warn('[phone-link] start failed:', e?.message || e)
+    return { ok: false, error: e?.message || String(e) }
+  }
+}
+
+async function syncHindsightAutoStart() {
+  const enabled = store.get('hindsightAutoStartEnabled') === true
+  if (!enabled) {
+    hindsightLocalServer.stop()
+    return { ok: true, running: false }
+  }
+  try {
+    const out = await hindsightLocalServer.start()
+    const url = out?.url || `http://127.0.0.1:${HINDSIGHT_LOCAL_PORT}`
+    if (!String(store.get('hindsightApiUrl') || '').trim()) {
+      store.set('hindsightApiUrl', url)
+    }
+    return { ok: true, running: true, url }
+  } catch (e) {
+    console.warn('[hindsight-local] start failed:', e?.message || e)
+    return { ok: false, error: e?.message || String(e) }
+  }
+}
+
+function createLauncherWindow() {
+  if (launcherWindow && !launcherWindow.isDestroyed()) {
+    launcherWindow.focus()
+    return
+  }
+  launcherWindow = new BrowserWindow({
+    width: 340,
+    height: 460,
+    minWidth: 300,
+    minHeight: 400,
+    resizable: true,
+    center: true,
+    frame: true,
+    title: 'VeilAssist Launcher',
+    backgroundColor: '#0c0c0e',
+    ...(APP_ICON ? { icon: APP_ICON } : {}),
+    webPreferences: {
+      preload: preloadPath,
+      contextIsolation: true,
+      nodeIntegration: false,
+      sandbox: false,
+      backgroundThrottling: false,
+    },
+  })
+  launcherWindow.loadFile(getLauncherHtmlPath())
+  launcherWindow.on('closed', () => { launcherWindow = null })
 }
 
 function setupTray() {
@@ -865,6 +1208,19 @@ function setupTray() {
       { label: sessionActive ? 'Stop Session' : 'Start Session', click: () => (sessionActive ? stopSession() : requestSessionStart()) },
       { type: 'separator' },
       { label: 'Settings', click: createSettingsWindow },
+      { label: 'Launcher', click: createLauncherWindow },
+      { label: 'Global Chat', click: createGlobalChatWindow },
+      {
+        label: phoneMirror.isMirroring() ? 'Stop Phone Mirror' : 'Start Phone Mirror',
+        click: async () => {
+          if (phoneMirror.isMirroring()) phoneMirror.stop()
+          else {
+            const out = await phoneMirror.start()
+            if (!out?.ok && out?.error) console.warn('[phone-mirror]', out.error)
+          }
+          if (tray?.updateTrayMenu) tray.updateTrayMenu()
+        },
+      },
       { type: 'separator' },
       { label: 'Quit', click: quitApplication },
     ]))
@@ -874,32 +1230,180 @@ function setupTray() {
   tray.on('double-click', toggleOverlay)
 }
 
-function updateTrayIcon() { if (tray) tray.setImage(createTrayIcon(sessionActive)) }
+function updateTrayIcon() {
+  if (tray) tray.setImage(createTrayIcon(sessionActive))
+}
+
+function applyOpenAtLoginSetting(enabled) {
+  try {
+    app.setLoginItemSettings({
+      openAtLogin: !!enabled,
+      openAsHidden: true,
+    })
+  } catch (e) {
+    console.warn('[login] setLoginItemSettings failed:', e?.message || e)
+  }
+}
+
+function ensureDebugLogFileExists(filePath) {
+  try {
+    const dir = path.dirname(filePath)
+    if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true })
+    if (!fs.existsSync(filePath)) fs.writeFileSync(filePath, '', 'utf8')
+  } catch (_) {}
+}
+
+function scheduleVectorMemoryMaintenance() {
+  setImmediate(async () => {
+    if (store.get('vectorMemoryEnabled') !== true) return
+    try {
+      if (!store.get('vectorMemoryMigrationV1')) {
+        const r = await vectorMemory.migrateExistingSessions(meetingSessions.list())
+        store.set('vectorMemoryMigrationV1', true)
+        console.log('[vector-memory] migration done', r)
+      }
+    } catch (e) {
+      console.warn('[vector-memory] migration failed:', e?.message || e)
+    }
+  })
+}
+
+function getSessionRecorderMeta() {
+  try {
+    const prompts = normalizePromptsList(store.get('contextPrompts') || [])
+    const activeId = store.get('activeContextPromptId') || null
+    const active = getActivePrompt(prompts, activeId)
+    const rawNotes = active?.notesTemplate
+    const sections = Array.isArray(rawNotes?.sections)
+      ? rawNotes.sections
+      : Array.isArray(rawNotes)
+        ? rawNotes
+        : []
+    const notesSectionTitles = sections
+      .map((s) => String(s?.title || '').trim())
+      .filter(Boolean)
+    return {
+      modeName: String(active?.name || 'Session').trim() || 'Session',
+      notesSectionTitles,
+    }
+  } catch {
+    return { modeName: 'Session', notesSectionTitles: [] }
+  }
+}
+
+function appendSessionTranscriptLine(segment) {
+  const line = String(segment || '').trim()
+  if (!line) return
+  sessionMemory.appendTranscriptSegment(line)
+  sessionRecorder.appendTranscript(line)
+  phoneLink.appendTranscriptLine(line)
+  maybeDetectMeetingMode()
+}
+
+function broadcastMeetingSummaryStatus(payload) {
+  sendToOverlay('meeting-summary-status', payload)
+  sendToSettingsWindow('meeting-summary-status', payload)
+  sendToLauncher('meeting-summary-status', payload)
+}
+
+async function finalizeMeetingSession(snapshot) {
+  if (!sessionRecorder.hasContent(snapshot)) {
+    console.warn('[meeting-session] skip recap — no transcript or asks captured')
+    return
+  }
+  if (store.get('doNotSaveMeetingsEnabled') === true) {
+    broadcastMeetingSummaryStatus({ state: 'skipped', reason: 'retention' })
+    return
+  }
+  try {
+    broadcastMeetingSummaryStatus({ state: 'generating' })
+    const summaryResult = await generateMeetingSummary(snapshot, { store, getAiClient })
+    const record = meetingSessions.save(snapshot, summaryResult)
+    try {
+      const summaryText = String(summaryResult?.text || '').trim()
+      if (summaryText) {
+        longTermMemory.retain({
+          content: summaryText,
+          source: 'meeting_summary',
+          mode: record.modeName,
+          meetingId: record.id,
+        })
+      }
+      if (snapshot.exchanges?.length) {
+        const snippet = snapshot.exchanges
+          .slice(-6)
+          .map((e) => `Q: ${e.question}\nA: ${String(e.answer || '').slice(0, 500)}`)
+          .join('\n\n')
+        longTermMemory.retain({
+          content: snippet,
+          source: 'meeting_exchanges',
+          mode: record.modeName,
+          meetingId: record.id,
+          tags: ['qa'],
+        })
+      }
+    } catch (ltmErr) {
+      console.warn('[ltm] retain failed:', ltmErr?.message || ltmErr)
+    }
+    setImmediate(() => {
+      vectorMemory.indexSession(record).catch((err) => {
+        console.warn('[vector-memory] index session failed:', err?.message || err)
+      })
+    })
+    broadcastMeetingSummaryStatus({
+      state: 'ready',
+      session: {
+        id: record.id,
+        modeName: record.modeName,
+        summarySource: record.summarySource,
+        startedAt: record.startedAt,
+      },
+    })
+  } catch (e) {
+    console.warn('[meeting-session] finalize failed:', e?.message || e)
+    broadcastMeetingSummaryStatus({ state: 'error' })
+  }
+}
+
+async function stopSession() {
+  if (!sessionActive) return
+  sessionActive = false
+
+  // Drain while capture may still be running — flush VAD before snapshot + before overlay stops mic.
+  try {
+    await localStt.stopListeningAndDrain()
+  } catch (e) {
+    console.warn('[local-stt] drain on stop:', e?.message || e)
+  }
+
+  sendToOverlay('session-status', false)
+  sendToLauncher('session-status', false)
+  phoneLink.handleDesktopEvent('session-status', false)
+  phoneLinkMic.stop()
+
+  const snapshot = sessionRecorder.end()
+  sessionMemory.wipe()
+  sendToOverlay('session-purge')
+  phoneLink.handleDesktopEvent('session-purge')
+  updateTrayIcon()
+  if (tray?.updateTrayMenu) tray.updateTrayMenu()
+  sendToOverlay('mode-suggestion', null)
+  if (snapshot) await finalizeMeetingSession(snapshot)
+}
 
 function startSession() {
   if (sessionActive) return
   sessionActive = true
+  modeSuggestionSentThisSession = false
+  modeSuggestionDismissedAt.clear()
+  lastModeDetectAt = Date.now()
   sessionMemory.wipe()
-  listenSessionSummaries.startSession()
+  sessionRecorder.begin(getSessionRecorderMeta())
   updateTrayIcon()
   if (tray?.updateTrayMenu) tray.updateTrayMenu()
   sendToOverlay('session-status', true)
-  runMeetingForegroundTick()
-}
-
-function stopSession() {
-  if (!sessionActive) return
-  sessionActive = false
-  const stopped = listenSessionSummaries.stopSession()
-  sessionMemory.wipe()
-  screenOcrText = ''
-  sendToOverlay('session-purge')
-  updateTrayIcon()
-  if (tray?.updateTrayMenu) tray.updateTrayMenu()
-  sendToOverlay('session-status', false)
-  // Fresh session should be able to notify upcoming meetings again.
-  if (calendarReminderSentKeys.size > 500) calendarReminderSentKeys.clear()
-  if (stopped?.id) void summarizeListenSessionInBackground(stopped.id)
+  sendToLauncher('session-status', true)
+  phoneLink.handleDesktopEvent('session-status', true)
 }
 
 /** Session lines included when overlay did not pass a buffer (tight = no stale replay). */
@@ -910,57 +1414,136 @@ const VERY_RECENT_SPEECH_MS = 2200
 const CONTEXT_ROUTING_RULES = `
 
 ---
-## CONTEXT
-- ## AUDIO and ## SCREEN are always included for this turn (either may be empty).
-- Use both when present; if one is empty, answer from the other and any image.
-- If the screenshot may include this assistant's overlay, do not repeat a prior answer unless the user asks again.
-- When ## QUESTION is present, treat it as the primary ask.`
+## CONTEXT RULES
+- An attached screenshot is the PRIMARY source of context. Analyze it fully.
+- ## AUDIO (if present) is the user's spoken context — treat it as additional signal alongside the screenshot.
+- ## QUESTION (if present) is the user's explicit typed question — answer it directly.
+- ## TASK means: analyze the screenshot and respond to whatever is visible.
+- NEVER say you cannot see the screen or that context is missing — a screenshot is always attached unless the turn is audio/text only.
+- If the screenshot shows this assistant's own overlay with a prior answer, do not repeat it — focus on new screen content.`
 
-let contextReindexTimer = null
-function scheduleContextReindex() {
-  clearTimeout(contextReindexTimer)
-  contextReindexTimer = setTimeout(async () => {
-    try {
-      const stats = await contextVectorStore.indexContextData(
-        {
-          knowledgeBase: store.get('knowledgeBase') || store.get('contextProfile') || '',
-          contextPrompts: store.get('contextPrompts') || [],
-        },
-        app.getPath('userData'),
-      )
-      store.set('contextIndexMeta', stats)
-      sendToOverlay('context-index-update', stats)
-      sendToSettingsWindow('context-index-update', stats)
-    } catch (e) {
-      console.warn('[context] reindex failed:', e?.message || e)
-    }
-  }, 800)
-}
+async function buildProfileContextBlock({ query = '', routeDecision = null } = {}) {
+  const cacheKey = profileContextCacheKey(query, routeDecision)
+  const cached = profileContextCache.get(cacheKey)
+  if (typeof cached === 'string') return cached
 
-async function buildProfileContextBlock({ userQ, structured, transcript, cleanScreen }) {
   try {
     const prompts = normalizePromptsList(store.get('contextPrompts') || [])
     const activeId = store.get('activeContextPromptId') || null
     const activePrompt = getActivePrompt(prompts, activeId)
+    const routingOn = store.get('intelligenceRoutingEnabled') !== false && routeDecision
+    const useAll = !routingOn
+    const profileTreeV2 = store.get('profileTreeV2Enabled') === true
+    const q = String(query || '').trim()
 
-    const instructionsBlock = formatActivePromptBlock(activePrompt)
-    const notesBlock = formatNotesTemplateBlock(activePrompt)
-    if (!instructionsBlock.trim()) {
-      console.warn('[profile] no active mode prompt in store — set Profile → mode → Save mode')
-    } else {
-      console.log('[profile] injecting mode:', activePrompt?.name || activeId, 'chars:', instructionsBlock.length)
+    let out = ''
+
+    if (useAll || routeDecision.useActiveMode) {
+      out += formatActivePromptBlock(activePrompt)
     }
 
-    await contextVectorStore.loadIndex(app.getPath('userData'))
-    const query = extractRetrievalQuery({ userQ, structured, transcript, cleanScreen })
-    const retrievedBlock = query.trim()
-      ? contextVectorStore.formatContextBlock(query, { promptId: activeId || null })
-      : ''
+    let referenceBlock = ''
+    if (useAll || routeDecision.useReferenceFiles) {
+      if (activePrompt && contextVectorStore.referenceNeedsRetrieval(activePrompt)) {
+        const chunks = await contextVectorStore.retrieveChunksAsync(
+          activePrompt.id,
+          q,
+          {},
+          store,
+          embeddingClient,
+        )
+        referenceBlock = contextVectorStore.formatRetrievedReferenceBlock(chunks)
+        if (!referenceBlock) referenceBlock = formatReferenceFilesBlock(activePrompt)
+      } else {
+        referenceBlock = formatReferenceFilesBlock(activePrompt)
+      }
+      out += referenceBlock
+    }
 
-    return `${instructionsBlock}${notesBlock}${retrievedBlock}`
+    if (routingOn && routeDecision.useResume) {
+      const resume = String(store.get('resumeContext') || '').trim()
+      if (resume) {
+        const tree = store.get('resumeTree')
+        const block = profileTreeV2 ? formatResumeBlockV2(tree, resume, q) : formatResumeBlock(tree, resume)
+        if (block) out += `\n\n---\n## RESUME / BACKGROUND\n${block}`
+      }
+    }
+
+    if (routingOn && routeDecision.useJd) {
+      const jd = String(store.get('jdContext') || '').trim()
+      if (jd) {
+        const tree = store.get('jdTree')
+        const block = profileTreeV2 ? formatJdBlockV2(tree, jd, q) : formatJdBlock(tree, jd)
+        if (block) out += `\n\n---\n## JOB DESCRIPTION\n${block}`
+      }
+    }
+
+    if (profileTreeV2 && (out.includes('## RESUME') || out.includes('## JOB DESCRIPTION'))) {
+      out += buildProfileTreeV2VoiceGuard()
+    }
+
+    if (useAll || routeDecision.useActiveMode) {
+      out += formatNotesTemplateBlock(activePrompt)
+    }
+
+    if (routingOn && (routeDecision.useMeetingSummary || routeDecision.useHindsightRecall || routeDecision.useHybridRag)) {
+      const recall = await hindsight.hybridRecall({
+        query: String(query || '').trim(),
+        useMeetingSummary: routeDecision.useMeetingSummary,
+        useHindsightRecall: routeDecision.useHindsightRecall,
+        useHybridRag: routeDecision.useHybridRag,
+        promptId: activePrompt?.id,
+        maxResults: 6,
+        timeoutMs: routeDecision.hindsightRecallTimeoutMs || 800,
+      })
+      out += recall.block
+    }
+
+    if (!referenceBlock && (useAll || routeDecision.useReferenceFiles)) {
+      const kb = String(store.get('knowledgeBase') || '').trim()
+      if (kb) {
+        const clipped = kb.length > KNOWLEDGE_BASE_MAX ? `${kb.slice(0, KNOWLEDGE_BASE_MAX)}\n…` : kb
+        out += `\n\n---\n## REFERENCE (facts only — do not invent beyond this)\n${clipped}`
+      }
+    }
+
+    profileContextCache.set(cacheKey, out)
+    return out
   } catch (e) {
-    console.warn('[context] retrieval failed:', e?.message || e)
+    console.warn('[context] profile block failed:', e?.message || e)
     return ''
+  }
+}
+
+function resolveContextRouteDecision({ userQuery, audioTranscript, _askMeta, hasLiveTranscript }) {
+  if (store.get('intelligenceRoutingEnabled') === false) return null
+  try {
+    const prompts = normalizePromptsList(store.get('contextPrompts') || [])
+    const activePrompt = getActivePrompt(prompts, store.get('activeContextPromptId') || null)
+    const mode = modeTemplateFromPrompt(activePrompt)
+    const resume = String(store.get('resumeContext') || '').trim()
+    const jd = String(store.get('jdContext') || '').trim()
+    const refs = activePrompt?.referenceFiles
+    const referenceFilesAvailable = Array.isArray(refs) && refs.some((f) => String(f?.text || '').trim())
+
+    let source = 'manual_input'
+    if (_askMeta?.assistTrigger === 'speech' || _askMeta?.assistTrigger === 'screen') source = 'what_to_answer'
+    else if (_askMeta?.source === 'transcript') source = 'transcript'
+
+    const decision = routeContext({
+      userQuery: String(userQuery || '').trim(),
+      mode,
+      profileAvailable: !!(resume || activePrompt),
+      jdAvailable: !!jd,
+      referenceFilesAvailable,
+      hasLiveTranscript: !!hasLiveTranscript,
+      source,
+    })
+    console.log('[context-router]', decision.reason)
+    return decision
+  } catch (e) {
+    console.warn('[context-router] failed:', e?.message || e)
+    return null
   }
 }
 
@@ -979,98 +1562,72 @@ function deriveDisplayAskSource({ hasQuestion, hasAudio, includeScreen, hasVisio
 }
 
 async function handleAskAI(userQuestion, audioTranscript, _askMeta = {}) {
-  console.timeEnd('LLM_START_DELAY')
-  console.log('DEBUG_HANDLE_ASK_AI_INPUT', {
-    question: userQuestion,
-    transcript: audioTranscript,
-    transcriptLength: audioTranscript?.length,
-    meta: _askMeta,
-  })
 
   if (currentAbortController) { currentAbortController.abort(); currentAbortController = null }
   const abortController = new AbortController()
   currentAbortController = abortController
+  aiEventTarget = _askMeta?.source === 'global_chat' ? 'global_chat' : 'overlay'
 
   const provider = store.get('provider') || 'groq'
   const keyField = providers.getApiKeyField(provider)
   const apiKey = store.get(keyField)
   if (!apiKey) {
-    sendToOverlay('ai-error', 'No API key. Settings → paste your key.')
+    sendToAiEventTarget('ai-error', 'No API key. Settings → paste your key.')
     currentAbortController = null
     return
   }
 
-  sendToOverlay('ai-thinking', true)
+  sendToAiEventTarget('ai-thinking', true)
   sessionMemory.touch()
 
-  const wantVision = providers.supportsVision(provider)
+  // noScreen: true = Natively's Ctrl+Shift+Enter (audio/text only — skip all screenshot capture)
+  const noScreen = !!_askMeta?.noScreen
+  const wantVision = !noScreen && providers.supportsVision(provider)
   let visionB64 = null
 
   if (wantVision) {
-    const visionPromise = (async () => {
-      try {
-        visionB64 = await screenCapture.captureScreenForVision()
-      } catch (_) {}
-    })()
-    void visionPromise
-      .then(() => {
-        console.log('Vision snapshot ready post-start')
-      })
-      .catch((e) => console.warn('post-start vision:', e?.message || e))
+    try {
+      // Hotkey pre-capture (taken at Ctrl+Enter instant) beats any later async capture.
+      if (pendingAskVisionB64) {
+        visionB64 = pendingAskVisionB64
+        pendingAskVisionB64 = null
+        console.log('[vision] hotkey pre-capture, b64 len:', visionB64?.length)
+      } else {
+        visionB64 = await screenCapture.captureScreenForVision({
+          bypassCaptureCooldown: !!_askMeta?.bypassCaptureCooldown,
+        })
+        console.log('[vision] live capture, b64 len:', visionB64?.length ?? 'null')
+      }
+    } catch (e) {
+      pendingAskVisionB64 = null
+      console.warn('[vision] capture failed:', e?.message || e)
+    }
+  }
+
+  let phoneVisionB64 = null
+  if (
+    wantVision
+    && store.get('phoneMirrorIncludeInAsk') === true
+    && phoneMirror.isMirroring()
+  ) {
+    try {
+      phoneVisionB64 = await phoneMirror.captureScreenshotBase64()
+      if (phoneVisionB64) console.log('[phone-mirror] screencap for Ask, b64 len:', phoneVisionB64.length)
+    } catch (e) {
+      console.warn('[phone-mirror] screencap failed:', e?.message || e)
+    }
   }
 
   const sp = store.get('systemPrompt')
-  /** Built-in base prompt lives in lib/defaultSystemPrompt.js; empty store = use that. Custom text in Shadow profile overrides. */
   const systemPrompt = resolveSystemPrompt(sp)
-  /** Route between transcribing (audio) and screen mode — structured user-turn routing. */
   const isScreenMode = _askMeta?.mode === 'screen' || _askMeta?.assistTrigger === 'screen'
-  const cleanScreen = String(screenOcrText || '').trim()
-  const overlayAudioEarly = audioTranscript || ''
-  const userQEarly = (userQuestion || '').trim()
-  const structuredEarly =
-    typeof _askMeta?.structuredUserPrompt === 'string' ? _askMeta.structuredUserPrompt.trim() : ''
-  const profilePrompts = normalizePromptsList(store.get('contextPrompts') || [])
-  const profileActiveId = store.get('activeContextPromptId') || null
-  const profileActivePrompt = getActivePrompt(profilePrompts, profileActiveId)
-  const profileBlock = await buildProfileContextBlock({
-    userQ: userQEarly,
-    structured: structuredEarly,
-    transcript: overlayAudioEarly,
-    cleanScreen,
-  })
-  const playbookText = (store.get('playbooks') || []).filter(p => p.enabled).map(p => p.content).join('\n\n')
-  let fullSystem = `${systemPrompt}${profileBlock}${CONTEXT_ROUTING_RULES}`
-  if (playbookText) fullSystem = `${fullSystem}\n\n---\n## REFERENCE PLAYBOOKS\n${playbookText}`
-
   const structured =
     typeof _askMeta?.structuredUserPrompt === 'string' ? _askMeta.structuredUserPrompt.trim() : ''
-  if (structured) {
-    const segmentedTranscript = structured.includes('## ACTIVE QUESTION')
-    fullSystem = `${fullSystem}\n\n---\n${isScreenMode
-      ? 'Analyze the SCREEN section and solve the visible problem. Use QUESTION only if present.'
-      : segmentedTranscript
-        ? 'Answer ONLY the ACTIVE QUESTION in the user message. RECENT CONTEXT is optional clarification — do not merge unrelated earlier questions.'
-        : 'Respond ONLY to the last question in TRANSCRIPT. Use SCREEN only if essential.'
-    }`
-  }
-
-  const getStore = (k) => store.get(k)
-  const model = providers.getModelForProvider(provider, getStore)
 
   const overlayAudio = audioTranscript || ''
   const userQ = (userQuestion || '').trim()
 
-  fullSystem = `${fullSystem}\n\n---\n${getAnswerStyleSuffix(store.get('answerStyle'), {
-    userQuestion: userQ,
-    transcript: overlayAudio,
-    screen: cleanScreen,
-    activeModeName: profileActivePrompt?.name || '',
-    activeModeContent: promptContent(profileActivePrompt),
-  })}`
-
   let audioCombined = overlayAudio
-  // Screen / OCR-only turns intentionally send empty audio — never backfill from session memory
-  // or the same sentence replays on every OCR tick (non-conversational loop).
   const structuredHasSegmentedAudio =
     !!structured && structured.includes('## ACTIVE QUESTION')
   if (!String(audioCombined).trim() && !isScreenMode && !structuredHasSegmentedAudio) {
@@ -1084,13 +1641,72 @@ async function handleAskAI(userQuestion, audioTranscript, _askMeta = {}) {
     }
   }
 
-  const screenT = String(cleanScreen).trim()
+  const retrievalQuery = [
+    userQ,
+    audioCombined,
+    structured.slice(0, 600),
+  ]
+    .map((s) => String(s || '').trim())
+    .filter(Boolean)
+    .join(' ')
+
+  const routeDecision = resolveContextRouteDecision({
+    userQuery: retrievalQuery,
+    audioTranscript: audioCombined,
+    _askMeta,
+    hasLiveTranscript: !!String(audioCombined).trim(),
+  })
+
+  const profileBlock = await buildProfileContextBlock({ query: retrievalQuery, routeDecision })
+  const contractBlock = routeDecision ? formatAnswerContractBlock(routeDecision.answerContract) : ''
+  const domainBlock =
+    routeDecision?.domainTag && store.get('intelligenceRoutingEnabled') !== false
+      ? formatDomainRoutingBlock(routeDecision.domainTag)
+      : ''
+  let skillBlock = ''
+  if (_askMeta?.skillBlock && String(_askMeta.skillBlock).trim()) {
+    skillBlock = `\n\n---\n${String(_askMeta.skillBlock).trim()}`
+  } else if (_askMeta?.skillSlug) {
+    skillBlock = skillsService.buildSkillBlock(String(_askMeta.skillSlug))
+    if (!skillBlock.trim()) {
+      sendToAiEventTarget('ai-error', `Skill "/${_askMeta.skillSlug}" not found. Settings → Skills to create it.`)
+      sendToAiEventTarget('ai-thinking', false)
+      currentAbortController = null
+      return
+    }
+  }
+  let fullSystem = `${systemPrompt}${profileBlock}${skillBlock}${contractBlock}${domainBlock}${CONTEXT_ROUTING_RULES}${buildAiResponseLanguageBlock(store.get('aiResponseLanguage'))}`
+  if (store.get('answerDiversityEnabled') === true) {
+    fullSystem += `\n\n---\n## STYLE\n${getAiClient().buildAnswerDiversityHint()}`
+  }
+  if (phoneVisionB64 && store.get('phoneMirrorIncludeInAsk') === true) {
+    fullSystem += '\n\n---\n## PHONE MIRROR (secondary)\nA second image may show the connected Android screen. The desktop screenshot is primary; use the phone image only as supplementary context.'
+  }
+  if (_askMeta?.pastMeetingContext && String(_askMeta.pastMeetingContext).trim()) {
+    fullSystem += `\n\n---\n## PAST MEETING CONTEXT (recall — facts only, do not invent)\n${String(_askMeta.pastMeetingContext).trim().slice(0, 4000)}`
+  }
+  if (structured) {
+    const segmentedTranscript = structured.includes('## ACTIVE QUESTION')
+    fullSystem = `${fullSystem}\n\n---\n${isScreenMode
+      ? 'Analyze the attached screenshot and solve the visible problem completely. Use ## QUESTION or ## AUDIO only if present as supplementary context.'
+      : segmentedTranscript
+        ? 'Answer ONLY the ACTIVE QUESTION in the user message. RECENT CONTEXT is optional clarification — do not merge unrelated earlier questions.'
+        : 'Respond ONLY to the last question in TRANSCRIPT. Use SCREEN only if essential.'
+    }`
+  }
+
+  const getStore = (k) => store.get(k)
+  const model = providers.getModelForProvider(provider, getStore)
+
+  fullSystem = `${fullSystem}\n\n---\n${getAnswerStyleSuffix(store.get('answerStyle'))}`
+
   const transcript = String(audioCombined).trim()
-  if (!screenT && !transcript && !userQ && !structured) {
-    console.log('BLOCKED: no input at all')
+  // Block if there's truly nothing to respond to (no speech, typed question, or structured context).
+  // Vision screenshots are handled separately via visionB64 — they don't need text input.
+  if (!transcript && !userQ && !structured && !visionB64) {
     currentAbortController = null
-    sendToOverlay('ai-no-output')
-    sendToOverlay('ai-thinking', false)
+    sendToAiEventTarget('ai-no-output')
+    sendToAiEventTarget('ai-thinking', false)
     return
   }
 
@@ -1108,25 +1724,33 @@ async function handleAskAI(userQuestion, audioTranscript, _askMeta = {}) {
     hasQuestion = !!userQ || hasTypedFromOverlay || hasSpeechFromOverlay || hasScreenFromOverlay
   } else {
     const contextParts = []
-    contextParts.push(`## AUDIO\n${audioCombined}`)
-    contextParts.push(`## SCREEN\n${cleanScreen}`)
+    if (audioCombined) contextParts.push(`## AUDIO\n${audioCombined}`)
     hasAudio = !!transcript
     hasQuestion = !!userQ
-    contextParts.push(
-      hasQuestion
-        ? `## QUESTION\n${userQ}`
-        : '## TASK\nAnswer based on the audio and screen content above (and the image if present).',
-    )
+    if (hasQuestion) {
+      contextParts.push(`## QUESTION\n${userQ}`)
+    } else if (visionB64) {
+      // Screen-only turn (no speech, no typed question): instruct the LLM to analyse the screenshot directly.
+      contextParts.push('## TASK\nAnalyze the attached screenshot. Identify and solve or answer the question, problem, or task visible on screen. If it is a coding or algorithm question, provide the full solution code immediately.')
+    } else {
+      contextParts.push('## TASK\nRespond based on the audio transcript above.')
+    }
     userTurnText = contextParts.join('\n\n')
   }
 
   const content = [{ type: 'text', text: userTurnText }]
   if (visionB64) {
-    content.unshift({ type: 'image_url', image_url: { url: `data:image/png;base64,${visionB64}` } })
+    content.unshift({ type: 'image_url', image_url: { url: `data:image/jpeg;base64,${visionB64}` } })
+  }
+  if (phoneVisionB64) {
+    content.push({
+      type: 'image_url',
+      image_url: { url: `data:image/png;base64,${phoneVisionB64}` },
+    })
   }
 
   const hasVision = !!visionB64
-  const includeScreen = !!(screenT || hasVision || (structured && hasScreenFromOverlay))
+  const includeScreen = !!(hasVision || (structured && hasScreenFromOverlay))
   const displayAskSource = deriveDisplayAskSource({
     hasQuestion,
     hasAudio,
@@ -1147,18 +1771,12 @@ async function handleAskAI(userQuestion, audioTranscript, _askMeta = {}) {
   const transcriptEcho = transcriptEchoParsed?.question?.trim() || null
   const transcriptEchoContext = transcriptEchoParsed?.context?.trim() || null
 
-  const askSummaryId = listenSessionSummaries.beginAsk({
-    question: userQ || _askMeta?.typedQuestion || '',
-    askSource: displayAskSource,
-    promptPreview: userTurnText,
-  })
-
   const screenContextForUi =
     typeof _askMeta?.screenContext === 'string' && _askMeta.screenContext.trim()
       ? _askMeta.screenContext.trim()
       : null
 
-  sendToOverlay('ai-start', {
+  sendToAiEventTarget('ai-start', {
     askSource: displayAskSource,
     transcriptEcho,
     transcriptEchoContext,
@@ -1166,8 +1784,6 @@ async function handleAskAI(userQuestion, audioTranscript, _askMeta = {}) {
   })
   llmResponseInFlight = true
 
-  let sawFirstToken = false
-  let timeToFirstTokenStarted = false
   try {
     const messages = [{ role: 'system', content: fullSystem }, { role: 'user', content: content.length === 1 ? content[0].text : content }]
     const userContent = messages[1].content
@@ -1177,59 +1793,58 @@ async function handleAskAI(userQuestion, audioTranscript, _askMeta = {}) {
         : Array.isArray(userContent)
           ? userContent.filter((p) => p && p.type === 'text').map((p) => p.text || '').join('\n\n')
           : ''
-    console.log('DEBUG_LLM_CONTEXT', {
-      structured: !!structured,
-      includesAudioContext: prompt.includes('## AUDIO CONTEXT') || prompt.includes('## AUDIO'),
-      includesScreenContext: prompt.includes('## SCREEN CONTEXT') || prompt.includes('## SCREEN'),
-      promptPreview: prompt.slice(0, 500),
-    })
-    if (structured) {
-      console.log('FINAL PROMPT (main):', prompt)
-    }
-
-    console.time('TIME_TO_FIRST_TOKEN')
-    timeToFirstTokenStarted = true
     let fullText = ''
-    for await (const token of getAiClient().streamChat(provider, apiKey, { messages, model, maxTokens: 1024, signal: abortController.signal }, getStore)) {
+    for await (const token of getAiClient().streamChat(
+      provider,
+      apiKey,
+      {
+        messages,
+        model,
+        maxTokens: 8192,
+        signal: abortController.signal,
+        userQuestion: userQ || retrievalQuery,
+      },
+      getStore,
+    )) {
       if (abortController.signal.aborted) break
-      if (!sawFirstToken) {
-        sawFirstToken = true
-        console.timeEnd('TIME_TO_FIRST_TOKEN')
-      }
       fullText += token
-      sendToOverlay('ai-token', token)
-    }
-    if (timeToFirstTokenStarted && !sawFirstToken) {
-      try {
-        console.timeEnd('TIME_TO_FIRST_TOKEN')
-      } catch (_) {}
+      sendToAiEventTarget('ai-token', token)
     }
     if (!abortController.signal.aborted) {
       lastResponse = fullText
-      listenSessionSummaries.completeAsk(askSummaryId, fullText)
-      // One completed answer = consume mic context; next turn is OCR + new speech only.
       sessionMemory.clearTranscript()
-    } else {
-      listenSessionSummaries.failAsk(askSummaryId, 'Aborted')
+      screenshotQueue.clearQueue().catch(() => {})
+      sendToOverlay('screenshot:queue-cleared')
+      if (fullText.trim()) {
+        const qLabel =
+          userQ ||
+          transcriptEcho ||
+          (structured ? 'Assist (session context)' : hasVision ? 'Assist (screen)' : 'Assist')
+        sessionRecorder.recordExchange(qLabel, fullText)
+      }
     }
   } catch (err) {
-    if (timeToFirstTokenStarted && !sawFirstToken) {
-      try {
-        console.timeEnd('TIME_TO_FIRST_TOKEN')
-      } catch (_) {}
-    }
-    if (err.name === 'AbortError' || abortController.signal.aborted) sendToOverlay('ai-aborted')
-    else sendToOverlay('ai-error', err.message || 'Request failed')
-    listenSessionSummaries.failAsk(askSummaryId, err?.message || 'Request failed')
+    if (err.name === 'AbortError' || abortController.signal.aborted) sendToAiEventTarget('ai-aborted')
+    else sendToAiEventTarget('ai-error', err.message || 'Request failed')
   } finally {
     llmResponseInFlight = false
     if (currentAbortController === abortController) currentAbortController = null
-    sendToOverlay('ai-thinking', false)
+    sendToAiEventTarget('ai-thinking', false)
   }
 }
 
 function sendToOverlay(channel, ...args) {
   if (overlayWindow && !overlayWindow.isDestroyed()) overlayWindow.webContents.send(channel, ...args)
+}
+
+function sendToGlobalChat(channel, ...args) {
+  if (globalChatWindow && !globalChatWindow.isDestroyed()) globalChatWindow.webContents.send(channel, ...args)
+}
+
+function sendToAiEventTarget(channel, ...args) {
+  if (aiEventTarget === 'global_chat') sendToGlobalChat(channel, ...args)
+  else sendToOverlay(channel, ...args)
+  phoneLink.handleDesktopEvent(channel, ...args)
 }
 
 const UI_ACCENT_THEME_IDS = new Set([
@@ -1244,40 +1859,47 @@ function sendToSettingsWindow(channel, ...args) {
   if (settingsWindow && !settingsWindow.isDestroyed()) settingsWindow.webContents.send(channel, ...args)
 }
 
-function broadcastOcrStatus() {
-  const payload = rapidOcr.getWarmupState()
-  sendToOverlay('ocr-status-update', payload)
-  sendToSettingsWindow('ocr-status-update', payload)
+function sendToLauncher(channel, ...args) {
+  if (launcherWindow && !launcherWindow.isDestroyed()) launcherWindow.webContents.send(channel, ...args)
 }
 
-/** Load ONNX models in background after boot — first packaged load can take 10–30s (unlike instant dev). */
-function startBackgroundOcrWarmup() {
-  const st = rapidOcr.getWarmupState()
-  if (st.ready || st.state === 'loading') {
-    broadcastOcrStatus()
-    return
+function broadcastVerboseLogging(enabled) {
+  const v = !!enabled
+  for (const w of [overlayWindow, settingsWindow, consentWindow, onboardingWindow]) {
+    try {
+      if (w && !w.isDestroyed()) w.webContents.send('verbose-logging-changed', v)
+    } catch (_) {}
   }
-  broadcastOcrStatus()
-  console.log('[ocr] background warmup starting…')
-  const { ocrDebugLog } = require('../lib/ocrDebugLog')
-  ocrDebugLog('warmup_start', rapidOcr.getDiagnostics())
-  screenCapture
-    .initOcr()
-    .then(() => {
-      console.log('[ocr] background warmup done')
-      ocrDebugLog('warmup_ok', rapidOcr.getDiagnostics())
-      broadcastOcrStatus()
+}
+
+function applyVerboseDebugLoggingSetting(enabled) {
+  const v = !!enabled
+  store.set('verboseDebugLogging', v)
+  debugLog.setVerboseDebugLogging(v)
+  broadcastVerboseLogging(v)
+  if (v) {
+    sendToSettingsWindow('settings-toast', {
+      message: 'Verbose debug logging enabled',
+      detail: debugLog.getLogPath(),
+      action: 'open-log',
+      durationMs: 8000,
     })
-    .catch((e) => {
-      console.error('[ocr] background warmup failed:', e?.message || e)
-      ocrDebugLog('warmup_fail', { error: e?.message || String(e), ...rapidOcr.getDiagnostics() })
-      broadcastOcrStatus()
-    })
+  }
 }
 
 function setupHotkeys() {
   hotkeys.register('toggleOverlay', toggleOverlay)
-  hotkeys.register('askAI', () => sendToOverlay('trigger-ask-ai'))
+  hotkeys.register('hideOverlay', hideOverlay)
+  hotkeys.register('askAI', async () => {
+    pendingAskVisionB64 = null
+    try {
+      pendingAskVisionB64 = await screenCapture.captureScreenForVision({ bypassCaptureCooldown: true })
+    } catch (e) {
+      console.warn('[vision] hotkey pre-capture failed:', e?.message || e)
+    }
+    sendToOverlay('trigger-ask-ai')
+  })
+  hotkeys.register('askAINoScreen', () => sendToOverlay('trigger-ask-ai-no-screen'))
   hotkeys.register('clearChat', () => {
     sendToOverlay('clear-conversation')
     lastResponse = ''
@@ -1287,10 +1909,34 @@ function setupHotkeys() {
   hotkeys.register('moveDown', () => moveOverlay(0, 40))
   hotkeys.register('moveLeft', () => moveOverlay(-40, 0))
   hotkeys.register('moveRight', () => moveOverlay(40, 0))
-  hotkeys.register('scrollUp', () => sendToOverlay('scroll', -1))
-  hotkeys.register('scrollDown', () => sendToOverlay('scroll', 1))
+  hotkeys.register('scrollUp', () => {
+    showOverlay()
+    sendToOverlay('scroll', -1)
+  })
+  hotkeys.register('scrollDown', () => {
+    showOverlay()
+    sendToOverlay('scroll', 1)
+  })
   hotkeys.register('settings', createSettingsWindow)
   hotkeys.register('copyResponse', () => { if (lastResponse) clipboard.writeText(lastResponse) })
+  hotkeys.register('focusOverlayInput', () => {
+    showOverlay()
+    sendToOverlay('overlay:focus-input')
+  })
+  hotkeys.register('captureScreenshot', async () => {
+    try {
+      let filePath
+      await withOverlayExcludedFromScreenCapture(async () => {
+        filePath = await screenshotQueue.takeScreenshot()
+      })
+      const preview = await screenshotQueue.getBase64Preview(filePath)
+      sendToOverlay('screenshot:queued', { path: filePath, preview, queueSize: screenshotQueue.getQueue().length })
+      console.log('[captureScreenshot] queued:', filePath)
+    } catch (e) {
+      console.warn('[captureScreenshot] failed:', e?.message || e)
+      sendToOverlay('screenshot:error', { error: e?.message || 'Screenshot failed' })
+    }
+  })
   hotkeys.registerAll()
 }
 
@@ -1330,6 +1976,7 @@ function setupIPC() {
     const v = !!enabled
     store.set('stealth_mode', v)
     applyContentProtectionAllWindows()
+    applyTaskbarVisibility()
     sendToOverlay('stealth-mode-update', v)
     sendToSettingsWindow('stealth-mode-update', v)
     return v
@@ -1340,22 +1987,46 @@ function setupIPC() {
     version: app.getVersion(),
     productName: 'VeilAssist',
   }))
-
-  ipcMain.handle('meeting-toast:show', (_, payload) => {
-    try {
-      return showMeetingToastFromMain(payload && typeof payload === 'object' ? payload : {})
-    } catch (e) {
-      return { ok: false, error: e?.message || String(e) }
+  ipcMain.handle('help:get-doc', () => {
+    const candidates = [
+      path.join(__dirname, '..', 'HOW_IT_WORKS.md'),
+      path.join(app.getAppPath(), 'HOW_IT_WORKS.md'),
+    ]
+    for (const p of candidates) {
+      try {
+        if (fs.existsSync(p)) return fs.readFileSync(p, 'utf8')
+      } catch (_) {}
     }
+    return 'Documentation file (HOW_IT_WORKS.md) was not found in this build.'
   })
-  ipcMain.on('meeting-toast:dismiss', (e, rawEventId) => {
-    if (!meetingToastWindow || meetingToastWindow.isDestroyed()) return
-    if (e.sender !== meetingToastWindow.webContents) return
-    const dismissedId = String(rawEventId || '').trim()
-    if (dismissedId) meetingToastSuppressedEventIds.add(dismissedId)
-    try {
-      meetingToastWindow.close()
-    } catch (_) {}
+  ipcMain.handle('logs:open-folder', async () => {
+    const dir = debugLog.getLogDir()
+    await shell.openPath(dir)
+    return { ok: true, path: dir }
+  })
+  ipcMain.handle('debug-log:get-path', () => debugLog.getLogPath())
+  ipcMain.handle('debug-log:open-file', async () => {
+    const p = debugLog.getLogPath()
+    ensureDebugLogFileExists(p)
+    await shell.openPath(p)
+    return { ok: true, path: p }
+  })
+  ipcMain.on('debug-log:forward', (_e, level, message) => {
+    debugLog.appendMessage(String(level || 'LOG'), String(message || ''))
+  })
+  ipcMain.handle('meeting-sessions:export', async (_, id) => {
+    const session = meetingSessions.get(id)
+    if (!session) return { ok: false, error: 'Session not found' }
+    const md = sessionToMarkdown(session)
+    const defaultName = `veilassist-session-${session.id || Date.now()}.md`
+    const { canceled, filePath } = await dialog.showSaveDialog({
+      title: 'Export session recap',
+      defaultPath: defaultName,
+      filters: [{ name: 'Markdown', extensions: ['md'] }],
+    })
+    if (canceled || !filePath) return { ok: false, canceled: true }
+    await fsPromises.writeFile(filePath, md, 'utf8')
+    return { ok: true, path: filePath }
   })
 
   const windowFromSender = (e) => BrowserWindow.fromWebContents(e.sender)
@@ -1395,15 +2066,143 @@ function setupIPC() {
     return true
   })
   ipcMain.handle('session-transcript-append', (_, segment) => {
-    sessionMemory.appendTranscriptSegment(segment)
-    listenSessionSummaries.recordTranscript(segment)
+    appendSessionTranscriptLine(segment)
     return true
   })
-  ipcMain.handle('listen-session-summaries:get', () => listenSessionSummaries.getSummaries())
-  ipcMain.handle('listen-session-summaries:clear', () => {
-    listenSessionSummaries.clearCompletedSummaries()
-    sendToSettingsWindow('listen-session-summaries:update')
+  ipcMain.handle('accept-mode-suggestion', (_, promptId) => {
+    const id = String(promptId || '').slice(0, 64)
+    if (!id) return { ok: false }
+    const prompts = normalizePromptsList(store.get('contextPrompts') || [])
+    if (!prompts.some((p) => p.id === id)) return { ok: false }
+    store.set('activeContextPromptId', id)
+    const hist = pushPromptHistory(store.get('contextPromptHistory') || [], id)
+    store.set('contextPromptHistory', hist)
+    const active = getActivePrompt(prompts, id)
+    sendToOverlay('context-prompt-update', { activeContextPromptId: id, activeName: active?.name || '' })
+    sendToSettingsWindow('context-prompt-update', { activeContextPromptId: id, activeName: active?.name || '' })
+    sendToOverlay('mode-suggestion', null)
+    return { ok: true, activeName: active?.name || '' }
+  })
+  ipcMain.handle('dismiss-mode-suggestion', (_, template) => {
+    const t = String(template || '').slice(0, 64)
+    if (t) modeSuggestionDismissedAt.set(t, Date.now())
+    sendToOverlay('mode-suggestion', null)
+    modeSuggestionSentThisSession = false
     return { ok: true }
+  })
+  ipcMain.handle('long-term-memory:clear', () => longTermMemory.clearAll())
+  ipcMain.handle('vector-memory:clear', () => vectorMemory.clearAll())
+  ipcMain.handle('vector-memory:stats', () => vectorMemory.stats())
+  ipcMain.handle('memory:search-past-meetings', async (_, query) => {
+    const q = String(query || '').trim()
+    if (!q) return { hits: [] }
+    const hits = await vectorMemory.searchPastMeetings(q, {
+      maxResults: 8,
+      meetingSessions: meetingSessions.list(),
+    })
+    return { hits }
+  })
+  ipcMain.handle('meeting-sessions:list', () => meetingSessions.list())
+  ipcMain.handle('meeting-sessions:get', (_, id) => meetingSessions.get(String(id || '')))
+  ipcMain.handle('meeting-sessions:update-speakers', (_, id, labels) =>
+    meetingSessions.updateSpeakerLabels(String(id || ''), labels || {}),
+  )
+  ipcMain.handle('meeting-sessions:follow-up-draft', async (_, id) => {
+    const session = meetingSessions.get(String(id || ''))
+    if (!session) return { ok: false, error: 'Session not found' }
+    const result = await generateFollowUpDraft(session, { store, getAiClient })
+    return { ok: true, ...result }
+  })
+  ipcMain.handle('meeting-sessions:delete', (_, id) => {
+    vectorMemory.removeSession(String(id || ''))
+    return meetingSessions.remove(id)
+  })
+  ipcMain.handle('meeting-sessions:clear', () => {
+    vectorMemory.clearAll()
+    return meetingSessions.clearAll()
+  })
+  ipcMain.handle('launcher:toggle-session', async () => {
+    if (sessionActive) await stopSession()
+    else requestSessionStart()
+    return sessionActive
+  })
+  ipcMain.handle('launcher:open-settings', () => {
+    createSettingsWindow()
+    return true
+  })
+  ipcMain.handle('launcher:open-overlay', () => {
+    showOverlay()
+    return true
+  })
+  ipcMain.handle('global-chat:open', () => {
+    createGlobalChatWindow()
+    return true
+  })
+  ipcMain.handle('hindsight-local:status', () => ({
+    running: hindsightLocalServer.isRunning(),
+    port: HINDSIGHT_LOCAL_PORT,
+    autoStart: store.get('hindsightAutoStartEnabled') === true,
+    url: String(store.get('hindsightApiUrl') || '').trim(),
+  }))
+  ipcMain.handle('phone-link:status', () => phoneLink.getStatus())
+  ipcMain.handle('phone-link:regenerate-token', async () => {
+    const token = phoneLink.regenerateToken()
+    if (store.get('phoneLinkEnabled') === true) {
+      await syncPhoneLinkAutoStart()
+    }
+    return { ok: true, token, ...phoneLink.getStatus() }
+  })
+  ipcMain.handle('phone-mirror:probe', () => phoneMirror.probe())
+  ipcMain.handle('phone-mirror:list-devices', () => phoneMirror.listDevices())
+  ipcMain.handle('phone-mirror:status', () => phoneMirror.getStatus())
+  ipcMain.handle('phone-mirror:start', async (_, serial) => phoneMirror.start(serial))
+  ipcMain.handle('phone-mirror:stop', () => phoneMirror.stop())
+  ipcMain.handle('skills:list', () => skillsService.list())
+  ipcMain.handle('skills:get', (_, slug) => skillsService.get(String(slug || '')))
+  ipcMain.handle('skills:save', (_, slug, patch) => skillsService.save(String(slug || ''), patch || {}))
+  ipcMain.handle('skills:delete', (_, slug) => skillsService.remove(String(slug || '')))
+  ipcMain.handle('meeting-toast:show', (_, payload) => {
+    try {
+      return showMeetingToastFromMain(payload && typeof payload === 'object' ? payload : {})
+    } catch (e) {
+      return { ok: false, error: e?.message || String(e) }
+    }
+  })
+  ipcMain.on('meeting-toast:dismiss', (e, rawEventId) => {
+    if (!meetingToastWindow || meetingToastWindow.isDestroyed()) return
+    if (e.sender !== meetingToastWindow.webContents) return
+    const dismissedId = String(rawEventId || '').trim()
+    if (dismissedId) meetingToastSuppressedEventIds.add(dismissedId)
+    try {
+      meetingToastWindow.close()
+    } catch (_) {}
+  })
+  ipcMain.handle('google-calendar:get-status', () => {
+    return googleCalendar.getConnectionStatus((k) => store.get(k))
+  })
+  ipcMain.handle('google-calendar:connect', async () => {
+    return googleCalendar.completeGoogleOAuthWithLoopback(
+      (k) => store.get(k),
+      (k, v) => store.set(k, v),
+    )
+  })
+  ipcMain.handle('google-calendar:cancel-connect', () => {
+    return googleCalendar.cancelGoogleOAuthInProgress()
+  })
+  ipcMain.handle('google-calendar:disconnect', () => {
+    googleCalendar.disconnectGoogleCalendar((k, v) => store.set(k, v))
+    return { connected: false, connectedEmail: '' }
+  })
+  ipcMain.handle('google-calendar:list-upcoming', async () => {
+    try {
+      const out = await googleCalendar.listUpcomingAcceptedMeetings(
+        (k) => store.get(k),
+        (k, v) => store.set(k, v),
+      )
+      return { ok: true, ...out }
+    } catch (e) {
+      return { ok: false, error: e?.message || String(e) }
+    }
   })
   ipcMain.handle('delete-all-data-relaunch', () => {
     store.clear()
@@ -1429,65 +2228,15 @@ function setupIPC() {
       resumeContext: store.get('resumeContext'),
       jdContext: store.get('jdContext'),
       resumeSourceName: store.get('resumeSourceName'),
+      meetingSessions: store.get('meetingSessions'),
       consentRecord: store.get('consentRecord'),
       consent_v1: store.get('consent_v1'),
-      playbooks: (store.get('playbooks') || []).map((p) => ({
-        title: p.title,
-        enabled: p.enabled,
-        name: p.name,
-      })),
     }
     await fsPromises.writeFile(filePath, JSON.stringify(payload, null, 2), 'utf8')
     return { ok: true, path: filePath }
   })
 
   ipcMain.handle('get-store', (_, key) => store.get(key))
-  ipcMain.handle('google-calendar:get-status', () => {
-    return googleCalendar.getConnectionStatus((k) => store.get(k))
-  })
-  ipcMain.handle('google-calendar:connect', async () => {
-    return googleCalendar.completeGoogleOAuthWithLoopback(
-      (k) => store.get(k),
-      (k, v) => store.set(k, v),
-    )
-  })
-  ipcMain.handle('google-calendar:cancel-connect', () => {
-    return googleCalendar.cancelGoogleOAuthInProgress()
-  })
-  ipcMain.handle('google-calendar:disconnect', () => {
-    googleCalendar.disconnectGoogleCalendar((k, v) => store.set(k, v))
-    return { connected: false, connectedEmail: '' }
-  })
-  ipcMain.handle('google-calendar:list-upcoming', async () => {
-    const out = await googleCalendar.listUpcomingAcceptedMeetings(
-      (k) => store.get(k),
-      (k, v) => store.set(k, v),
-    )
-    return { ok: true, ...out }
-  })
-  ipcMain.handle('context:index', async () => {
-    const stats = await contextVectorStore.indexContextData(
-      {
-        knowledgeBase: store.get('knowledgeBase') || store.get('contextProfile') || '',
-        contextPrompts: store.get('contextPrompts') || [],
-      },
-      app.getPath('userData'),
-    )
-    store.set('contextIndexMeta', stats)
-    return { ok: true, ...stats }
-  })
-  ipcMain.handle('context:stats', async () => {
-    await contextVectorStore.loadIndex(app.getPath('userData'))
-    return contextVectorStore.getStats()
-  })
-  ipcMain.handle('context:search-preview', async (_, query, promptId) => {
-    await contextVectorStore.loadIndex(app.getPath('userData'))
-    const results = contextVectorStore.search(String(query || ''), {
-      promptId: promptId ? String(promptId) : store.get('activeContextPromptId') || null,
-      topK: 5,
-    })
-    return { ok: true, results }
-  })
   ipcMain.handle('set-store', (_, key, value) => {
     let stored = value
     if (key === 'assistAutoTrigger') {
@@ -1523,43 +2272,122 @@ function setupIPC() {
     if (key === 'stealth_mode') {
       store.set('stealth_mode', !!value)
       applyContentProtectionAllWindows()
+      applyTaskbarVisibility()
       sendToOverlay('stealth-mode-update', !!value)
+      return true
+    }
+    if (key === 'overlayMousePassthroughEnabled') {
+      const v = !!value
+      store.set('overlayMousePassthroughEnabled', v)
+      syncOverlayMouseCapture()
+      return true
+    }
+    if (key === 'hideFromTaskbarEnabled') {
+      store.set('hideFromTaskbarEnabled', value === true)
+      applyTaskbarVisibility()
+      return true
+    }
+    if (key === 'hindsightAutoStartEnabled') {
+      store.set('hindsightAutoStartEnabled', !!value)
+      void syncHindsightAutoStart()
+      return true
+    }
+    if (key === 'phoneLinkEnabled') {
+      store.set('phoneLinkEnabled', !!value)
+      void syncPhoneLinkAutoStart()
+      return true
+    }
+    if (key === 'phoneLinkRemoteMicEnabled') {
+      store.set('phoneLinkRemoteMicEnabled', !!value)
+      phoneLink.broadcastFlags()
+      return true
+    }
+    if (key === 'referenceVectorIndexEnabled') {
+      store.set('referenceVectorIndexEnabled', !!value)
+      if (!!value) scheduleReferenceVectorEnrichment()
+      return true
+    }
+    if (key === 'openAtLogin') {
+      const v = !!value
+      store.set('openAtLogin', v)
+      applyOpenAtLoginSetting(v)
+      return true
+    }
+    if (key === 'verboseDebugLogging') {
+      applyVerboseDebugLoggingSetting(!!value)
+      return true
+    }
+    if (key === 'overlayLiveTranscriptEnabled') {
+      const v = value !== false
+      store.set('overlayLiveTranscriptEnabled', v)
+      sendToOverlay('overlay-display-update', { overlayLiveTranscriptEnabled: v })
+      return true
+    }
+    if (key === 'overlayAnswerPinToTop') {
+      const v = value !== false
+      store.set('overlayAnswerPinToTop', v)
+      sendToOverlay('overlay-display-update', { overlayAnswerPinToTop: v })
+      return true
+    }
+    if (key === 'overlayTranscriptAutoScroll') {
+      const v = value !== false
+      store.set('overlayTranscriptAutoScroll', v)
+      sendToOverlay('overlay-display-update', { overlayTranscriptAutoScroll: v })
+      return true
+    }
+    if (key === 'doNotSaveMeetingsEnabled') {
+      store.set('doNotSaveMeetingsEnabled', !!value)
       return true
     }
     if (key === 'uiAccentTheme') {
       stored = isValidUiAccentThemeId(value) ? value : store.schema.uiAccentTheme.default
     }
-    if (key === 'contextProfiles') {
-      const incoming = value && typeof value === 'object' ? value : {}
-      stored = {
-        meeting: String(incoming.meeting || '').slice(0, 12000),
-        interview: String(incoming.interview || '').slice(0, 12000),
-        general: String(incoming.general || '').slice(0, 12000),
-      }
-      store.set('contextProfiles', stored)
-      scheduleContextReindex()
-      return true
-    }
     if (key === 'knowledgeBase' || key === 'contextProfile') {
       stored = String(value || '').slice(0, KNOWLEDGE_BASE_MAX)
       store.set('knowledgeBase', stored)
       store.set('contextProfile', stored)
-      scheduleContextReindex()
+      profileContextCache.clear()
+      return true
+    }
+    if (key === 'resumeContext') {
+      stored = String(value || '').slice(0, 50000)
+      store.set('resumeContext', stored)
+      store.set('resumeTree', parseResumeTree(stored))
+      profileContextCache.clear()
+      return true
+    }
+    if (key === 'jdContext') {
+      stored = String(value || '').slice(0, 30000)
+      store.set('jdContext', stored)
+      store.set('jdTree', parseJdTree(stored))
+      profileContextCache.clear()
+      return true
+    }
+    if (key === 'resumeSourceName') {
+      stored = String(value || '').slice(0, 200)
+      store.set('resumeSourceName', stored)
       return true
     }
     if (key === 'contextPrompts') {
       stored = normalizePromptsList(Array.isArray(value) ? value : [])
       store.set('contextPrompts', stored)
+      profileContextCache.clear()
+      try {
+        contextVectorStore.indexAllPrompts(stored, store)
+        scheduleReferenceVectorEnrichment()
+      } catch (e) {
+        console.warn('[context-index] reindex:', e?.message || e)
+      }
       const activeId = store.get('activeContextPromptId')
       if (activeId && !stored.some((p) => p.id === activeId)) {
         store.set('activeContextPromptId', stored[0]?.id || '')
       }
-      scheduleContextReindex()
       return true
     }
     if (key === 'activeContextPromptId') {
       const id = value ? String(value).slice(0, 64) : ''
       store.set('activeContextPromptId', id)
+      profileContextCache.clear()
       if (id) {
         const hist = pushPromptHistory(store.get('contextPromptHistory') || [], id)
         store.set('contextPromptHistory', hist)
@@ -1570,13 +2398,13 @@ function setupIPC() {
       sendToSettingsWindow('context-prompt-update', { activeContextPromptId: id, activeName: active?.name || '' })
       return true
     }
-    if (key === 'contextRetrievalMode') {
-      return true
-    }
     store.set(key, stored)
     if (key === 'uiAccentTheme') {
       sendToOverlay('ui-accent-update', stored)
       sendToSettingsWindow('ui-accent-update', stored)
+      if (globalChatWindow && !globalChatWindow.isDestroyed()) {
+        globalChatWindow.webContents.send('ui-accent-update', stored)
+      }
     }
     return true
   })
@@ -1585,28 +2413,233 @@ function setupIPC() {
     return getAiClient().testConnection(provider, key, (k) => store.get(k))
   })
   ipcMain.handle('get-provider-metadata', () => require('../lib/providers').getProviderMetadataForUI())
-  ipcMain.handle('get-stt-provider-metadata', () => require('../lib/providers').getSttProviderMetadataForUI())
-  ipcMain.handle('get-transcription-config', () => getTranscriptionRequestConfig((k) => store.get(k)))
-  ipcMain.handle('nvidia-transcribe-pcm', async (_, payload) => {
-    try {
-      const key = store.get('nvidiaKey')
-      if (!key || !payload?.pcm) return { text: '' }
-      const cfg = getTranscriptionRequestConfig((k) => store.get(k))
-      if (cfg?.sttKind !== 'nvidia_riva') return { text: '' }
-      const buf = Buffer.from(payload.pcm)
-      const text = await transcribeLinearPcm({
-        apiKey: key,
-        functionId: cfg.functionId,
-        pcm: buf,
-        sampleRateHertz: payload.sampleRate || 16000,
-        languageCode: payload.languageCode || cfg.languageCode || 'multi',
-      })
-      return { text: text || '' }
-    } catch (e) {
-      console.error('[nvidia-transcribe-pcm]', e?.message || e)
-      return { text: '' }
+  ipcMain.handle('get-intelligence-flags', () => {
+    const {
+      listIntelligenceFlags,
+      CORE_FLAG_KEYS,
+      ADVANCED_GROUP_ORDER,
+    } = require('../lib/intelligenceFlags')
+    return {
+      flags: listIntelligenceFlags(),
+      coreFlagKeys: CORE_FLAG_KEYS,
+      advancedGroupOrder: ADVANCED_GROUP_ORDER,
     }
   })
+  ipcMain.handle('get-stt-provider-metadata', () => require('../lib/providers').getSttProviderMetadataForUI())
+  ipcMain.handle('get-transcription-config', () => {
+    const cfg = getTranscriptionRequestConfig((k) => store.get(k))
+    const sttMode = store.get('sttMode') === 'cloud' ? 'cloud' : 'local'
+    const sttProvider = store.get('sttProvider') || store.get('provider') || 'groq'
+    if (!cfg) return { sttMode, apiKey: null, sttProvider }
+    return { ...cfg, sttMode, sttProvider }
+  })
+  ipcMain.handle('nvidia-nim:transcribe-wav', async (_, payload) => {
+    try {
+      const cfg = getTranscriptionRequestConfig((k) => store.get(k))
+      if (!cfg?.apiKey || cfg.sttKind !== 'nvidia_nim') {
+        return { ok: false, error: 'NVIDIA NIM STT not configured' }
+      }
+      const raw = payload?.wav
+      if (!raw) return { ok: false, error: 'No audio data' }
+      const wavBuffer = Buffer.isBuffer(raw) ? raw : Buffer.from(raw)
+      const text = await require('../lib/nvidiaNimStt').transcribeWav({
+        wavBuffer,
+        apiKey: cfg.apiKey,
+        languageCode: cfg.languageCode || 'multi',
+        functionId: cfg.nvcfFunctionId,
+      })
+      return { ok: true, text }
+    } catch (e) {
+      console.warn('[nvidia-nim:transcribe-wav]', e?.message || e)
+      return { ok: false, error: e?.message || String(e) }
+    }
+  })
+  /** Local STT language from settings (en | hi | en_hi_hinglish). */
+  function getLocalSttLanguage() {
+    const raw = store.get('micListenLanguage')
+    return raw === 'hi' || raw === 'en_hi_hinglish' ? raw : 'en'
+  }
+  localStt.setWhisperGateEnabled(() => store.get('localMoonshineWhisperGate') === true)
+  localStt.setModelPreferenceGetter(() => store.get('localSttModelPreference') || 'auto')
+  localStt.setTranscriptCallback((evt) => {
+    sendToOverlay('local-stt:transcript', evt)
+    if (evt?.isFinal && evt?.text && sessionRecorder.isActive()) {
+      const tag = evt.channel === 'sys' ? 'Participant' : 'Me'
+      appendSessionTranscriptLine(`${tag}: ${String(evt.text).trim()}`)
+    }
+  })
+  ipcMain.handle('local-stt:prepare', async () => {
+    try {
+      const result = await localStt.prepare(getLocalSttLanguage())
+      return { ok: true, ...result }
+    } catch (e) {
+      console.warn('[local-stt:prepare]', e?.message || e)
+      return { ok: false, error: e?.message || String(e) }
+    }
+  })
+  ipcMain.handle('local-stt:feed-pcm', async (_, payload) => {
+    try {
+      const channel = payload?.channel === 'sys' ? 'sys' : 'mic'
+      const pcm = payload?.pcm
+      if (!pcm) return { ok: false, error: 'No PCM data' }
+      return await localStt.feedPcm(channel, pcm, getLocalSttLanguage())
+    } catch (e) {
+      console.warn('[local-stt:feed-pcm]', e?.message || e)
+      return { ok: false, error: e?.message || String(e), text: null }
+    }
+  })
+  ipcMain.handle('local-stt:stream-start', async () => {
+    try {
+      const result = await localStt.startListening(getLocalSttLanguage())
+      return { ok: true, ...result }
+    } catch (e) {
+      console.warn('[local-stt:start]', e?.message || e)
+      return { ok: false, error: e?.message || String(e) }
+    }
+  })
+  ipcMain.handle('local-stt:start', async () => {
+    try {
+      const result = await localStt.startListening(getLocalSttLanguage())
+      return { ok: true, ...result }
+    } catch (e) {
+      console.warn('[local-stt:start]', e?.message || e)
+      return { ok: false, error: e?.message || String(e) }
+    }
+  })
+  ipcMain.on('local-stt:write-chunk', (_, payload) => {
+    try {
+      const channel = payload?.channel === 'sys' ? 'sys' : 'mic'
+      const pcm = payload?.pcm
+      if (!pcm) return
+      const sampleRate = Number(payload?.sampleRate) || 48000
+      localStt.writeChunk(channel, pcm, sampleRate)
+    } catch (e) {
+      console.warn('[local-stt:write-chunk]', e?.message || e)
+    }
+  })
+  ipcMain.on('local-stt:speech-ended', (_, payload) => {
+    try {
+      const channel = payload?.channel === 'sys' ? 'sys' : 'mic'
+      localStt.notifySpeechEnded(channel)
+    } catch (e) {
+      console.warn('[local-stt:speech-ended]', e?.message || e)
+    }
+  })
+  ipcMain.handle('local-stt:stream-feed', async (_, payload) => {
+    try {
+      const channel = payload?.channel === 'sys' ? 'sys' : 'mic'
+      const pcm = payload?.pcm
+      if (!pcm) return { ok: false, error: 'No PCM data' }
+      return localStt.feedStreamingPcm(channel, pcm, getLocalSttLanguage())
+    } catch (e) {
+      console.warn('[local-stt:stream-feed]', e?.message || e)
+      return { ok: false, error: e?.message || String(e) }
+    }
+  })
+  ipcMain.handle('local-stt:stream-stop', () => {
+    localStt.stopListening()
+    return { ok: true }
+  })
+  ipcMain.handle('local-stt:stop', () => {
+    localStt.stopListening()
+    return { ok: true }
+  })
+  ipcMain.handle('local-stt:status', () => localStt.getStatus())
+  ipcMain.handle('local-stt:model-info', () => {
+    const { resolveLocalModel, MOONSHINE_BASE, MOONSHINE_TINY, WHISPER_TINY } = require('../lib/localStt/modelConfig')
+    const lang = getLocalSttLanguage()
+    const preference = store.get('localSttModelPreference') || 'auto'
+    const spec = resolveLocalModel(lang, preference)
+    const status = localStt.getStatus()
+    return {
+      language: lang,
+      preference,
+      spec,
+      status,
+      catalog: [
+        { id: 'auto', label: 'Auto (language-based)', modelId: resolveLocalModel(lang, 'auto').modelId },
+        { id: 'moonshine-base', label: 'Moonshine Base (English)', modelId: MOONSHINE_BASE },
+        { id: 'moonshine-tiny', label: 'Moonshine Tiny (fastest)', modelId: MOONSHINE_TINY },
+        { id: 'whisper-tiny', label: 'Whisper Tiny (Hindi/Hinglish)', modelId: WHISPER_TINY },
+      ],
+    }
+  })
+
+  cloudRestStt.setStoreGetter((k) => store.get(k))
+  cloudRestStt.setTranscriptCallback((evt) => {
+    sendToOverlay('rest-stt:transcript', evt)
+  })
+  ipcMain.handle('rest-stt:start', () => {
+    try {
+      return cloudRestStt.startListening()
+    } catch (e) {
+      console.warn('[rest-stt:start]', e?.message || e)
+      return { ok: false, error: e?.message || String(e) }
+    }
+  })
+  ipcMain.on('rest-stt:write-chunk', (_, payload) => {
+    try {
+      const channel = payload?.channel === 'sys' ? 'sys' : 'mic'
+      const pcm = payload?.pcm
+      if (!pcm) return
+      cloudRestStt.writeChunk(channel, pcm)
+    } catch (e) {
+      console.warn('[rest-stt:write-chunk]', e?.message || e)
+    }
+  })
+  ipcMain.on('rest-stt:speech-ended', (_, payload) => {
+    try {
+      const channel = payload?.channel === 'sys' ? 'sys' : 'mic'
+      cloudRestStt.notifySpeechEnded(channel)
+    } catch (e) {
+      console.warn('[rest-stt:speech-ended]', e?.message || e)
+    }
+  })
+  ipcMain.handle('rest-stt:stop', () => {
+    cloudRestStt.stopListening()
+    return { ok: true }
+  })
+
+  streamingStt.setStoreGetter((k) => store.get(k))
+  streamingStt.setTranscriptCallback((evt) => {
+    sendToOverlay('streaming-stt:transcript', evt)
+  })
+  ipcMain.handle('streaming-stt:start', async () => {
+    try {
+      const prov = store.get('sttProvider') || 'groq'
+      if (!streamingStt.isStreamingProvider(prov)) {
+        return { ok: false, error: 'Streaming STT not configured for this provider' }
+      }
+      return await streamingStt.startListening(prov)
+    } catch (e) {
+      console.warn('[streaming-stt:start]', e?.message || e)
+      return { ok: false, error: e?.message || String(e) }
+    }
+  })
+  ipcMain.on('streaming-stt:write-chunk', (_, payload) => {
+    try {
+      const channel = payload?.channel === 'sys' ? 'sys' : 'mic'
+      const pcm = payload?.pcm
+      if (!pcm) return
+      const sampleRate = Number(payload?.sampleRate) || 48000
+      void streamingStt.writeChunk(channel, pcm, sampleRate)
+    } catch (e) {
+      console.warn('[streaming-stt:write-chunk]', e?.message || e)
+    }
+  })
+  ipcMain.on('streaming-stt:speech-ended', (_, payload) => {
+    try {
+      const channel = payload?.channel === 'sys' ? 'sys' : 'mic'
+      streamingStt.notifySpeechEnded(channel)
+    } catch (e) {
+      console.warn('[streaming-stt:speech-ended]', e?.message || e)
+    }
+  })
+  ipcMain.handle('streaming-stt:stop', () => {
+    streamingStt.stopListening()
+    return { ok: true }
+  })
+
   ipcMain.handle('list-remote-models', async (_, provider) => getListRemoteModels()(provider, (k) => store.get(k)))
   ipcMain.handle('get-stt-policy', () => ({
     nativeSttProviderIds: NATIVE_STT_PROVIDER_IDS,
@@ -1619,89 +2652,67 @@ function setupIPC() {
     }
     return { ok: false }
   })
-  ipcMain.handle('ask-ai-with-transcript', (_, q, t, meta) => {
-    if (meta && typeof meta._llmTriggerAt === 'number') {
-      console.log('LLM_START_DELAY_MS', Date.now() - meta._llmTriggerAt)
-    }
-    if (meta && typeof meta.screen === 'string') {
-      screenOcrText = meta.screen
-      lastOcrTime = Date.now()
-      sessionMemory.addOcrSnapshot(screenOcrText)
-    }
-    console.time('LLM_START_DELAY')
-    return handleAskAI(q, t, meta)
-  })
+  ipcMain.handle('ask-ai-with-transcript', (_, q, t, meta) => handleAskAI(q, t, meta))
   ipcMain.handle('session-active', () => sessionActive)
   ipcMain.handle('get-hotkeys', () => store.get('hotkeys') || hotkeys.DEFAULT_HOTKEYS)
   ipcMain.handle('update-hotkey', (_, action, acc) => hotkeys.updateHotkey(action, acc))
   ipcMain.handle('clear-all-data', () => { store.clear(); hotkeys.registerAll() })
   ipcMain.handle('get-desktop-source-id', () => screenCapture.getDesktopSourceId())
-  ipcMain.handle('ocr:warmup', async () => {
-    try {
-      const t0 = Date.now()
-      await screenCapture.initOcr()
-      broadcastOcrStatus()
-      return { ok: true, durationMs: Date.now() - t0 }
-    } catch (e) {
-      const msg = e?.message || String(e)
-      console.warn('[ocr:warmup]', msg)
-      broadcastOcrStatus()
-      return { ok: false, error: msg }
-    }
+  /** Returns true when the current provider+model supports direct image (vision) input. */
+  ipcMain.handle('provider:has-vision', () => {
+    const prov = store.get('provider') || 'groq'
+    return providers.supportsVision(prov)
   })
-  ipcMain.handle('ocr:status', () => ({ ok: true, ...rapidOcr.getWarmupState() }))
-  ipcMain.handle('ocr:diagnose', () => {
+  // ── Screenshot queue IPC (Natively-style on-demand capture) ──────────────
+  ipcMain.handle('screenshot:take', async () => {
     try {
-      return { ok: true, ...rapidOcr.getDiagnostics() }
+      const filePath = await screenshotQueue.takeScreenshot()
+      const preview = await screenshotQueue.getBase64Preview(filePath)
+      return { ok: true, path: filePath, preview, queueSize: screenshotQueue.getQueue().length }
     } catch (e) {
       return { ok: false, error: e?.message || String(e) }
     }
   })
-  ipcMain.handle('ocr:terminate', async () => {
-    await screenCapture.terminateOcr()
+  ipcMain.handle('screenshot:get-queue', async () => {
+    const paths = screenshotQueue.getQueue()
+    const items = await Promise.all(
+      paths.map(async (p) => {
+        try {
+          const preview = await screenshotQueue.getBase64Preview(p)
+          return { path: p, preview }
+        } catch (_) {
+          return null
+        }
+      })
+    )
+    return items.filter(Boolean)
+  })
+  ipcMain.handle('screenshot:clear', async () => {
+    await screenshotQueue.clearQueue()
+    sendToOverlay('screenshot:queue-cleared')
     return { ok: true }
   })
-  ipcMain.handle('ocr:capture-screen-text', async (_, opts) => {
-    try {
-      if (!rapidOcr.isReady()) {
-        await screenCapture.initOcr()
-      }
-      const text = await screenCapture.captureScreenText(opts || {})
-      const out = String(text || '')
-      return {
-        ok: true,
-        text: out,
-        empty: !out.trim(),
-        capture: screenCapture.getLastCaptureDiagnostics(),
-        ocr: rapidOcr.getWarmupState(),
-      }
-    } catch (e) {
-      console.warn('[ocr:capture-screen-text]', e?.message || e)
-      return {
-        ok: false,
-        text: '',
-        error: e?.message || String(e),
-        capture: screenCapture.getLastCaptureDiagnostics(),
-        ocr: rapidOcr.getWarmupState(),
-      }
-    }
+  ipcMain.handle('screenshot:delete', async (_, filePath) => {
+    await screenshotQueue.deleteScreenshot(filePath)
+    return { ok: true, queueSize: screenshotQueue.getQueue().length }
   })
-  ipcMain.handle('ocr:recognize-png-dataurl', async (_, dataUrl) => {
-    try {
-      const text = await rapidOcr.recognizePngDataUrl(dataUrl)
-      return { ok: true, text }
-    } catch (e) {
-      console.warn('[ocr:recognize-png-dataurl]', e?.message || e)
-      return { ok: false, text: '', error: e?.message || String(e) }
-    }
-  })
+  // ─────────────────────────────────────────────────────────────────────────
+
   ipcMain.handle('show-open-dialog', (_, opts) => dialog.showOpenDialog(opts))
-  ipcMain.handle('parse-playbook', (_, p) => require('../lib/playbookParser').parsePlaybookFile(p))
+  ipcMain.handle('parse-playbook', async (_, filePath) => {
+    try {
+      const text = await parsePlaybookFile(filePath)
+      return String(text || '')
+    } catch (e) {
+      console.warn('[parse-playbook]', e?.message || e)
+      throw e
+    }
+  })
   ipcMain.handle('get-window-bounds', () => overlayWindow ? overlayWindow.getBounds() : store.get('overlayBounds'))
   ipcMain.handle('save-window-bounds', () => { if (overlayWindow) store.set('overlayBounds', overlayWindow.getBounds()) })
   /** Optional `x` keeps the right edge fixed when resizing from the left (frameless overlay). */
   ipcMain.handle('resize-window', (_, w, h, xOpt) => {
-    if (!overlayWindow) return
+    if (!overlayWindow || overlayWindow.isDestroyed()) return
     const b = overlayWindow.getBounds()
     const safeW = Math.max(280, Math.min(860, Math.round(w)))
     const useX = typeof xOpt === 'number' && !Number.isNaN(xOpt)
@@ -1709,16 +2720,32 @@ function setupIPC() {
     if (h <= 44) {
       overlayWindow.setMinimumSize(safeW, 1)
       const safeH = Math.max(43, Math.min(940, Math.round(h)))
+      const nextX = useX ? Math.round(xOpt) : b.x
+      if (
+        Math.abs(b.width - safeW) <= 1 &&
+        Math.abs(b.height - safeH) <= 1 &&
+        Math.abs(b.x - nextX) <= 1
+      ) {
+        return
+      }
       if (useX) {
-        overlayWindow.setBounds({ x: Math.round(xOpt), y: b.y, width: safeW, height: safeH })
+        overlayWindow.setBounds({ x: nextX, y: b.y, width: safeW, height: safeH })
       } else {
         overlayWindow.setSize(safeW, safeH)
       }
     } else {
       overlayWindow.setMinimumSize(280, 180)
       const safeH = Math.max(180, Math.min(940, Math.round(h)))
+      const nextX = useX ? Math.round(xOpt) : b.x
+      if (
+        Math.abs(b.width - safeW) <= 1 &&
+        Math.abs(b.height - safeH) <= 1 &&
+        Math.abs(b.x - nextX) <= 1
+      ) {
+        return
+      }
       if (useX) {
-        overlayWindow.setBounds({ x: Math.round(xOpt), y: b.y, width: safeW, height: safeH })
+        overlayWindow.setBounds({ x: nextX, y: b.y, width: safeW, height: safeH })
       } else {
         overlayWindow.setSize(safeW, safeH)
       }
@@ -1787,6 +2814,21 @@ function setupIPC() {
         store.set('overlayFocusMode', v)
         sendToOverlay('overlay-display-update', { overlayFocusMode: v })
       }
+      if (opts.overlayTranscriptAutoScroll != null) {
+        const v = opts.overlayTranscriptAutoScroll !== false
+        store.set('overlayTranscriptAutoScroll', v)
+        sendToOverlay('overlay-display-update', { overlayTranscriptAutoScroll: v })
+      }
+      if (opts.overlayLiveTranscriptEnabled != null) {
+        const v = opts.overlayLiveTranscriptEnabled !== false
+        store.set('overlayLiveTranscriptEnabled', v)
+        sendToOverlay('overlay-display-update', { overlayLiveTranscriptEnabled: v })
+      }
+      if (opts.overlayAnswerPinToTop != null) {
+        const v = opts.overlayAnswerPinToTop !== false
+        store.set('overlayAnswerPinToTop', v)
+        sendToOverlay('overlay-display-update', { overlayAnswerPinToTop: v })
+      }
       if (typeof opts.width === 'number' || typeof opts.height === 'number') {
         const prev = store.get('overlayBounds') || {}
         const w = typeof opts.width === 'number'
@@ -1830,6 +2872,9 @@ function setupIPC() {
 }
 
 async function initApp() {
+  debugLog.installConsoleTap()
+  debugLog.setVerboseDebugLogging(store.get('verboseDebugLogging') === true)
+  applyOpenAtLoginSetting(store.get('openAtLogin') === true)
   screenCapture.setOverlayCaptureWrapper(withOverlayExcludedFromScreenCapture)
   const { session } = require('electron')
   /** Packaged `file://` overlay: Chromium checks permissions before requesting; without this, mic/desktop capture can fail silently (dev often still works). */
@@ -1845,11 +2890,24 @@ async function initApp() {
   seedOverlayPositionIfNeeded()
   setupTray()
   setupHotkeys()
+  sessionMemory.startInactivityWatcher(() => {
+    sendToOverlay('session-purge')
+    phoneLink.handleDesktopEvent('session-purge')
+    lastResponse = ''
+  })
+  createOverlayWindow()
+  showOverlay()
+  void syncHindsightAutoStart()
+  void syncPhoneLinkAutoStart()
+  applyTaskbarVisibility()
+
+  startMeetingForegroundPoll()
+  startCalendarReminderPoll()
+  scheduleVectorMemoryMaintenance()
   try {
     const primary = 'CommandOrControl+Shift+Alt+M'
     const fallback = 'CommandOrControl+Shift+M'
     const triggerMeetingToastTest = () => {
-      console.log('[meeting-toast] test hotkey pressed', { packaged: app.isPackaged })
       showMeetingToastFromMain({
         eventId: `dev-toast-${Date.now()}`,
         headline: 'Meeting toast test',
@@ -1857,46 +2915,21 @@ async function initApp() {
       })
     }
     const okPrimary = globalShortcut.register(primary, triggerMeetingToastTest)
-    if (okPrimary) {
-      console.log(`[meeting-toast] test hotkey active: ${primary}`)
-    } else {
-      const okFallback = globalShortcut.register(fallback, triggerMeetingToastTest)
-      if (okFallback) console.log(`[meeting-toast] test hotkey fallback active: ${fallback}`)
-      else console.warn('[meeting-toast] test hotkey registration failed')
-    }
+    if (!okPrimary) globalShortcut.register(fallback, triggerMeetingToastTest)
   } catch (e) {
     console.warn('[meeting-toast] test hotkey register error:', e?.message || e)
   }
-  sessionMemory.startInactivityWatcher(() => {
-    sendToOverlay('session-purge')
-    lastResponse = ''
-    screenOcrText = ''
-  })
-  createOverlayWindow()
-  showOverlay()
-  startBackgroundOcrWarmup()
-  startMeetingForegroundPoll()
-  startCalendarReminderPoll()
-  setupAutoUpdater()
-  try {
-    const hasText =
-      String(store.get('knowledgeBase') || store.get('contextProfile') || '').trim() ||
-      normalizePromptsList(store.get('contextPrompts') || []).some((p) => String(p.content || '').trim())
-    if (hasText) {
-      const stats = await contextVectorStore.indexContextData(
-        {
-          knowledgeBase: store.get('knowledgeBase') || store.get('contextProfile') || '',
-          contextPrompts: store.get('contextPrompts') || [],
-        },
-        app.getPath('userData'),
-      )
-      store.set('contextIndexMeta', stats)
-    } else {
-      await contextVectorStore.loadIndex(app.getPath('userData'))
-    }
-  } catch (e) {
-    console.warn('[context] startup index:', e?.message || e)
+
+  // Auto-start the listen session if the user already completed consent/onboarding —
+  // no need to manually press the toggle every time the app opens.
+  if (hasValidConsent() && hasCompletedOnboardingFlag()) {
+    // Wait for the overlay to finish rendering before sending session-start.
+    setTimeout(() => {
+      if (!sessionActive) startSession()
+    }, 1500)
   }
+
+  setupAutoUpdater()
 }
 
 function readUpdateReleaseChannel() {
@@ -1990,6 +3023,11 @@ app.on('window-all-closed', () => {
 })
 app.on('will-quit', () => {
   hotkeys.unregisterAll()
+  localStt.shutdown()
+  cloudRestStt.stopListening()
+  phoneLink.stop()
+  phoneLinkMic.stop()
+  phoneMirror.stop()
 })
 app.on('second-instance', () => {
   if (!overlayWindow || overlayWindow.isDestroyed()) {

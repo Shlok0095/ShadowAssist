@@ -591,6 +591,16 @@ html, body {
 .response-scroll {
   scrollbar-width: thin;
   scrollbar-color: rgba(255, 255, 255, 0.18) transparent;
+  overflow-anchor: none;
+  overscroll-behavior: contain;
+  -webkit-overflow-scrolling: touch;
+}
+
+/* Clickable overlay chrome — must sit above scroll layer and opt out of notch drag. */
+.crystal-panel-controls {
+  position: relative;
+  z-index: 20;
+  -webkit-app-region: no-drag;
 }
 
 .response-scroll::-webkit-scrollbar { width: 4px; }

@@ -1,285 +1,246 @@
-// Copyright (c) 2026 VeilAssist. All rights reserved.
-// Local TF-IDF context index — chunks profile + prompt knowledge; retrieves by cosine similarity.
+// Copyright (c) 2026 ShadowAssist. All rights reserved.
+// Reference file retrieval — keyword index + optional vector embeddings (Phase 9).
 
-const fsPromises = require('fs').promises
-const path = require('path')
-const { normalizePromptsList } = require('./contextPrompts')
+const { normalizeReferenceFiles, INJECT_MAX } = require('./contextPrompts')
+const { cosineSimilarity, keywordOverlapScore } = require('./vectorMemoryUtils')
 
-const KB_TAG = 'kb'
-const PROFILE_TAG = 'kb'
-const CHUNK_MAX = 420
-const CHUNK_OVERLAP = 70
-const TOP_K = 5
-const MAX_BLOCK_CHARS = 2200
-const MIN_SCORE = 0.06
-
-let currentIndex = null
-let indexPath = null
-
-function promptTag(promptId) {
-  return `prompt:${String(promptId || '')}`
-}
-
-function getIndexPath(userDataPath) {
-  return path.join(userDataPath, 'context-index.json')
-}
+const CHUNK_SIZE = 900
+const CHUNK_OVERLAP = 120
+const DEFAULT_TOP_K = 8
+const VECTOR_MIN_SCORE = 0.22
 
 function tokenize(text) {
   return String(text || '')
     .toLowerCase()
-    .replace(/[^\w\s]/g, ' ')
+    .replace(/[^\p{L}\p{N}\s]/gu, ' ')
     .split(/\s+/)
     .filter((w) => w.length > 2)
 }
 
-function chunkText(text, maxLen = CHUNK_MAX, overlap = CHUNK_OVERLAP) {
+function chunkText(text) {
   const t = String(text || '').trim()
   if (!t) return []
-  if (t.length <= maxLen) return [t]
+  if (t.length <= CHUNK_SIZE) return [t]
   const chunks = []
-  let start = 0
-  while (start < t.length) {
-    let end = Math.min(start + maxLen, t.length)
-    if (end < t.length) {
-      const slice = t.slice(start, end)
-      const breakAt = Math.max(slice.lastIndexOf('\n\n'), slice.lastIndexOf('. '), slice.lastIndexOf('\n'))
-      if (breakAt > maxLen * 0.35) end = start + breakAt + 1
-    }
-    const chunk = t.slice(start, end).trim()
-    if (chunk) chunks.push(chunk)
+  let i = 0
+  while (i < t.length) {
+    const end = Math.min(t.length, i + CHUNK_SIZE)
+    chunks.push(t.slice(i, end))
     if (end >= t.length) break
-    start = Math.max(start + 1, end - overlap)
+    i = Math.max(i + 1, end - CHUNK_OVERLAP)
   }
   return chunks
 }
 
-function vecNorm(vec) {
-  let s = 0
-  for (const v of vec.values()) s += v * v
-  return Math.sqrt(s) || 1
-}
-
-function cosineSimilarity(vecA, vecB) {
-  let dot = 0
-  const smaller = vecA.size < vecB.size ? vecA : vecB
-  const larger = vecA.size < vecB.size ? vecB : vecA
-  for (const [k, v] of smaller) {
-    const w = larger.get(k)
-    if (w) dot += v * w
-  }
-  return dot / (vecNorm(vecA) * vecNorm(vecB))
-}
-
-function buildIndexFromChunks(allChunks) {
-  const N = allChunks.length || 1
-  const docFreq = new Map()
-  const tokenized = allChunks.map((chunk) => {
-    const tokens = tokenize(chunk.text)
-    const tf = new Map()
-    for (const tok of tokens) tf.set(tok, (tf.get(tok) || 0) + 1)
-    for (const tok of tf.keys()) docFreq.set(tok, (docFreq.get(tok) || 0) + 1)
-    return { tokens, tf, len: Math.max(tokens.length, 1) }
-  })
-
-  const idfMap = new Map()
-  for (const [tok, df] of docFreq) {
-    idfMap.set(tok, Math.log(1 + N / df))
-  }
-
-  const vectors = tokenized.map((doc) => {
-    const vec = new Map()
-    for (const [tok, count] of doc.tf) {
-      vec.set(tok, (count / doc.len) * (idfMap.get(tok) || 0))
-    }
-    return vec
-  })
-
-  return { idfMap, vectors, N }
-}
-
-function queryVector(query, idfMap, N) {
-  const tokens = tokenize(query)
-  if (!tokens.length) return new Map()
-  const tf = new Map()
-  for (const tok of tokens) tf.set(tok, (tf.get(tok) || 0) + 1)
-  const vec = new Map()
-  for (const [tok, count] of tf) {
-    const idf = idfMap.get(tok) || Math.log(1 + N)
-    vec.set(tok, (count / tokens.length) * idf)
-  }
-  return vec
-}
-
-function deserializeIndex(raw) {
-  return {
-    version: raw.version || 2,
-    indexedAt: raw.indexedAt || null,
-    chunkCount: raw.chunkCount || 0,
-    chunks: raw.chunks || [],
-    vectors: (raw.vectors || []).map((entries) => new Map(entries)),
-    idfMap: new Map(raw.idfMap || []),
-    N: raw.N || 1,
-  }
-}
-
-function serializeIndex(index) {
-  return {
-    version: index.version,
-    indexedAt: index.indexedAt,
-    chunkCount: index.chunkCount,
-    chunks: index.chunks,
-    vectors: index.vectors.map((v) => [...v.entries()]),
-    idfMap: [...index.idfMap.entries()],
-    N: index.N,
-  }
-}
-
-async function loadIndex(userDataPath) {
-  if (currentIndex) return currentIndex
-  indexPath = getIndexPath(userDataPath)
-  try {
-    const raw = JSON.parse(await fsPromises.readFile(indexPath, 'utf8'))
-    currentIndex = deserializeIndex(raw)
-  } catch {
-    currentIndex = {
-      version: 2,
-      indexedAt: null,
-      chunkCount: 0,
-      chunks: [],
-      vectors: [],
-      idfMap: new Map(),
-      N: 1,
-    }
-  }
-  return currentIndex
-}
-
-/** @deprecated — use indexContextData */
-async function indexProfiles(profiles, userDataPath) {
-  const prompts = []
-  const now = Date.now()
-  for (const tag of ['meeting', 'interview', 'general']) {
-    const text = String(profiles?.[tag] || '').trim()
-    if (!text) continue
-    prompts.push({
-      id: `legacy-${tag}`,
-      name: tag,
-      instructions: '',
-      knowledge: text,
-      createdAt: now,
-      updatedAt: now,
+/**
+ * @param {import('./contextPrompts').NormalizedPrompt | null | undefined} prompt
+ */
+function buildIndexForPrompt(prompt) {
+  if (!prompt?.id) return null
+  const files = normalizeReferenceFiles(prompt.referenceFiles)
+  /** @type {{ id: string, fileId: string, fileName: string, text: string, terms: string[] }[]} */
+  const chunks = []
+  for (const file of files) {
+    const parts = chunkText(file.text)
+    parts.forEach((text, idx) => {
+      chunks.push({
+        id: `${file.id}-${idx}`,
+        fileId: file.id,
+        fileName: file.name,
+        text,
+        terms: [...new Set(tokenize(text))],
+      })
     })
   }
-  return indexContextData({ contextPrompts: prompts }, userDataPath)
-}
-
-async function indexContextData({ knowledgeBase, contextPrompts }, userDataPath) {
-  indexPath = getIndexPath(userDataPath)
-  const allChunks = []
-
-  const kbText = String(knowledgeBase || '').trim()
-  if (kbText) {
-    for (const c of chunkText(kbText)) {
-      allChunks.push({
-        id: `kb-${allChunks.length}`,
-        tag: KB_TAG,
-        label: 'Knowledge base',
-        text: c,
-      })
-    }
-  }
-
-  for (const prompt of normalizePromptsList(contextPrompts)) {
-    const tag = promptTag(prompt.id)
-    for (const file of prompt.referenceFiles || []) {
-      const text = String(file.text || '').trim()
-      if (!text) continue
-      for (const c of chunkText(text)) {
-        allChunks.push({
-          id: `${tag}-f-${allChunks.length}`,
-          tag,
-          label: file.name || 'Reference file',
-          text: c,
-        })
-      }
-    }
-  }
-
-  const { idfMap, vectors, N } = buildIndexFromChunks(allChunks)
-  currentIndex = {
-    version: 2,
-    indexedAt: new Date().toISOString(),
-    chunkCount: allChunks.length,
-    chunks: allChunks,
-    vectors,
-    idfMap,
-    N,
-  }
-
-  await fsPromises.mkdir(path.dirname(indexPath), { recursive: true })
-  await fsPromises.writeFile(indexPath, JSON.stringify(serializeIndex(currentIndex)), 'utf8')
-  return getStats()
-}
-
-function chunkMatchesScope(chunk, { promptId = null } = {}) {
-  if (chunk.tag === KB_TAG) return true
-  if (!promptId) return false
-  return chunk.tag === promptTag(promptId)
-}
-
-function search(query, { promptId = null, topK = TOP_K } = {}) {
-  if (!currentIndex?.chunks?.length) return []
-  const qVec = queryVector(query, currentIndex.idfMap, currentIndex.N)
-  if (!qVec.size) return []
-
-  const scored = []
-  for (let i = 0; i < currentIndex.chunks.length; i++) {
-    const chunk = currentIndex.chunks[i]
-    if (!chunkMatchesScope(chunk, { promptId })) continue
-    const score = cosineSimilarity(qVec, currentIndex.vectors[i])
-    if (score >= MIN_SCORE) scored.push({ ...chunk, score })
-  }
-  scored.sort((a, b) => b.score - a.score)
-  return scored.slice(0, topK)
-}
-
-function formatContextBlock(query, { promptId = null, topK = TOP_K } = {}) {
-  const results = search(query, { promptId, topK })
-  if (!results.length) return ''
-
-  let body = ''
-  const used = new Set()
-  for (const r of results) {
-    if (used.has(r.text)) continue
-    used.add(r.text)
-    const label = r.label || r.tag || 'context'
-    const piece = `[${label}] ${r.text}`
-    if (body.length + piece.length + 2 > MAX_BLOCK_CHARS) break
-    body += (body ? '\n\n' : '') + piece
-  }
-  if (!body) return ''
-  return `\n\n---\n## RELEVANT CONTEXT (from your profile — do not invent facts beyond this)\n${body}`
-}
-
-function getStats() {
+  if (!chunks.length) return null
   return {
-    chunkCount: currentIndex?.chunkCount || 0,
-    indexedAt: currentIndex?.indexedAt || null,
+    promptId: prompt.id,
+    updatedAt: Number(prompt.updatedAt) || Date.now(),
+    chunkCount: chunks.length,
+    chunks,
   }
 }
 
-function invalidateCache() {
-  currentIndex = null
+/**
+ * @param {unknown[]} prompts
+ * @param {{ get: Function, set: Function }} store
+ */
+function indexAllPrompts(prompts, store) {
+  /** @type {Record<string, unknown>} */
+  const meta = {}
+  const list = Array.isArray(prompts) ? prompts : []
+  for (const raw of list) {
+    const entry = buildIndexForPrompt(raw)
+    if (entry) meta[entry.promptId] = entry
+  }
+  store.set('contextIndexMeta', meta)
+  return { promptCount: Object.keys(meta).length }
+}
+
+function rankChunksKeyword(chunks, query, topK) {
+  const qTerms = tokenize(query)
+  if (!qTerms.length) return chunks.slice(0, topK)
+
+  return chunks
+    .map((c) => {
+      const terms = c.terms || tokenize(c.text)
+      let score = 0
+      const qSet = new Set(qTerms)
+      for (const t of terms) {
+        if (qSet.has(t)) score += 1
+      }
+      if (score <= 0) score = keywordOverlapScore(query, c.text)
+      return { c, score }
+    })
+    .sort((a, b) => b.score - a.score)
+    .filter((x) => x.score > 0)
+    .slice(0, topK)
+    .map((x) => x.c)
+}
+
+/**
+ * @param {string} promptId
+ * @param {string} query
+ * @param {{ topK?: number, maxChars?: number }} opts
+ * @param {{ get: Function }} store
+ */
+function retrieveChunks(promptId, query, opts, store) {
+  const topK = opts?.topK ?? DEFAULT_TOP_K
+  const maxChars = opts?.maxChars ?? INJECT_MAX
+  const meta = store.get('contextIndexMeta') || {}
+  const entry = meta[promptId]
+  const chunks = entry?.chunks
+  if (!Array.isArray(chunks) || !chunks.length) return []
+
+  const ranked = rankChunksKeyword(chunks, query, topK)
+  const picked = ranked.length ? ranked : chunks.slice(0, topK)
+  return selectByCharBudget(picked, maxChars)
+}
+
+/**
+ * Vector + keyword hybrid retrieval (keyword fallback always kept).
+ * @param {string} promptId
+ * @param {string} query
+ * @param {{ topK?: number, maxChars?: number }} opts
+ * @param {{ get: Function }} store
+ * @param {{ embedText?: Function } | null} [embedClient]
+ */
+async function retrieveChunksAsync(promptId, query, opts, store, embedClient = null) {
+  const keywordHits = retrieveChunks(promptId, query, opts, store)
+  if (store.get('referenceVectorIndexEnabled') !== true || !embedClient?.embedText) {
+    return keywordHits
+  }
+
+  const topK = opts?.topK ?? DEFAULT_TOP_K
+  const maxChars = opts?.maxChars ?? INJECT_MAX
+  const meta = store.get('contextIndexMeta') || {}
+  const entry = meta[promptId]
+  const chunks = entry?.chunks
+  if (!Array.isArray(chunks) || !chunks.length) return keywordHits
+
+  const withVectors = chunks.filter((c) => Array.isArray(c.vector) && c.vector.length)
+  if (!withVectors.length) return keywordHits
+
+  try {
+    const qVec = await embedClient.embedText(String(query || '').trim())
+    if (!qVec.length) return keywordHits
+
+    const ranked = chunks
+      .map((c) => {
+        const vecScore = Array.isArray(c.vector) && c.vector.length ? cosineSimilarity(qVec, c.vector) : 0
+        const kwScore = keywordOverlapScore(query, c.text)
+        return { c, score: vecScore * 2.2 + kwScore }
+      })
+      .sort((a, b) => b.score - a.score)
+
+    const vectorHits = ranked.filter((x) => x.score >= VECTOR_MIN_SCORE).slice(0, topK).map((x) => x.c)
+    if (!vectorHits.length) return keywordHits
+    return selectByCharBudget(vectorHits, maxChars)
+  } catch (e) {
+    console.warn('[context-vector] retrieve failed:', e?.message || e)
+    return keywordHits
+  }
+}
+
+/**
+ * Background embedding enrichment for a prompt index entry.
+ * @param {string} promptId
+ * @param {{ get: Function, set: Function }} store
+ * @param {{ embedTexts?: Function } | null} embedClient
+ */
+async function enrichPromptIndexWithEmbeddings(promptId, store, embedClient) {
+  if (store.get('referenceVectorIndexEnabled') !== true || !embedClient?.embedTexts) return { ok: false }
+  const meta = store.get('contextIndexMeta') || {}
+  const entry = meta[promptId]
+  if (!entry?.chunks?.length) return { ok: false }
+
+  const pending = entry.chunks.filter((c) => !Array.isArray(c.vector) || !c.vector.length)
+  if (!pending.length) return { ok: true, embedded: 0 }
+
+  const texts = pending.map((c) => String(c.text || '').slice(0, 2000))
+  const vectors = await embedClient.embedTexts(texts)
+  for (let i = 0; i < pending.length; i++) {
+    pending[i].vector = Array.isArray(vectors[i]) ? vectors[i] : null
+  }
+  entry.embeddedAt = Date.now()
+  meta[promptId] = entry
+  store.set('contextIndexMeta', { ...meta })
+  return { ok: true, embedded: pending.length }
+}
+
+/**
+ * @param {unknown[]} prompts
+ * @param {{ get: Function, set: Function }} store
+ * @param {{ embedTexts?: Function } | null} [embedClient]
+ */
+async function enrichAllPromptEmbeddings(prompts, store, embedClient) {
+  const list = Array.isArray(prompts) ? prompts : []
+  let total = 0
+  for (const raw of list) {
+    const id = raw?.id
+    if (!id) continue
+    const res = await enrichPromptIndexWithEmbeddings(id, store, embedClient)
+    total += res?.embedded || 0
+  }
+  return { embedded: total }
+}
+
+function selectByCharBudget(chunks, maxChars) {
+  const out = []
+  let used = 0
+  for (const c of chunks) {
+    const t = String(c.text || '')
+    if (!t) continue
+    if (used > 0 && used + t.length + 4 > maxChars) break
+    out.push(c)
+    used += t.length + 4
+  }
+  return out
+}
+
+function formatRetrievedReferenceBlock(chunks) {
+  if (!chunks?.length) return ''
+  const body = chunks
+    .map((c) => `### ${c.fileName || 'Reference'}\n${String(c.text || '').trim()}`)
+    .join('\n\n')
+  const clipped = body.length > INJECT_MAX ? `${body.slice(0, INJECT_MAX)}\n…` : body
+  return `\n\n---\n## REFERENCE FILES (retrieved — facts only; do not invent beyond this)\n${clipped}`
+}
+
+function referenceNeedsRetrieval(prompt) {
+  const text = normalizeReferenceFiles(prompt?.referenceFiles)
+    .map((f) => f.text)
+    .join('\n\n')
+  return text.length > INJECT_MAX
 }
 
 module.exports = {
-  loadIndex,
-  indexProfiles,
-  indexContextData,
-  search,
-  formatContextBlock,
-  getStats,
-  invalidateCache,
-  PROFILE_TAG,
-  promptTag,
+  indexAllPrompts,
+  retrieveChunks,
+  retrieveChunksAsync,
+  enrichPromptIndexWithEmbeddings,
+  enrichAllPromptEmbeddings,
+  formatRetrievedReferenceBlock,
+  referenceNeedsRetrieval,
+  buildIndexForPrompt,
 }

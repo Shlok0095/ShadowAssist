@@ -65,9 +65,6 @@ jobs:
           VEILASSIST_GOOGLE_CAL_CLIENT_ID: ${{ secrets.GOOGLE_CAL_CLIENT_ID }}
           VEILASSIST_GOOGLE_CAL_CLIENT_SECRET: ${{ secrets.GOOGLE_CAL_CLIENT_SECRET }}
 
-      - name: Verify packaged OCR assets
-        run: npm run verify:packaged-ocr
-
       - name: SHA256 checksums
         run: npm run dist:checksums
 

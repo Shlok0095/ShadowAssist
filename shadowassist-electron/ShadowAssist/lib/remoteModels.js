@@ -1,8 +1,24 @@
 // Copyright (c) 2026 ShadowAssist. All rights reserved.
 // Unauthorized copying or distribution is prohibited.
 
+const crypto = require('crypto')
 const providers = require('./providers')
 const catalog = require('./chatModelCatalog.json')
+const { TimedCache } = require('./timedCache')
+
+const { filterMultimodalChatModels, isMultimodalChatModel } = require('./chatMultimodalModels')
+
+/** Avoid hammering vendor /models on every settings open. */
+const modelsListCache = new TimedCache(5 * 60_000, 24)
+
+function modelsCacheKey(provider, get) {
+  const keyField = providers.getApiKeyField(provider)
+  const key = keyField ? String(get(keyField) || '') : ''
+  const base = providers.isOpenAICompat(provider) ? String(providers.resolveBaseURL(provider, get) || '') : ''
+  const saved = savedModelForProvider(provider, get)
+  const digest = crypto.createHash('sha256').update(`${key}|${base}|${saved}`).digest('hex').slice(0, 16)
+  return `${provider}:${digest}`
+}
 
 /** Obvious non-chat / legacy ids returned by GET /v1/models on many hosts. */
 const NON_CHAT_ID =
@@ -17,14 +33,14 @@ function isLikelyChatModelId(id) {
 }
 
 /** Vendor API list only; keep saved id if the account still uses one not returned. */
-function finalizeModelList(apiIds, staticList, savedModel) {
+function finalizeModelList(apiIds, staticList, savedModel, provider) {
   const saved = String(savedModel || '').trim()
   if (apiIds?.length) {
     const out = apiIds.map((id) => String(id || '').trim()).filter(Boolean)
-    if (saved && !out.includes(saved)) out.unshift(saved)
-    return out
+    if (saved && !out.includes(saved) && isMultimodalChatModel(provider, saved)) out.unshift(saved)
+    return filterMultimodalChatModels(provider, out)
   }
-  return mergeUnique(saved ? [saved] : [], staticList)
+  return filterMultimodalChatModels(provider, mergeUnique(saved && isMultimodalChatModel(provider, saved) ? [saved] : [], staticList))
 }
 
 function mergeUnique(primary, fallback) {
@@ -48,6 +64,10 @@ function normalizeOpenAICompatRows(json) {
     .filter((m) => m.id && isLikelyChatModelId(m.id))
   rows.sort((a, b) => b.created - a.created || a.id.localeCompare(b.id))
   return rows.map((r) => r.id)
+}
+
+function applyProviderModelPolicy(provider, ids) {
+  return filterMultimodalChatModels(provider, ids)
 }
 
 async function fetchOpenAICompatModelList(baseURL, apiKey) {
@@ -122,16 +142,21 @@ function savedModelForProvider(provider, get) {
 async function listRemoteModels(provider, get) {
   const staticList = catalog[provider] || []
   const savedModel = savedModelForProvider(provider, get)
+  const cacheKey = modelsCacheKey(provider, get)
+  const cached = modelsListCache.get(cacheKey)
+  if (cached) return cached
 
   try {
     if (provider === 'openrouter') {
       const ids = await fetchOpenRouterModelList()
-      return {
+      const result = {
         ok: true,
-        models: finalizeModelList(ids, staticList, savedModel),
+        models: finalizeModelList(ids, staticList, savedModel, provider),
         source: 'api',
         error: null,
       }
+      modelsListCache.set(cacheKey, result)
+      return result
     }
 
     if (provider === 'anthropic') {
@@ -139,18 +164,20 @@ async function listRemoteModels(provider, get) {
       if (!key) {
         return {
           ok: false,
-          models: finalizeModelList([], staticList, savedModel),
+          models: finalizeModelList([], staticList, savedModel, provider),
           source: 'static',
           error: 'Save Anthropic API key first, then sync.',
         }
       }
       const ids = await fetchAnthropicModelList(key)
-      return {
+      const result = {
         ok: true,
-        models: finalizeModelList(ids, staticList, savedModel),
+        models: finalizeModelList(ids, staticList, savedModel, provider),
         source: 'api',
         error: null,
       }
+      modelsListCache.set(cacheKey, result)
+      return result
     }
 
     if (provider === 'custom') {
@@ -159,7 +186,7 @@ async function listRemoteModels(provider, get) {
       if (!key) {
         return {
           ok: false,
-          models: finalizeModelList([], staticList, savedModel),
+          models: finalizeModelList([], staticList, savedModel, provider),
           source: 'static',
           error: 'Save custom API key first.',
         }
@@ -167,7 +194,7 @@ async function listRemoteModels(provider, get) {
       const ids = await fetchOpenAICompatModelList(base, key)
       return {
         ok: true,
-        models: finalizeModelList(ids, staticList, savedModel),
+        models: finalizeModelList(ids, staticList, savedModel, provider),
         source: 'api',
         error: null,
       }
@@ -176,7 +203,7 @@ async function listRemoteModels(provider, get) {
     if (!providers.isOpenAICompat(provider)) {
       return {
         ok: false,
-        models: finalizeModelList([], staticList, savedModel),
+        models: finalizeModelList([], staticList, savedModel, provider),
         source: 'static',
         error: 'This vendor has no models listing API in-app; use static list or type a model id.',
       }
@@ -188,26 +215,36 @@ async function listRemoteModels(provider, get) {
     if (!key) {
       return {
         ok: false,
-        models: finalizeModelList([], staticList, savedModel),
+        models: finalizeModelList([], staticList, savedModel, provider),
         source: 'static',
         error: `Save ${provider} API key first, then sync.`,
       }
     }
-    const ids = await fetchOpenAICompatModelList(base, key)
-    return {
+    const ids = applyProviderModelPolicy(provider, await fetchOpenAICompatModelList(base, key))
+    const result = {
       ok: true,
-      models: finalizeModelList(ids, staticList, savedModel),
+      models: finalizeModelList(ids, staticList, savedModel, provider),
       source: 'api',
       error: null,
     }
+    modelsListCache.set(cacheKey, result)
+    return result
   } catch (e) {
     return {
       ok: false,
-      models: finalizeModelList([], staticList, savedModel),
+      models: finalizeModelList([], staticList, savedModel, provider),
       source: 'static',
       error: e.message || 'Failed to fetch models',
     }
   }
 }
 
-module.exports = { listRemoteModels, catalog }
+function invalidateRemoteModelsCache(provider) {
+  if (!provider) {
+    modelsListCache.clear()
+    return
+  }
+  modelsListCache.deleteByPrefix(`${provider}:`)
+}
+
+module.exports = { listRemoteModels, catalog, invalidateRemoteModelsCache }

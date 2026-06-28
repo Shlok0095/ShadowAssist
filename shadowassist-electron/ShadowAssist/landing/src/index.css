@@ -134,11 +134,21 @@ code {
 }
 
 .brand {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.55rem;
   font-family: var(--font-display);
   font-weight: 700;
   font-size: 1.15rem;
   letter-spacing: -0.04em;
   color: var(--text);
+  text-decoration: none;
+}
+.brand-logo {
+  height: 1.65rem;
+  width: auto;
+  display: block;
+  object-fit: contain;
 }
 .brand:hover {
   text-decoration: none;
@@ -808,9 +818,17 @@ code {
 }
 
 .foot-brand {
-  font-family: var(--font-display);
-  font-weight: 700;
+  display: inline-flex;
+  align-items: center;
+  gap: 0.45rem;
+  font-weight: 600;
   color: var(--text);
+}
+.foot-brand-logo {
+  height: 1.25rem;
+  width: auto;
+  display: block;
+  object-fit: contain;
 }
 
 .foot-muted {

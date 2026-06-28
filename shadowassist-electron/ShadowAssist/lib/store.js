@@ -11,89 +11,75 @@ const ENCRYPTED_KEYS = [
   'apiKey',
   'groqKey',
   'nvidiaKey',
-  'audioFallbackKey',
   'anthropicKey',
   'deepseekKey',
-  'moonshotKey',
-  'mistralKey',
-  'xaiKey',
-  'openrouterKey',
-  'togetherKey',
-  'perplexityKey',
   'googleKey',
-  'fireworksKey',
-  'cerebrasKey',
   'customOpenaiKey',
+  'audioFallbackKey',
+  // Dedicated STT-only provider keys (Natively-aligned)
+  'deepgramKey',
+  'elevenLabsKey',
+  'azureSpeechKey',
+  'googleSttKey',
+  'sonioxKey',
   'googleCalendarClientSecret',
   'googleCalendarAccessToken',
   'googleCalendarRefreshToken',
+  'hindsightApiKey',
 ]
 
 const schema = {
-  /** Chat / Ask AI provider */
+  /** Chat / Ask AI provider — groq, openai, anthropic, google, nvidia, deepseek, custom */
   provider: { type: 'string', default: 'groq' },
-  /** Cloud mic STT provider (independent of chat) */
+  /** Cloud mic STT provider (independent of chat LLM) */
   sttProvider: { type: 'string', default: 'groq' },
+  // ── OpenAI ──────────────────────────────────────────────────────────────────
   apiKey: { type: 'string', default: '' },
   selectedModel: { type: 'string', default: 'gpt-4o' },
+  // ── Groq ────────────────────────────────────────────────────────────────────
   groqKey: { type: 'string', default: '' },
-  groqModel: { type: 'string', default: 'llama-3.3-70b-versatile' },
-  groqWhisperModel: { type: 'string', default: 'whisper-large-v3-turbo' },
+  groqModel: { type: 'string', default: 'meta-llama/llama-4-scout-17b-16e-instruct' },
+  groqWhisperModel: { type: 'string', default: 'whisper-large-v3' },
+  // ── NVIDIA NIM (cloud STT + chat vision) ─────────────────────────────────────
   nvidiaKey: { type: 'string', default: '' },
-  nvidiaModel: { type: 'string', default: 'meta/llama-3.3-70b-instruct' },
-  /** NVIDIA Parakeet STT (same nvapi key as chat; gRPC on grpc.nvcf.nvidia.com) */
-  nvidiaSttModel: { type: 'string', default: 'parakeet-1.1b-rnnt-multilingual-asr' },
+  nvidiaModel: { type: 'string', default: 'nvidia/nemotron-nano-12b-v2-vl' },
+  nvidiaWhisperModel: { type: 'string', default: 'nvidia/parakeet-1.1b-rnnt-multilingual-asr' },
+  // ── Anthropic ───────────────────────────────────────────────────────────────
   anthropicKey: { type: 'string', default: '' },
-  anthropicModel: { type: 'string', default: 'claude-3-5-sonnet-20241022' },
+  anthropicModel: { type: 'string', default: 'claude-sonnet-4-6' },
+  // ── DeepSeek ────────────────────────────────────────────────────────────────
   deepseekKey: { type: 'string', default: '' },
   deepseekModel: { type: 'string', default: 'deepseek-chat' },
-  moonshotKey: { type: 'string', default: '' },
-  moonshotModel: { type: 'string', default: 'moonshot-v1-8k' },
-  mistralKey: { type: 'string', default: '' },
-  mistralModel: { type: 'string', default: 'mistral-small-latest' },
-  /** Mistral Voxtral STT (same key as chat) */
-  mistralSttModel: { type: 'string', default: 'voxtral-mini-latest' },
-  xaiKey: { type: 'string', default: '' },
-  xaiModel: { type: 'string', default: 'grok-2-latest' },
-  openrouterKey: { type: 'string', default: '' },
-  openrouterModel: { type: 'string', default: 'openai/gpt-4o-mini' },
-  togetherKey: { type: 'string', default: '' },
-  togetherModel: { type: 'string', default: 'meta-llama/Llama-3.3-70B-Instruct-Turbo' },
-  /** Together native Whisper STT (same API key as chat) */
-  togetherWhisperModel: { type: 'string', default: 'openai/whisper-large-v3' },
-  perplexityKey: { type: 'string', default: '' },
-  perplexityModel: { type: 'string', default: 'sonar' },
+  // ── Google Gemini ────────────────────────────────────────────────────────────
   googleKey: { type: 'string', default: '' },
   googleModel: { type: 'string', default: 'gemini-2.0-flash' },
-  /** Google Calendar OAuth (user-provided Google Cloud desktop app credentials). */
-  googleCalendarClientId: { type: 'string', default: '' },
-  googleCalendarClientSecret: { type: 'string', default: '' },
-  googleCalendarAccessToken: { type: 'string', default: '' },
-  googleCalendarRefreshToken: { type: 'string', default: '' },
-  googleCalendarTokenExpiry: { type: 'number', default: 0 },
-  googleCalendarConnectedEmail: { type: 'string', default: '' },
-  /** Calendar reminder notifications (upcoming accepted meetings). */
-  calendarRemindersEnabled: { type: 'boolean', default: true },
-  /** Minutes before start to notify (0 = at start time). */
-  calendarReminderMinutes: { type: 'number', default: 5 },
-  /** Windows: detect Google Meet / Microsoft Teams foreground windows and show a toast. */
-  meetingForegroundDetectionEnabled: { type: 'boolean', default: true },
-  /** Persisted listen session summaries shown in Settings > Meetings. */
-  listenSessionSummaries: { type: 'array', default: [] },
-  fireworksKey: { type: 'string', default: '' },
-  fireworksModel: { type: 'string', default: 'accounts/fireworks/models/llama-v3p3-70b-instruct' },
-  /** Fireworks Whisper STT (separate audio host, same API key) */
-  fireworksSttModel: { type: 'string', default: 'whisper-v3-turbo' },
-  cerebrasKey: { type: 'string', default: '' },
-  cerebrasModel: { type: 'string', default: 'llama3.1-8b' },
+  // ── Custom (OpenAI-compat) ───────────────────────────────────────────────────
   customOpenaiBaseUrl: { type: 'string', default: '' },
   customOpenaiKey: { type: 'string', default: '' },
   customOpenaiModel: { type: 'string', default: 'gpt-4o' },
+  // ── STT fallback ────────────────────────────────────────────────────────────
   audioFallbackKey: { type: 'string', default: '' },
   audioFallbackProvider: { type: 'string', default: 'openai' },
-  /** Empty = use built-in prompt from lib/defaultSystemPrompt.js (VeilAssist base). */
+  // ── Dedicated STT-only providers (Natively-aligned) ─────────────────────────
+  deepgramKey: { type: 'string', default: '' },
+  deepgramModel: { type: 'string', default: 'nova-2' },
+  elevenLabsKey: { type: 'string', default: '' },
+  elevenLabsModel: { type: 'string', default: 'scribe_v2_realtime' },
+  azureSpeechKey: { type: 'string', default: '' },
+  azureSpeechRegion: { type: 'string', default: 'eastus' },
+  googleSttKey: { type: 'string', default: '' },
+  googleSttLanguage: { type: 'string', default: 'en-US' },
+  sonioxKey: { type: 'string', default: '' },
+  sonioxModel: { type: 'string', default: 'stt-rt-v5' },
+  /** Optional input device ids (overlay getUserMedia constraints only). */
+  preferredMicId: { type: 'string', default: '' },
+  preferredSpeakerId: { type: 'string', default: '' },
+  /** local | moonshine-base | moonshine-tiny — auto uses language-based default. */
+  localSttModelPreference: { type: 'string', default: 'auto' },
+  // ── System prompt ───────────────────────────────────────────────────────────
+  /** Empty = use built-in prompt from lib/defaultSystemPrompt.js */
   systemPrompt: { type: 'string', default: '' },
-  // x/y optional — main seeds top-right when missing or off-screen
+  // ── Overlay ─────────────────────────────────────────────────────────────────
   overlayBounds: { type: 'object', default: { width: 480, height: 580 } },
   overlayOpacity: { type: 'number', default: 0.92 },
   overlayFontSize: { type: 'string', default: 'medium' },
@@ -101,17 +87,17 @@ const schema = {
   answerStyle: { type: 'string', default: 'brief' },
   /** latest = show only the current exchange; history = full thread */
   overlayAnswerView: { type: 'string', default: 'latest' },
-  /** Large-type reading mode — minimal chrome for live meetings */
   overlayTeleprompter: { type: 'boolean', default: false },
-  /** Hide input until tapped — more space for answers */
   overlayFocusMode: { type: 'boolean', default: false },
   /** Accent preset id — see renderer/shared/uiAccentThemes.js (default blue) */
   uiAccentTheme: { type: 'string', default: 'blue' },
+  // ── Hotkeys ─────────────────────────────────────────────────────────────────
   hotkeys: {
     type: 'object',
     default: {
       toggleOverlay: 'CommandOrControl+\\',
       askAI: 'CommandOrControl+Return',
+      askAINoScreen: 'CommandOrControl+Shift+Return',
       clearChat: 'CommandOrControl+R',
       toggleSession: 'CommandOrControl+Shift+\\',
       moveUp: 'CommandOrControl+Up',
@@ -121,57 +107,114 @@ const schema = {
       scrollUp: 'CommandOrControl+Shift+Up',
       scrollDown: 'CommandOrControl+Shift+Down',
       settings: 'CommandOrControl+Shift+S',
+      hideOverlay: 'Escape',
       copyResponse: 'CommandOrControl+Shift+C',
+      captureScreenshot: 'CommandOrControl+H',
     },
   },
-  playbooks: { type: 'array', default: [] },
+  // ── Audio / STT settings ────────────────────────────────────────────────────
   audioEnabled: { type: 'boolean', default: true },
-  /** 'cloud' → Groq / OpenAI Whisper API (requires key). Legacy 'local' migrated to cloud. */
-  sttMode: { type: 'string', default: 'cloud' },
+  /** local = on-device Moonshine/Whisper ONNX; cloud = BYOK REST/streaming STT */
+  sttMode: { type: 'string', default: 'local' },
+  /** Experimental Whisper Tiny gate on Moonshine finals — off by default (Natively: filterHallucination only). */
+  localMoonshineWhisperGate: { type: 'boolean', default: false },
   /**
    * Mic STT language hint for Whisper-style APIs.
-   * en_hi_hinglish: auto-detect + prompt bias (English, Hindi, Hinglish).
-   * en / hi: force ISO language (no Hinglish prompt).
+   * en / hi / en_hi_hinglish.
    */
-  micListenLanguage: { type: 'string', default: 'en_hi_hinglish' },
-  /** standard | boost — input gain + looser VAD thresholds for quiet or distant mics */
+  micListenLanguage: { type: 'string', default: 'en' },
   micSensitivity: { type: 'string', default: 'standard' },
-  /** false = Listen (context only, no auto AI); true = Assist (intent-based auto trigger). */
   assistAutoTrigger: { type: 'boolean', default: false },
-  ocrEnabled: { type: 'boolean', default: true },
+  // ── User context ─────────────────────────────────────────────────────────────
   hasCompletedOnboarding: { type: 'boolean', default: false },
-  /** Extracted resume/profile text for optional meeting context (PDF/TXT upload) — legacy; migrated to contextProfiles */
   resumeContext: { type: 'string', default: '' },
-  /** Job description or role-specific instructions for the model — legacy; migrated to contextProfiles */
   jdContext: { type: 'string', default: '' },
-  /** Original filename for UI display — legacy */
+  /** Structured parse of resumeContext (ProfileTreeService-style sections). */
+  resumeTree: { type: 'object', default: {} },
+  /** Structured parse of jdContext. */
+  jdTree: { type: 'object', default: {} },
   resumeSourceName: { type: 'string', default: '' },
-  /** @deprecated legacy buckets — migrated to contextPrompts */
-  contextProfiles: {
-    type: 'object',
-    default: { meeting: '', interview: '', general: '' },
-  },
-  /** @deprecated */
-  contextRetrievalMode: { type: 'string', default: 'auto' },
-  /** Shared facts/docs (Cluely knowledge base) — vector indexed, always searched */
+  /** Shared facts/docs — always included in profile block */
   knowledgeBase: { type: 'string', default: '' },
   /** @deprecated — migrated to knowledgeBase */
   contextProfile: { type: 'string', default: '' },
   /** Saved context prompts [{ id, name, instructions, knowledge, createdAt, updatedAt }] */
   contextPrompts: { type: 'array', default: [] },
-  /** Active prompt id for completions */
   activeContextPromptId: { type: 'string', default: '' },
-  /** Recent prompt ids (newest first) */
   contextPromptHistory: { type: 'array', default: [] },
-  /** Last index stats { chunkCount, indexedAt } */
   contextIndexMeta: { type: 'object', default: {} },
-  /** Stealth Mode: true = hidden from screen capture (setContentProtection / WDA_EXCLUDEFROMCAPTURE on Windows) */
+  /** Saved listen-session recaps [{ id, startedAt, endedAt, summary, … }] */
+  meetingSessions: { type: 'array', default: [] },
+  /** Poll foreground window for Zoom/Teams/Meet/Webex and show top-right toast (Windows). */
+  meetingForegroundDetectionEnabled: { type: 'boolean', default: true },
+  /** Suggest a profile mode from live transcript keywords during Listen. */
+  meetingModeAutoDetectEnabled: { type: 'boolean', default: true },
+  /** Natively-style deterministic context routing (layer gating + meeting recall). */
+  intelligenceRoutingEnabled: { type: 'boolean', default: true },
+  /** Local long-term memory index (Hindsight subset — retain on session end, recall on backward asks). */
+  longTermMemoryEnabled: { type: 'boolean', default: true },
+  longTermMemory: { type: 'array', default: [] },
+  /** Optional external Hindsight vector recall API (falls back to local keyword memory). */
+  hindsightApiUrl: { type: 'string', default: '' },
+  hindsightApiKey: { type: 'string', default: '' },
+  /** Google Calendar OAuth (Google Cloud desktop app credentials). */
+  googleCalendarClientId: { type: 'string', default: '' },
+  googleCalendarClientSecret: { type: 'string', default: '' },
+  googleCalendarAccessToken: { type: 'string', default: '' },
+  googleCalendarRefreshToken: { type: 'string', default: '' },
+  googleCalendarTokenExpiry: { type: 'number', default: 0 },
+  googleCalendarConnectedEmail: { type: 'string', default: '' },
+  /** Calendar reminder notifications (upcoming accepted meetings). */
+  calendarRemindersEnabled: { type: 'boolean', default: true },
+  calendarReminderMinutes: { type: 'number', default: 5 },
+  // ── Privacy / Security ───────────────────────────────────────────────────────
+  /** Stealth Mode: true = hidden from screen capture */
   stealth_mode: { type: 'boolean', default: false },
-  /** Quick flag; authoritative record is consentRecord */
+  /** Launch VeilAssist when you sign in to Windows. */
+  openAtLogin: { type: 'boolean', default: false },
+  /** Append console output to userData/logs/veilassist.log */
+  verboseDebugLogging: { type: 'boolean', default: false },
+  /** Skip saving session recaps and LTM retain on Stop Listen. */
+  doNotSaveMeetingsEnabled: { type: 'boolean', default: false },
+  /** Auto-scroll live transcript columns (Me / Participant). */
+  overlayTranscriptAutoScroll: { type: 'boolean', default: true },
+  /** Show split Me / Participant transcript panel instead of single-line bar. */
+  overlayLiveTranscriptEnabled: { type: 'boolean', default: true },
+  /** Pin streaming answers to top unless user scrolls away. */
+  overlayAnswerPinToTop: { type: 'boolean', default: true },
+  /** Phase 9 — slight answer phrasing variation. */
+  answerDiversityEnabled: { type: 'boolean', default: false },
+  /** Phase 6 — semantic vector recall (keyword fallback always kept). */
+  vectorMemoryEnabled: { type: 'boolean', default: false },
+  /** Phase 4 — LLM follow-up email draft from session summary. */
+  followUpDraftEnabled: { type: 'boolean', default: false },
+  /** Phase 9 — constrain answers to structured resume/JD sections. */
+  profileTreeV2Enabled: { type: 'boolean', default: false },
+  /** Phase 8 — clicks pass through overlay to apps behind (toggle in General). */
+  overlayMousePassthroughEnabled: { type: 'boolean', default: false },
+  /** Phase 8 — force-hide taskbar icon even in Visible mode (Invisible/stealth always hides). */
+  hideFromTaskbarEnabled: { type: 'boolean', default: false },
+  /** Phase 8 — start local POST /recall server on 127.0.0.1:8888 when enabled. */
+  hindsightAutoStartEnabled: { type: 'boolean', default: false },
+  /** Phase 6 — search keyword across saved meeting sessions. */
+  globalMeetingSearchEnabled: { type: 'boolean', default: false },
+  /** Phase 9 — semantic retrieval over reference file chunks (keyword fallback kept). */
+  referenceVectorIndexEnabled: { type: 'boolean', default: false },
+  /** Phase 10 — Natively-style Phone Link companion (LAN; off by default). */
+  phoneLinkEnabled: { type: 'boolean', default: false },
+  phoneLinkPort: { type: 'number', default: 8787 },
+  phoneLinkPairingToken: { type: 'string', default: '' },
+  /** Future — phone mic as optional STT input (not wired in 10.1). */
+  phoneLinkRemoteMicEnabled: { type: 'boolean', default: false },
+  /** Phase 10 — Android USB mirror via scrcpy (separate from Phone Link). */
+  phoneMirrorDeviceId: { type: 'string', default: '' },
+  phoneMirrorMaxSize: { type: 'number', default: 1080 },
+  phoneMirrorBitRate: { type: 'number', default: 8000000 },
+  /** Optional adb screencap appended on Ask AI when mirror is running. */
+  phoneMirrorIncludeInAsk: { type: 'boolean', default: false },
+  vectorMemoryMigrationV1: { type: 'boolean', default: false },
   consent_v1: { type: 'boolean', default: false },
-  /** { version, date, given } — re-prompt when version bumps */
   consentRecord: { type: 'object', default: {} },
-  /** Internal: bump DATA_EPOCH to force clearing secrets + re-consent once */
   dataEpoch: { type: 'number', default: 0 },
 }
 
@@ -205,14 +248,6 @@ function getAll() {
 }
 
 function clear() { store.clear() }
-
-function migrateSttModeFromLocal() {
-  try {
-    if (get('sttMode') === 'local') set('sttMode', 'cloud')
-  } catch {
-    set('sttMode', 'cloud')
-  }
-}
 
 function migrateSttProviderFromLegacy() {
   try {
@@ -248,30 +283,6 @@ function migrateLegacySystemPrompt() {
   }
 }
 
-function migrateContextProfilesFromLegacy() {
-  try {
-    const cur = get('contextProfiles')
-    const hasAny =
-      cur &&
-      typeof cur === 'object' &&
-      (String(cur.meeting || '').trim() ||
-        String(cur.interview || '').trim() ||
-        String(cur.general || '').trim())
-    if (hasAny) return
-
-    const resume = String(get('resumeContext') || '').trim()
-    const jd = String(get('jdContext') || '').trim()
-    if (!resume && !jd) {
-      set('contextProfiles', { meeting: '', interview: '', general: '' })
-      return
-    }
-    const meeting = [resume, jd].filter(Boolean).join('\n\n---\n\n')
-    set('contextProfiles', { meeting, interview: '', general: '' })
-  } catch {
-    set('contextProfiles', { meeting: '', interview: '', general: '' })
-  }
-}
-
 function migrateKnowledgeBase() {
   try {
     const kb = String(get('knowledgeBase') || '').trim()
@@ -298,13 +309,64 @@ function migrateUiAccentFromGreen() {
   } catch (_) {}
 }
 
+/** Migrate dropped providers to groq if they were the active provider */
+function migrateDroppedProviders() {
+  try {
+    const DROPPED = new Set(['moonshot', 'mistral', 'xai', 'openrouter', 'together', 'perplexity', 'fireworks', 'cerebras'])
+    const chatProv = store.get('provider')
+    if (chatProv && DROPPED.has(chatProv)) set('provider', 'groq')
+    const sttProv = store.get('sttProvider')
+    if (sttProv && DROPPED.has(sttProv)) set('sttProvider', 'groq')
+  } catch (_) {}
+}
+
+function migrateGroqWhisperModel() {
+  try {
+    const m = String(get('groqWhisperModel') || '').trim()
+    if (m === 'distil-whisper-large-v3-en') set('groqWhisperModel', 'whisper-large-v3')
+  } catch (_) {}
+}
+
+/** Local STT is Moonshine English-only; reset legacy Hindi/Hinglish listen mode for on-device path. */
+function migrateLocalSttListenLanguage() {
+  try {
+    const cur = get('micListenLanguage')
+    if (cur === 'hi' || cur === 'en_hi_hinglish') set('micListenLanguage', 'en')
+  } catch (_) {}
+}
+
+function migrateProfileTrees() {
+  try {
+    const { parseResumeTree, parseJdTree } = require('./profileTreeService')
+    const resume = String(get('resumeContext') || '').trim()
+    const jd = String(get('jdContext') || '').trim()
+    const rt = get('resumeTree')
+    const jt = get('jdTree')
+    if (resume && (!rt || !rt.parsedAt)) set('resumeTree', parseResumeTree(resume))
+    if (jd && (!jt || !jt.parsedAt)) set('jdTree', parseJdTree(jd))
+  } catch (_) {}
+}
+
+function migrateGroqChatModelToVision() {
+  try {
+    const { isMultimodalChatModel } = require('./chatMultimodalModels')
+    const m = String(get('groqModel') || '').trim()
+    if (m && !isMultimodalChatModel('groq', m)) {
+      set('groqModel', 'meta-llama/llama-4-scout-17b-16e-instruct')
+    }
+  } catch (_) {}
+}
+
 function runDataMigration() {
   migrateLegacySystemPrompt()
-  migrateSttModeFromLocal()
   migrateSttProviderFromLegacy()
-  migrateContextProfilesFromLegacy()
+  migrateDroppedProviders()
+  migrateGroqWhisperModel()
+  migrateGroqChatModelToVision()
+  migrateLocalSttListenLanguage()
   migrateContextPromptsV2()
   migrateUiAccentFromGreen()
+  migrateProfileTrees()
   const epoch = typeof get('dataEpoch') === 'number' ? get('dataEpoch') : 0
   if (epoch >= DATA_EPOCH) return
   for (const k of ENCRYPTED_KEYS) {

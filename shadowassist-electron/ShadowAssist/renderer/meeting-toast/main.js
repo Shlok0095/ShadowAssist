@@ -1,6 +1,8 @@
 // Copyright (c) 2026 VeilAssist. All rights reserved.
 // Meeting toast — dark, sharp card; platform marks (SVG).
 
+import brandLogo from '../shared/brandLogo.js'
+
 const root = document.getElementById('root')
 /** Last payload `eventId` — sent on dismiss so main can suppress repeats. */
 let lastToastEventId = ''
@@ -64,7 +66,10 @@ function render(data) {
     <div class="wrap">
       <div class="top">
         <button type="button" class="close" aria-label="Close">×</button>
-        <span class="brand">VeilAssist</span>
+        <div class="brand">
+          <img class="brand-logo" src="${brandLogo}" alt="" draggable="false" />
+          <span>VeilAssist</span>
+        </div>
       </div>
       <div class="row">
         <div class="logo-wrap">${logo}</div>
@@ -127,11 +132,20 @@ style.textContent = `
     background: rgba(255,255,255,0.12);
   }
   .brand {
+    display: flex;
+    align-items: center;
+    gap: 6px;
     font-size: 10px;
     font-weight: 700;
     letter-spacing: 0.12em;
     color: #52525b;
     text-transform: uppercase;
+  }
+  .brand-logo {
+    height: 18px;
+    width: auto;
+    display: block;
+    object-fit: contain;
   }
   .row {
     display: flex;

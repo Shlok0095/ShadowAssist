@@ -2,84 +2,112 @@
 // Unauthorized copying or distribution is prohibited.
 
 /**
- * Mic transcription routing (cloud only).
- * Chat LLM uses store `provider`; cloud STT uses `sttProvider` (independent).
+ * Mic transcription routing — aligned with Natively AI's STT provider set.
+ * Supported: Groq Whisper, OpenAI Whisper, Deepgram, ElevenLabs, Azure Speech, Google Cloud STT.
+ * Chat LLM (store `provider`) and STT (store `sttProvider`) are independent.
  */
 
-const NATIVE_STT_PROVIDER_IDS = ['groq', 'openai', 'together', 'mistral', 'fireworks', 'nvidia']
+const nvidiaNimStt = require('./nvidiaNimStt')
+
+const NATIVE_STT_PROVIDER_IDS = [
+  // Whisper REST providers
+  'groq', 'openai', 'nvidia',
+  // Dedicated STT-only providers (Natively-aligned)
+  'deepgram', 'elevenlabs', 'azure', 'google', 'soniox',
+]
 
 const OPENAI_STYLE_STT = {
   groq: {
     baseURL: 'https://api.groq.com/openai/v1',
     keyField: 'groqKey',
     modelFromStore: 'groqWhisperModel',
-    defaultModel: 'whisper-large-v3-turbo',
+    // whisper-large-v3 hallucinates far less than turbo on silence/noise
+    defaultModel: 'whisper-large-v3',
   },
   openai: {
     baseURL: 'https://api.openai.com/v1',
     keyField: 'apiKey',
     fixedModel: 'whisper-1',
   },
-  together: {
-    baseURL: 'https://api.together.xyz/v1',
-    keyField: 'togetherKey',
-    modelFromStore: 'togetherWhisperModel',
-    defaultModel: 'openai/whisper-large-v3',
-  },
-  mistral: {
-    baseURL: 'https://api.mistral.ai/v1',
-    keyField: 'mistralKey',
-    modelFromStore: 'mistralSttModel',
-    defaultModel: 'voxtral-mini-latest',
+  nvidia: {
+    baseURL: 'https://integrate.api.nvidia.com/v1',
+    keyField: 'nvidiaKey',
+    modelFromStore: 'nvidiaWhisperModel',
+    defaultModel: 'nvidia/parakeet-1.1b-rnnt-multilingual-asr',
   },
 }
 
-const { DEFAULT_FUNCTION_ID: NVIDIA_PARAKEET_FUNCTION_ID } = require('./nvidiaRivaStt')
+const DEDICATED_STT = {
+  deepgram: {
+    keyField: 'deepgramKey',
+    modelFromStore: 'deepgramModel',
+    defaultModel: 'nova-2',
+    sttKind: 'deepgram_streaming',
+    useMainProcessStt: true,
+  },
+  elevenlabs: {
+    keyField: 'elevenLabsKey',
+    modelFromStore: 'elevenLabsModel',
+    defaultModel: 'scribe_v2_realtime',
+    sttKind: 'elevenlabs_streaming',
+    useMainProcessStt: true,
+  },
+  azure: {
+    keyField: 'azureSpeechKey',
+    modelFromStore: null,
+    defaultModel: 'conversation',
+    sttKind: 'azure_streaming',
+    useMainProcessStt: true,
+  },
+  google: {
+    keyField: 'googleSttKey',
+    modelFromStore: null,
+    defaultModel: 'default',
+    sttKind: 'google_streaming',
+    useMainProcessStt: true,
+  },
+  soniox: {
+    keyField: 'sonioxKey',
+    modelFromStore: 'sonioxModel',
+    defaultModel: 'stt-rt-v5',
+    sttKind: 'soniox_streaming',
+    useMainProcessStt: true,
+  },
+}
 
 const STT_MODEL_FIELDS = {
   groq: 'groqWhisperModel',
-  together: 'togetherWhisperModel',
-  mistral: 'mistralSttModel',
-  fireworks: 'fireworksSttModel',
-  nvidia: 'nvidiaSttModel',
+  nvidia: 'nvidiaWhisperModel',
 }
 
-function nvidiaLanguageCode(get) {
+const MIC_LISTEN_LANG_MODES = new Set(['en', 'hi', 'en_hi_hinglish'])
+
+const WHISPER_PRIMERS = {
+  // A neutral primer with clear speech biases the model away from silence hallucinations.
+  // Avoid any word from the HALLUCINATIONS blocklist — Whisper tends to echo the prompt style.
+  en: "Okay, so let me think about this. The question is asking about... right, and the answer would be...",
+  hi: 'ठीक है, तो इस सवाल का जवाब देते हैं। मुझे लगता है कि इसका उत्तर यह है।',
+  en_hi_hinglish:
+    "Okay so yaar, is question ka answer kya hoga? Let me think... haan, toh basically yeh hai.",
+}
+
+const ALLOWED_WHISPER_LANGUAGES = {
+  en: ['english'],
+  hi: ['hindi'],
+  en_hi_hinglish: ['english', 'hindi'],
+}
+
+function micListenLanguageFormFields(get, _sttVendor) {
   const raw = get('micListenLanguage')
-  if (raw === 'en') return 'en-US'
-  if (raw === 'hi') return 'hi-IN'
-  return 'multi'
-}
+  const mode = MIC_LISTEN_LANG_MODES.has(raw) ? raw : 'en'
 
-function nvidiaStt(get) {
-  const key = get('nvidiaKey')
-  if (!key) return null
-  const model = get('nvidiaSttModel') || 'parakeet-1.1b-rnnt-multilingual-asr'
-  return {
-    sttKind: 'nvidia_riva',
-    model,
-    apiKey: key,
-    functionId: NVIDIA_PARAKEET_FUNCTION_ID,
-    responseKind: 'text',
-    useWhisperSegmentMeta: false,
-    languageCode: nvidiaLanguageCode(get),
-  }
-}
+  const primer = WHISPER_PRIMERS[mode] || WHISPER_PRIMERS.en
+  const allowedLanguages = ALLOWED_WHISPER_LANGUAGES[mode] || ALLOWED_WHISPER_LANGUAGES.en
 
-function fireworksStt(get) {
-  const key = get('fireworksKey')
-  if (!key) return null
-  const m = (get('fireworksSttModel') || 'whisper-v3-turbo').toLowerCase()
-  const turbo = m.includes('turbo')
-  return {
-    url: turbo
-      ? 'https://audio-turbo.api.fireworks.ai/v1/audio/transcriptions'
-      : 'https://audio-prod.api.fireworks.ai/v1/audio/transcriptions',
-    model: turbo ? 'whisper-v3-turbo' : 'whisper-v3',
-    apiKey: key,
-    responseKind: 'text',
-    useWhisperSegmentMeta: false,
-  }
+  if (mode === 'en') return { language: 'en', prompt: primer, allowedLanguages }
+  if (mode === 'hi') return { language: 'hi', prompt: primer, allowedLanguages }
+
+  return { prompt: primer, allowedLanguages }
 }
 
 /** Legacy: dedicated fallback key when chat vendor had no STT */
@@ -90,7 +118,7 @@ function legacyFallbackTranscription(get) {
   if (fbProv === 'groq') {
     return {
       url: 'https://api.groq.com/openai/v1/audio/transcriptions',
-      model: get('groqWhisperModel') || 'whisper-large-v3-turbo',
+      model: get('groqWhisperModel') || 'whisper-large-v3',
       apiKey: fbKey,
       responseKind: 'text',
       useWhisperSegmentMeta: true,
@@ -103,34 +131,6 @@ function legacyFallbackTranscription(get) {
     responseKind: 'text',
     useWhisperSegmentMeta: true,
   }
-}
-
-const MIC_LISTEN_LANG_MODES = new Set(['en', 'hi', 'en_hi_hinglish'])
-
-const WHISPER_PRIMERS = {
-  en: 'Sure, let me explain. So in the meeting we discussed the updates and next steps.',
-  hi: 'हाँ, मीटिंग में हमने सब कुछ discuss किया। ठीक है, आगे बढ़ते हैं।',
-  en_hi_hinglish:
-    'haan yaar, toh meeting mein kya hua? Let me know the updates. Okay sure.',
-}
-
-const ALLOWED_WHISPER_LANGUAGES = {
-  en: ['english'],
-  hi: ['hindi'],
-  en_hi_hinglish: ['english', 'hindi'],
-}
-
-function micListenLanguageFormFields(get, _sttVendor) {
-  const raw = get('micListenLanguage')
-  const mode = MIC_LISTEN_LANG_MODES.has(raw) ? raw : 'en_hi_hinglish'
-
-  const primer = WHISPER_PRIMERS[mode]
-  const allowedLanguages = ALLOWED_WHISPER_LANGUAGES[mode]
-
-  if (mode === 'en') return { language: 'en', prompt: primer, allowedLanguages }
-  if (mode === 'hi') return { language: 'hi', prompt: primer, allowedLanguages }
-
-  return { prompt: primer, allowedLanguages }
 }
 
 /**
@@ -149,26 +149,36 @@ function getEffectiveSttProvider(get) {
   return 'groq'
 }
 
+function nvidiaLanguageCode(get) {
+  const raw = get('micListenLanguage')
+  if (raw === 'en') return 'en-US'
+  return 'multi'
+}
+
 /**
  * @param {string} sttProvider
  * @param {(key: string) => any} get
  * @returns {{ cfg: object | null, sttVendor: string | null }}
  */
 function resolveSttConfigForProvider(sttProvider, get) {
-  if (sttProvider === 'fireworks') {
-    const cfg = fireworksStt(get)
-    if (cfg) return { cfg, sttVendor: 'fireworks' }
-    const leg = legacyFallbackTranscription(get)
-    if (leg) return { cfg: leg, sttVendor: get('audioFallbackProvider') === 'groq' ? 'groq' : 'openai' }
-    return { cfg: null, sttVendor: null }
-  }
-
   if (sttProvider === 'nvidia') {
-    const cfg = nvidiaStt(get)
-    if (cfg) return { cfg, sttVendor: 'nvidia' }
-    const leg = legacyFallbackTranscription(get)
-    if (leg) return { cfg: leg, sttVendor: get('audioFallbackProvider') === 'groq' ? 'groq' : 'openai' }
-    return { cfg: null, sttVendor: null }
+    const apiKey = get('nvidiaKey')
+    if (!apiKey) return { cfg: null, sttVendor: null }
+    const model = get('nvidiaWhisperModel') || 'nvidia/parakeet-1.1b-rnnt-multilingual-asr'
+    return {
+      cfg: {
+        model,
+        apiKey,
+        languageCode: nvidiaLanguageCode(get),
+        nvcfFunctionId: get('nvidiaNimFunctionId') || nvidiaNimStt.DEFAULT_FUNCTION_ID,
+        responseKind: 'json',
+        /** Parakeet uses NVCF gRPC — not Whisper REST or verbose_json gate. */
+        useWhisperSegmentMeta: false,
+        sttKind: 'nvidia_nim',
+        useMainProcessStt: false,
+      },
+      sttVendor: 'nvidia',
+    }
   }
 
   const native = OPENAI_STYLE_STT[sttProvider]
@@ -182,8 +192,27 @@ function resolveSttConfigForProvider(sttProvider, get) {
           url: `${base}/audio/transcriptions`,
           model,
           apiKey,
-          responseKind: sttProvider === 'mistral' ? 'json' : 'text',
-          useWhisperSegmentMeta: sttProvider !== 'mistral',
+          responseKind: 'text',
+          useWhisperSegmentMeta: true,
+          sttKind: 'whisper',
+          useMainProcessStt: false,
+        },
+        sttVendor: sttProvider,
+      }
+    }
+  }
+
+  const dedicated = DEDICATED_STT[sttProvider]
+  if (dedicated) {
+    const apiKey = get(dedicated.keyField)
+    if (apiKey) {
+      const model = get(dedicated.modelFromStore) || dedicated.defaultModel
+      return {
+        cfg: {
+          apiKey,
+          model,
+          sttKind: dedicated.sttKind,
+          useMainProcessStt: dedicated.useMainProcessStt === true,
         },
         sttVendor: sttProvider,
       }
@@ -212,6 +241,7 @@ function resolveSttConfigAndVendor(get) {
 function getTranscriptionRequestConfig(get) {
   const { cfg, sttVendor } = resolveSttConfigAndVendor(get)
   if (!cfg || !sttVendor) return cfg
+  if (sttVendor === 'nvidia') return cfg
   const lang = micListenLanguageFormFields(get, sttVendor)
   return { ...cfg, ...lang }
 }
@@ -228,4 +258,5 @@ module.exports = {
   STT_MODEL_FIELDS,
   needsSttKey,
   OPENAI_STYLE_STT,
+  DEDICATED_STT,
 }

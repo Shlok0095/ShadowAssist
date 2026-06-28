@@ -1,23 +1,36 @@
 // Copyright (c) 2026 ShadowAssist. All rights reserved.
-// Unauthorized copying or distribution is prohibited.
 
-const fs = require('fs').promises
+const fs = require('fs')
 const path = require('path')
+const { promisify } = require('util')
 
-async function extractTextFromPdf(buffer) {
-  const pdfParse = require('pdf-parse')
-  const data = await pdfParse(buffer)
-  return data.text || ''
+const readFile = promisify(fs.readFile)
+
+const SUPPORTED_EXT = new Set(['.txt', '.md', '.pdf'])
+
+/**
+ * @param {string} filePath
+ * @returns {Promise<string>}
+ */
+async function parsePlaybookFile(filePath) {
+  const resolved = path.resolve(String(filePath || ''))
+  if (!resolved || !fs.existsSync(resolved)) {
+    throw new Error('File not found')
+  }
+  const ext = path.extname(resolved).toLowerCase()
+  if (!SUPPORTED_EXT.has(ext)) {
+    throw new Error(`Unsupported file type: ${ext || '(none)'}`)
+  }
+
+  if (ext === '.pdf') {
+    const pdfParse = require('pdf-parse')
+    const buf = await readFile(resolved)
+    const data = await pdfParse(buf)
+    return String(data?.text || '').trim()
+  }
+
+  const raw = await readFile(resolved, 'utf8')
+  return String(raw || '').trim()
 }
 
-async function parsePlaybookFile(filePath, maxSizeBytes = 500 * 1024) {
-  const ext = path.extname(filePath).toLowerCase()
-  const stat = await fs.stat(filePath)
-  if (stat.size > maxSizeBytes) throw new Error(`File too large. Max ${maxSizeBytes / 1024}KB`)
-  const buffer = await fs.readFile(filePath)
-  if (ext === '.pdf') return extractTextFromPdf(buffer)
-  if (ext === '.txt') return buffer.toString('utf-8')
-  throw new Error('Use PDF or TXT.')
-}
-
-module.exports = { parsePlaybookFile }
+module.exports = { parsePlaybookFile, SUPPORTED_EXT }

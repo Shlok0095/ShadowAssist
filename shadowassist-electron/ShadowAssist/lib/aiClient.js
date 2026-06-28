@@ -112,14 +112,43 @@ async function testConnection(provider, apiKey, getStore) {
   }
 }
 
-async function* streamChatAnthropic(apiKey, { messages, model, maxTokens = 1024, signal }) {
+/** O-series reasoning models reject temperature, seed, top_p. */
+function isOSeriesModel(modelId) {
+  const m = String(modelId || '').toLowerCase().trim()
+  return /^o[0-9]/.test(m)
+}
+
+/**
+ * Phase 9 — slight temperature/seed variation when answer diversity is enabled.
+ * @param {(key: string) => any} [getStore]
+ * @param {string} [userQuestion]
+ */
+function resolveChatInferenceParams(getStore, userQuestion = '') {
+  const diversityOn = typeof getStore === 'function' && getStore('answerDiversityEnabled') === true
+  if (!diversityOn) return { temperature: 0.2, seed: 7, diversity: false }
+
+  const q = String(userQuestion || '')
+  let hash = 0
+  for (let i = 0; i < q.length; i++) hash = (hash * 31 + q.charCodeAt(i)) | 0
+  const seed = Math.abs(hash) % 10000
+  const temperature = 0.32 + (Math.abs(hash) % 19) / 100
+  return { temperature, seed, diversity: true }
+}
+
+function buildAnswerDiversityHint() {
+  return 'Prefer a fresh phrasing — avoid repeating boilerplate from prior turns unless the user asks for the same wording.'
+}
+
+async function* streamChatAnthropic(apiKey, { messages, model, maxTokens = 8192, signal, inferenceParams }) {
   const AnthropicSdk = require('@anthropic-ai/sdk')
   const client = new AnthropicSdk({ apiKey })
   const { system, messages: amsg } = splitMessagesForAnthropic(messages)
+  const temp = inferenceParams?.diversity ? Math.min(0.55, inferenceParams.temperature || 0.42) : 0.2
   const stream = await client.messages.create(
     {
       model,
       max_tokens: maxTokens,
+      temperature: temp,
       system: system || undefined,
       messages: amsg,
       stream: true,
@@ -135,10 +164,16 @@ async function* streamChatAnthropic(apiKey, { messages, model, maxTokens = 1024,
 }
 
 async function* streamChatOpenAICompat(apiKey, baseURL, options) {
-  const { messages, model = 'gpt-4o', maxTokens = 1024, signal } = options
+  const { messages, model = 'gpt-4o', maxTokens = 8192, signal, inferenceParams } = options
   const client = getOpenAICompatClient(apiKey, baseURL)
+  const oSeries = isOpenAINativeApi(baseURL) && isOSeriesModel(model)
+  const inferParams = oSeries
+    ? {}
+    : inferenceParams?.diversity
+      ? { temperature: inferenceParams.temperature ?? 0.4, seed: inferenceParams.seed ?? 7 }
+      : { temperature: 0.2, seed: 7 }
   const stream = await client.chat.completions.create(
-    { model, messages, stream: true, ...chatCompletionTokenParams(maxTokens, baseURL, model) },
+    { model, messages, stream: true, ...inferParams, ...chatCompletionTokenParams(maxTokens, baseURL, model) },
     { signal }
   )
   for await (const chunk of stream) {
@@ -150,12 +185,55 @@ async function* streamChatOpenAICompat(apiKey, baseURL, options) {
 
 async function* streamChat(provider, apiKey, options, getStore) {
   if (!apiKey) throw new Error('No API key')
+  const inferenceParams =
+    options.inferenceParams ||
+    resolveChatInferenceParams(getStore, options.userQuestion || '')
+  const merged = { ...options, inferenceParams }
   if (providers.isAnthropic(provider)) {
-    yield* streamChatAnthropic(apiKey, options)
+    yield* streamChatAnthropic(apiKey, merged)
     return
   }
   const baseURL = providers.resolveBaseURL(provider, getStore)
-  yield* streamChatOpenAICompat(apiKey, baseURL, options)
+  yield* streamChatOpenAICompat(apiKey, baseURL, merged)
+}
+
+/** Non-streaming completion — meeting summaries, short tasks. */
+async function completeChat(provider, apiKey, options, getStore) {
+  if (!apiKey) throw new Error('No API key')
+  const { messages, model, maxTokens = 2048, signal } = options
+  if (providers.isAnthropic(provider)) {
+    const AnthropicSdk = require('@anthropic-ai/sdk')
+    const client = new AnthropicSdk({ apiKey })
+    const { system, messages: amsg } = splitMessagesForAnthropic(messages)
+    const resp = await client.messages.create(
+      {
+        model,
+        max_tokens: maxTokens,
+        temperature: 0.2,
+        system: system || undefined,
+        messages: amsg,
+      },
+      signal ? { signal } : undefined,
+    )
+    return (resp.content || [])
+      .filter((b) => b.type === 'text')
+      .map((b) => b.text)
+      .join('')
+  }
+  const baseURL = providers.resolveBaseURL(provider, getStore)
+  const client = getOpenAICompatClient(apiKey, baseURL)
+  const oSeries = isOpenAINativeApi(baseURL) && isOSeriesModel(model)
+  const inferParams = oSeries ? {} : { temperature: 0.2, seed: 7 }
+  const resp = await client.chat.completions.create(
+    {
+      model,
+      messages,
+      ...inferParams,
+      ...chatCompletionTokenParams(maxTokens, baseURL, model),
+    },
+    signal ? { signal } : undefined,
+  )
+  return resp.choices?.[0]?.message?.content || ''
 }
 
 module.exports = {
@@ -163,4 +241,7 @@ module.exports = {
   testConnection,
   streamChat,
   streamChatOpenAICompat,
+  completeChat,
+  resolveChatInferenceParams,
+  buildAnswerDiversityHint,
 }

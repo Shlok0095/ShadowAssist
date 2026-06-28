@@ -3,16 +3,17 @@
 import React, { useRef, useEffect } from 'react'
 
 /** Side-by-side live captions: Me (local mic) vs Participant (system / loopback). */
-export default function LiveTranscriptPanel({ segments = [], visible = true, className = '' }) {
+export default function LiveTranscriptPanel({ segments = [], visible = true, className = '', autoScroll = true }) {
   const meColRef = useRef(null)
   const partColRef = useRef(null)
 
   useEffect(() => {
+    if (!autoScroll) return
     const m = meColRef.current
     const p = partColRef.current
     if (m) m.scrollTo({ top: m.scrollHeight, behavior: 'smooth' })
     if (p) p.scrollTo({ top: p.scrollHeight, behavior: 'smooth' })
-  }, [segments])
+  }, [segments, autoScroll])
 
   if (!visible) return null
 

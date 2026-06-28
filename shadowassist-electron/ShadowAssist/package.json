@@ -1,11 +1,12 @@
 {
   "name": "veilassist",
-  "version": "1.0.11",
+  "version": "1.0.0",
   "description": "Undetectable AI for live meetings — discreet on-screen meeting assistant",
   "author": "VeilAssist",
   "license": "UNLICENSED",
   "main": "main/index.js",
   "scripts": {
+    "prebuild": "node scripts/sync-brand-assets.mjs",
     "build": "vite build",
     "start": "npm run build && node ./node_modules/electron/cli.js .",
     "dev": "npm run build && node ./node_modules/electron/cli.js . --enable-logging",
@@ -17,9 +18,10 @@
     "build:win": "node scripts/inject-oauth.cjs && npm run dist:release",
     "dist:dir": "node scripts/make-win-ico.cjs && npm run build && node scripts/run-electron-builder.cjs --win dir",
     "dist:checksums": "node scripts/sha256-dist.cjs",
-    "verify:packaged-ocr": "node scripts/verify-packaged-ocr.cjs",
     "open:portable": "start \"\" \"dist\\VeilAssist.exe\"",
-    "open:unpacked": "start \"\" \"dist\\win-unpacked\\VeilAssist.exe\""
+    "open:unpacked": "start \"\" \"dist\\win-unpacked\\VeilAssist.exe\"",
+    "test:local-stt": "node scripts/test-local-stt.mjs",
+    "test:overlay-mouse": "node scripts/test-overlay-mouse-capture.mjs"
   },
   "build": {
     "appId": "com.local.veilassist.v2",
@@ -33,7 +35,9 @@
     "forceCodeSigning": false,
     "asarUnpack": [
       "lib/meetingScanMeet.ps1",
-      "scripts/windows-ocr-worker.ps1"
+      "lib/localStt/inferenceWorker.mjs",
+      "**/*.node",
+      "node_modules/onnxruntime-node/**"
     ],
     "icon": "logo.png",
     "directories": {
@@ -85,6 +89,7 @@
     "electron": "34.3.0",
     "electron-builder": "^24.9.1",
     "png-to-ico": "^2.1.8",
+    "sharp": "^0.33.5",
     "postcss": "^8.4.32",
     "tailwindcss": "^3.4.0",
     "vite": "^5.0.0"
@@ -96,12 +101,15 @@
     "@fontsource/syne": "^5.2.5",
     "@grpc/grpc-js": "^1.14.4",
     "@grpc/proto-loader": "^0.7.15",
+    "@huggingface/transformers": "^3.8.1",
     "electron-store": "^8.1.0",
     "electron-updater": "^6.8.3",
     "highlight.js": "^11.11.1",
+    "lucide-react": "^0.525.0",
     "openai": "^4.20.0",
     "pdf-parse": "^1.1.1",
     "react": "^18.2.0",
-    "react-dom": "^18.2.0"
+    "react-dom": "^18.2.0",
+    "react-qr-code": "^2.2.0"
   }
 }

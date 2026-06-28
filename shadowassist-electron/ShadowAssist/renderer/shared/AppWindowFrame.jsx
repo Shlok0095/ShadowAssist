@@ -1,8 +1,8 @@
 // Copyright (c) 2026 VeilAssist. All rights reserved.
 
 import React, { useCallback, useState } from 'react'
-/** Repo-root logo.png (Vite root is renderer/; fs.allow includes parent). */
-import logoSrc from '../../logo.png'
+/** Repo-root logo.png via shared brandLogo module. */
+import brandLogo from './brandLogo'
 
 const drag = { WebkitAppRegion: 'drag' }
 const noDrag = { WebkitAppRegion: 'no-drag' }
@@ -49,7 +49,7 @@ export default function AppWindowFrame({ children }) {
       >
         <div className="flex min-h-0 min-w-0 flex-1 items-center gap-2 px-3" style={drag}>
           <img
-            src={logoSrc}
+            src={brandLogo}
             alt=""
             width={20}
             height={20}

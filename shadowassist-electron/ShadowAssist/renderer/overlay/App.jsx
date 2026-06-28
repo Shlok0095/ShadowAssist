@@ -3,18 +3,29 @@
 
 import React, { useState, useEffect, useRef, useCallback } from 'react'
 import { flushSync } from 'react-dom'
+import { Eye, Glasses } from 'lucide-react'
 import StatusBar from './components/StatusBar'
 import ResponsePanel from './components/ResponsePanel'
 import InputBar from './components/InputBar'
+import ActionChips from './components/ActionChips'
+import PastMeetingSearch from './components/PastMeetingSearch'
+import { parseSkillInvoke } from '../../lib/skillInvoke.js'
+import LiveTranscriptPanel from './components/LiveTranscriptPanel'
+import AppIcon from '../shared/AppIcon'
 import { applyUiAccentTheme, normalizeUiAccentId } from '../shared/uiAccentThemes'
 import { createIpcShim } from '../shared/ipcShim'
-import { looksLikeCodeScreen } from '../shared/responseIntent'
-import { structureScreenOcr } from '../shared/structureScreenOcr'
 import {
   AGGREGATE_DROP_HARD_MIN,
   filterWhisperVerboseJson,
 } from '../shared/whisperTranscriptGate'
-import { captureScreenTextLocal, terminateLocalOcr, warmupLocalOcr } from './localOcr'
+import { blobsToGroqWav16k, blobsToPcm16kMono } from '../shared/groqAudioPrep'
+import { attachPcmTap } from '../shared/pcmCaptureTap'
+import {
+  CAPTURE_RECOVERY_DELAY_MS,
+  CAPTURE_RECOVERY_MAX_ATTEMPTS,
+  areRequiredCapturePathsLive,
+  watchMediaStream,
+} from '../shared/audioCaptureRecovery'
 import { parseTranscriptEchoForDisplay } from '../shared/formatTranscriptEcho'
 import { SpeakerTranscriptText } from '../shared/SpeakerTranscriptText'
 
@@ -40,8 +51,15 @@ const STACK_GAP = 10
 /** Collapsed overlay window height (pill + 1px slack so bottom radius isn't clipped) */
 const COLLAPSED_H = PILL_H + 1
 const MIN_ASK_GAP_MS = 2000
-/** Longer chunks give Whisper more phonetic context (fewer mid-phrase cuts); ~4–5s helps quiet BT / loopback. */
-const AUDIO_CHUNK_MS = 4600
+/** ~1.5s VAD slices — merge then send to Whisper. */
+const STT_SLICE_MS = 1500
+const STT_BATCH_FAST_MS = 1500
+const STT_FLUSH_FAST_MS = 220
+const STT_BATCH_MIN_MS = 3000
+const STT_FLUSH_SILENCE_MS = 320
+const STT_BATCH_MAX_MS = 3600
+const MIN_WAV_BYTES = 6400
+const MIN_RECORDING_BYTES = 8192
 /** Ms of silence after last STT chunk before speech Assist may fire. */
 const SPEECH_STABILITY_MS = 1500
 /** Clear rolling speech buffer after this long without a new chunk. */
@@ -62,16 +80,10 @@ const CHUNK_SAME_SPEAKER_MAX_GAP_MS = 800
 const CHUNK_TURN_SWITCH_SILENCE_MS = 2000
 /** Defer speech trigger slightly so last STT chunk can land. */
 const SPEECH_TRIGGER_LEAD_IN_MS = 150
-/** Minimum OCR text length before a screen-driven Assist trigger is considered. */
-const MIN_OCR_TRIGGER_CHARS = 40
 /** Minimum ms between screen-based Assist triggers (spam cap). */
 const SCREEN_ASSIST_COOLDOWN_MS = 4000
 /** Minimum ms between any auto Assist trigger (speech or screen). */
 const GLOBAL_TRIGGER_COOLDOWN_MS = 2000
-/** Cap filtered OCR text sent to the LLM (raw OCR stays in ref). */
-const MAX_SCREEN_CONTEXT_CHARS = 2000
-/** Screen-read can reuse very fresh OCR to avoid extra wait. */
-const FRESH_OCR_MAX_AGE_MS = 1200
 
 const MAX_LIVE_SEGMENTS = 30
 /** Max utterance segments sent to the LLM (Cluely-style window). */
@@ -176,12 +188,15 @@ function buildStructuredUserPrompt({ rawSpeech, micFallback, screenText, typedQu
     : null
 
   if (mode === 'screen') {
-    // Non-transcribing mode: screen is everything — do NOT inject stale audio as "question"
-    if (!hasScreen && !hasTyped) {
-      return 'The screen could not be read clearly. Please describe what you need help with.'
-    }
-    const body = [screenBlock, hasTyped ? `## QUESTION\n${typedQ}` : null].filter(Boolean).join('\n\n')
-    return body
+    // Vision mode (Ctrl+Enter): screenshot is attached as image — no OCR text required.
+    const parts = []
+    if (hasTyped) parts.push(`## QUESTION\n${typedQ}`)
+    parts.push(
+      '## TASK\nAnalyze the attached screenshot. Identify and fully answer the question, problem, or task visible on screen. If it is a coding or algorithm question, provide complete runnable solution code.',
+    )
+    if (audioCtx) parts.push(formatTranscriptForPrompt(audioCtx, { background: true }))
+    if (screenBlock) parts.push(screenBlock)
+    return parts.join('\n\n')
   }
 
   if (mode === 'typed') {
@@ -212,76 +227,6 @@ function buildStructuredUserPrompt({ rawSpeech, micFallback, screenText, typedQu
   ]
     .filter(Boolean)
     .join('\n\n')
-}
-
-/** OCR dedupe only: same snapshot / near-duplicate → skip trigger (not content “usefulness”). */
-function normalizeOcrDedupe(s) {
-  return String(s || '')
-    .toLowerCase()
-    .replace(/\s+/g, ' ')
-    .replace(/[^a-z0-9 ]/g, '')
-    .trim()
-}
-
-/**
- * Returns true only if the OCR text looks like real readable content.
- * Three-stage filter:
- *  1. Reject Windows terminal encoding artifacts (ΓÇö ┬⌐ ┬╗ etc.) — these appear when
- *     the OCR captures a developer terminal running the app itself.
- *  2. Require ≥25% purely-alphabetic words (≥3 chars) — filters symbol/code noise.
- *  3. Require at least one common English word — confirms it's natural language, not
- *     garbled OCR tokens like "shicemusis" or "hedewszzin".
- */
-const COMMON_EN_WORDS = new Set([
-  'the','and','to','is','it','in','of','for','a','an','you','i','we','are','have',
-  'that','this','with','from','was','be','he','she','they','can','or','but','on',
-  'at','by','do','so','what','how','your','my','our','its','not','if','has','as',
-  'which','will','all','been','when','there','up','about','out','one','his','her',
-  'him','them','who','their','no','yes','into','would','could','should','may','just',
-  'more','also','other','some','any','here','there','then','than','very','well',
-  'like','want','need','get','got','see','know','think','say','said','make','made',
-])
-function isOcrQualityGood(text) {
-  if (!text || text.trim().length < 25) return false
-  // Stage 1: Windows terminal encoding artifacts are a hard disqualifier
-  if (/\u0393\u00c7\u00f6|\u252c\u2310|\u252c\u00bb|\u0393\u00c7\u00f4|\u0393\u00c7\u00a3/.test(text)) return false
-  const words = text.trim().split(/\s+/).filter(Boolean)
-  if (words.length < 5) return false
-  // Stage 2: at least 25% purely alphabetic words (≥3 chars)
-  const alphaWords = words.filter((w) => /^[a-zA-Z]{3,}$/.test(w))
-  if (alphaWords.length / words.length < 0.25) return false
-  // Stage 3: at least one recognisable common English word
-  const lower = alphaWords.map((w) => w.toLowerCase())
-  return lower.some((w) => COMMON_EN_WORDS.has(w))
-}
-
-/** Gate auto screen assist — raw OCR length alone is not enough (packaged builds can return noise/empty). */
-function screenOcrUsableForAssist(rawText) {
-  const ocrText = String(rawText || '').trim()
-  if (ocrText.length < MIN_OCR_TRIGGER_CHARS) return false
-  const structured = structureScreenOcr(ocrText)
-  const filtered = structured.promptText || structured.displayText || ocrText
-  return (
-    isOcrQualityGood(filtered) ||
-    looksLikeCodeScreen(filtered) ||
-    structured.confidence >= 3
-  )
-}
-
-function isSemanticallySameScreen(a, b) {
-  if (!a || !b) return false
-  const na = normalizeOcrDedupe(a)
-  const nb = normalizeOcrDedupe(b)
-  if (!na || !nb) return false
-  if (na === nb) return true
-  const wa = new Set(na.split(/\s+/).filter(Boolean))
-  const wb = new Set(nb.split(/\s+/).filter(Boolean))
-  if (wa.size < 2 || wb.size < 2) return false
-  let overlap = 0
-  wa.forEach((w) => {
-    if (wb.has(w)) overlap++
-  })
-  return overlap / Math.max(wa.size, wb.size) > 0.88
 }
 
 function ResizeHandle({ edge, onResizeEnd }) {
@@ -350,34 +295,24 @@ function ResizeHandle({ edge, onResizeEnd }) {
   )
 }
 
-/** Outline eye — visible in screen capture */
+/** Outline eye — visible to user; overlay hidden from capture via opacity + content protection */
 function EyeVisibleIcon() {
-  return (
-    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.15" strokeLinecap="round" strokeLinejoin="round" aria-hidden>
-      <path d="M2 12s3.5-7 10-7 10 7 10 7-3.5 7-10 7-10-7-10-7z" />
-      <circle cx="12" cy="12" r="2.75" fill="currentColor" stroke="none" />
-    </svg>
-  )
+  return <AppIcon icon={Eye} size={14} strokeWidth={2.15} />
 }
 
-/** Glasses + brim — hidden from screen capture */
+/** Glasses — hidden from screen capture */
 function IncognitoGlyph() {
-  return (
-    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.15" strokeLinecap="round" strokeLinejoin="round" aria-hidden>
-      <path d="M3.5 11.5c2.2-.8 4.4-1.2 8.5-1.2s6.3.4 8.5 1.2" />
-      <path d="M8 11.2c.6-2.8 1.8-4.2 4-4.2s3.4 1.4 4 4.2" />
-      <circle cx="9" cy="15.5" r="2.35" />
-      <circle cx="15" cy="15.5" r="2.35" />
-      <path d="M11.35 15.5h1.3" />
-    </svg>
-  )
+  return <AppIcon icon={Glasses} size={14} strokeWidth={2.15} />
+}
+
+function emit(event, detail) {
+  window.dispatchEvent(new CustomEvent(event, { detail }))
 }
 
 function getMimeType() {
   return ['audio/webm;codecs=opus', 'audio/webm', 'audio/ogg;codecs=opus', 'audio/ogg'].find((m) => MediaRecorder.isTypeSupported(m)) || ''
 }
 
-/** Decode MediaRecorder blob → 16 kHz mono LINEAR_PCM for NVIDIA Riva (WAV/OGG/OPUS only on NVCF). */
 async function blobToLinear16Mono(blob, targetRate = 16000) {
   const ab = await blob.arrayBuffer()
   const ctx = new AudioContext()
@@ -398,15 +333,8 @@ async function blobToLinear16Mono(blob, targetRate = 16000) {
     }
     return pcm.buffer
   } finally {
-    try {
-      await ctx.close()
-    } catch {
-      /* ignore */
-    }
+    try { await ctx.close() } catch { /* ignore */ }
   }
-}
-function emit(event, detail) {
-  window.dispatchEvent(new CustomEvent(event, { detail }))
 }
 
 const HALLUCINATIONS = [
@@ -418,51 +346,67 @@ const HALLUCINATIONS = [
   /^(subtitle|subtitles)\b/i, /^\.{2,}$/,
   /\bplease subscribe\b/i, /\blike and subscribe\b/i, /^(silence|inaudible)\b/i,
   /^\(?typing\)?$/i, /^watching in \d+p\b/i,
-  // Whisper filler on silence / noise — subtitle vendors & prompt echo (substring OK on whole chunk)
-  /\bcastingwords\b/i,
-  /\btranscription by\b/i,
-  /\btranslation by\b/i,
+  /\bcastingwords\b/i, /\btranscription by\b/i, /\btranslation by\b/i,
   /transcribe only words that are spoken/i,
-  /Дякую за перегляд/u,
-  /\bamara\.org\b/i,
-  /\bsubtitles? by\b/i,
+  /Дякую за перегляд/u, /\bamara\.org\b/i, /\bsubtitles? by\b/i,
+  /^\.?\s*$/, /^\s*\.\s*$/, /^\s*,\s*$/,
+  /^see you (next time|soon|later)[\s\W]*$/i,
+  /^(thank you for your time|thank you for watching|thanks for watching)[\s\W]*$/i,
+  /^(i don'?t know)[\s.!?]*$/i,
 ]
 
-/** Skip only obviously empty blobs (scales with chunk length + codec overhead). */
-const MIN_RECORDING_BYTES = 2800
+function isRepetitionHallucination(text) {
+  const words = text.trim().split(/\s+/)
+  if (words.length < 6) return false
+  for (let n = 2; n <= 4; n++) {
+    if (words.length < n * 3) continue
+    const counts = {}
+    for (let i = 0; i <= words.length - n; i++) {
+      const gram = words.slice(i, i + n).join(' ').toLowerCase()
+      counts[gram] = (counts[gram] || 0) + 1
+    }
+    for (const [, cnt] of Object.entries(counts)) {
+      if (cnt >= 3 && (cnt * n) / words.length > 0.6) return true
+    }
+  }
+  return false
+}
 
-/** Per-path RMS gate + gain; `micSensitivity` in settings picks standard vs boost. */
+function emptySttPending() {
+  return { blobs: [], accumulatedMs: 0 }
+}
+
+/** Per-path RMS gate + gain — Natively native uses OS levels + adaptive RMS; browser path needs modest gain. */
 const MIC_CAPTURE_PROFILES = {
   standard: {
-    gain: 1.78,
-    chunkMeanMin: 0.86,
-    chunkPeakMin: 2.05,
-    speechActivityRms: 0.91,
+    gain: 1.48,
+    chunkMeanMin: 0.52,
+    chunkPeakMin: 1.15,
+    speechActivityRms: 0.62,
   },
   boost: {
-    gain: 2.72,
-    chunkMeanMin: 0.74,
-    chunkPeakMin: 1.72,
-    speechActivityRms: 0.81,
+    gain: 2.05,
+    chunkMeanMin: 0.42,
+    chunkPeakMin: 0.95,
+    speechActivityRms: 0.52,
   },
 }
 
 /**
- * Windows desktop loopback (Teams / Meet remote audio) is usually much quieter than the local mic
- * and was getting dropped by the same gates as mic. Separate, more sensitive profile per sensitivity.
+ * Windows desktop loopback is usually quieter than mic — separate profile per sensitivity.
  */
 const SYS_CAPTURE_PROFILES = {
   standard: {
-    gain: 3.58,
-    chunkMeanMin: 0.34,
-    chunkPeakMin: 1.02,
-    speechActivityRms: 0.55,
+    gain: 3.2,
+    chunkMeanMin: 0.32,
+    chunkPeakMin: 0.95,
+    speechActivityRms: 0.5,
   },
   boost: {
-    gain: 4.38,
-    chunkMeanMin: 0.29,
-    chunkPeakMin: 0.85,
-    speechActivityRms: 0.47,
+    gain: 3.9,
+    chunkMeanMin: 0.26,
+    chunkPeakMin: 0.78,
+    speechActivityRms: 0.42,
   },
 }
 
@@ -483,10 +427,8 @@ function pathEnergyActive(stats, profile) {
 }
 
 /**
- * Path into MediaRecorder: HPF → gain (quiet speech) → compressor (limit peaks) → dest.
- * Analyser taps the same tail as MediaRecorder so energy gating matches what we encode.
- *
- * `pathKind`: mic = gentler dynamics + lower HPF (Bluetooth HFP / thin headsets); sys = stronger limiting for loopback.
+ * STT capture chain — Natively native path: resample only, no browser compressor.
+ * Mic: HPF + light gain (preserves accent formants / consonants).
  */
 function buildVoiceCaptureChain(ctx, mediaStream, dest, profile, pathKind = 'mic') {
   const gainLinear =
@@ -498,25 +440,18 @@ function buildVoiceCaptureChain(ctx, mediaStream, dest, profile, pathKind = 'mic
   hp.Q.value = 0.707
   const gainNode = ctx.createGain()
   gainNode.gain.value = gainLinear
-  const comp = ctx.createDynamicsCompressor()
-  if (pathKind === 'mic') {
-    // Gentle — BT/HFP mics and device DSP already compress; don't squash consonants further.
-    comp.threshold.value = -30
-    comp.knee.value = 18
-    comp.ratio.value = 2.2
-    comp.attack.value = 0.005
-    comp.release.value = 0.28
-  } else {
-    // Sys loopback: Opus codec already compresses remote audio; use a very light limiter
-    // so consonants (s/t/p/k) that Whisper relies on are preserved.
-    comp.threshold.value = -16
-    comp.knee.value = 36
-    comp.ratio.value = 1.8
-    comp.attack.value = 0.006
-    comp.release.value = 0.32
-  }
   src.connect(hp)
   hp.connect(gainNode)
+  if (pathKind === 'mic') {
+    gainNode.connect(dest)
+    return gainNode
+  }
+  const comp = ctx.createDynamicsCompressor()
+  comp.threshold.value = -16
+  comp.knee.value = 36
+  comp.ratio.value = 1.8
+  comp.attack.value = 0.006
+  comp.release.value = 0.32
   gainNode.connect(comp)
   comp.connect(dest)
   return comp
@@ -572,16 +507,34 @@ async function acquireSystemAudioStreamLegacyDesktop() {
   }
 }
 
+function withPreferredMicDevice(constraints, deviceId) {
+  if (!deviceId || !constraints?.audio || typeof constraints.audio !== 'object') return constraints
+  return {
+    ...constraints,
+    audio: { ...constraints.audio, deviceId: { exact: deviceId } },
+  }
+}
+
 /**
- * Meeting STT: prefer AGC on, echo cancellation + noise suppression off first.
- * Bluetooth HFP / narrowband mics often sound worse when the browser applies EC+NS on top of device DSP.
+ * Meeting STT: EC/NS off (preserves consonants for accents); AGC on so Windows mic level is usable.
+ * Natively uses native CPAL — we approximate with browser AGC instead of heavy post-gain.
  */
 async function acquireMicMeetingStream() {
+  const preferredMicId = String((await ipc?.invoke('get-store', 'preferredMicId')) || '').trim()
   const meeting = {
     audio: {
       echoCancellation: false,
       noiseSuppression: false,
       autoGainControl: true,
+      channelCount: 1,
+      sampleRate: { ideal: 48000 },
+    },
+  }
+  const noAgc = {
+    audio: {
+      echoCancellation: false,
+      noiseSuppression: false,
+      autoGainControl: false,
       channelCount: 1,
       sampleRate: { ideal: 48000 },
     },
@@ -594,15 +547,17 @@ async function acquireMicMeetingStream() {
       channelCount: 1,
     },
   }
-  try {
-    return await navigator.mediaDevices.getUserMedia(meeting)
-  } catch {
+  const attempts = preferredMicId
+    ? [meeting, noAgc, fallback].flatMap((c) => [withPreferredMicDevice(c, preferredMicId), c])
+    : [meeting, noAgc, fallback]
+  for (const constraints of attempts) {
     try {
-      return await navigator.mediaDevices.getUserMedia(fallback)
+      return await navigator.mediaDevices.getUserMedia(constraints)
     } catch {
-      return null
+      /* try next profile / without deviceId */
     }
   }
+  return null
 }
 
 export default function App() {
@@ -615,6 +570,10 @@ export default function App() {
   const [overlayAnswerView, setOverlayAnswerView] = useState('latest')
   const [overlayTeleprompter, setOverlayTeleprompter] = useState(false)
   const [overlayFocusMode, setOverlayFocusMode] = useState(false)
+  const [overlayLiveTranscriptEnabled, setOverlayLiveTranscriptEnabled] = useState(true)
+  const [overlayTranscriptAutoScroll, setOverlayTranscriptAutoScroll] = useState(true)
+  const [overlayAnswerPinToTop, setOverlayAnswerPinToTop] = useState(true)
+  const [globalMeetingSearchEnabled, setGlobalMeetingSearchEnabled] = useState(false)
   const [focusInputOpen, setFocusInputOpen] = useState(false)
   const [streamPreview, setStreamPreview] = useState('')
   const answerStyleRef = useRef('brief')
@@ -622,14 +581,18 @@ export default function App() {
   const streamPreviewFlushRef = useRef(null)
   const [micTranscript, setMicTranscript] = useState('')
   const [liveTranscriptSegments, setLiveTranscriptSegments] = useState([])
+  /** idle | speech | transcribing — live bar feedback while Groq works. */
+  const [sttLivePhase, setSttLivePhase] = useState('idle')
   const [sessionOn, setSessionOn] = useState(false)
+  const [modeSuggestion, setModeSuggestion] = useState(null)
   const [expanded, setExpanded] = useState(false)
   const [hiding, setHiding] = useState(false)
   const [stealthMode, setStealthMode] = useState(false)
-  const [ocrStatus, setOcrStatus] = useState('idle')
-  const ocrStatusRef = useRef('idle')
+
+
   const [showAudioConsent, setShowAudioConsent] = useState(false)
   const panelRef = useRef(null)
+  const inputBarRef = useRef(null)
   const audioSessionAcknowledgedRef = useRef(false)
   const streamRef = useRef(null)
   const recorderRef = useRef(null)
@@ -647,9 +610,32 @@ export default function App() {
   const sysCaptureProfileRef = useRef(SYS_CAPTURE_PROFILES.standard)
   const audioPathsRef = useRef({ hasMic: false, hasSys: false })
   const streamSpecsRef = useRef([])
+  /** Per-path last loud RMS timestamp — drives VAD batch flush for mic vs sys. */
+  const pathSpeechAtRef = useRef({ mic: 0, sys: 0 })
+  const sttPendingRef = useRef({ mic: emptySttPending(), sys: emptySttPending() })
+  const sttQueueRef = useRef({ mic: [], sys: [] })
+  const sttDrainActiveRef = useRef({ mic: false, sys: false })
+  const sttConfigRef = useRef(null)
+  /** local = on-device ONNX; cloud = Groq/OpenAI REST; main-process = Deepgram streaming */
+  const sttModeRef = useRef('local')
+  const sttMainProcessRef = useRef(false)
+  const pathWasSpeechRef = useRef({ mic: false, sys: false })
+  const pcmTapCleanupRef = useRef([])
+  const captureTailRef = useRef({ mic: null, sys: null })
+  const captureWatchCleanupRef = useRef([])
+  const captureRecoveryRef = useRef({ mic: 0, sys: 0, recovering: false, restarting: false })
+  const startMicInFlightRef = useRef(false)
+  const lastPcmSentAtRef = useRef(0)
+  const sttTranscribingCountRef = useRef(0)
+  const sttLivePhaseRef = useRef('idle')
+  const setSttPhaseIfChanged = (next) => {
+    if (sttLivePhaseRef.current === next) return
+    sttLivePhaseRef.current = next
+    setSttLivePhase(next)
+  }
   /** Last mic transcript activity (for main-process audioRecent). */
   const lastAudioUpdateRef = useRef(0)
-  const lastOcrUpdateRef = useRef(0)
+
   const lastSpeechActivityRef = useRef(0)
   const lastLoudEnergyAtRef = useRef(0)
   const micTranscriptRef = useRef('')
@@ -660,6 +646,7 @@ export default function App() {
   const lastChunkRef = useRef('')
   const assistAutoTriggerRef = useRef(false)
   const maybeTriggerAIRef = useRef(null)
+  const processTranscribedTextRef = useRef(null)
   const maybeTriggerFromScreenRef = useRef(null)
   /** Side-by-side live captions: mic = me, system = other; capped in ref for UI + debug. */
   const speechSegmentsRef = useRef([])
@@ -673,13 +660,12 @@ export default function App() {
   const speechFailsafeIntervalRef = useRef(null)
   const isProcessingAskRef = useRef(false)
   const lastAskTimeRef = useRef(0)
-  /** Latest renderer-local OCR text (same downstream integration as previous IPC flow). */
-  const latestOcrTextRef = useRef('')
-  const localOcrTickRef = useRef(null)
-  /** Last OCR text that produced a screen Assist trigger (dedupe). */
-  const lastOcrTriggerRef = useRef('')
-  const lastScreenTriggerTimeRef = useRef(0)
-  const lastGlobalTriggerTimeRef = useRef(0)
+  /** Pause mic chunk processing while AI is streaming — prevents echo capture. */
+  const micPausedForAskRef = useRef(false)
+
+
+
+
   /** Session IPC must call latest start/stop — not first-render closures. */
   const startMicRef = useRef(() => {})
   const stopMicRef = useRef(() => {})
@@ -755,28 +741,50 @@ export default function App() {
     const last = segs[segs.length - 1]
     let next
     if (last && last.speaker === speaker) {
-      next = [...segs.slice(0, -1), { ...last, text: `${last.text} ${t}`.trim() }]
+      next = [...segs.slice(0, -1), { ...last, text: `${last.text} ${t}`.trim(), interim: false }]
     } else {
-      next = [...segs, { id: ++liveSegmentIdRef.current, speaker, text: t }]
+      next = [...segs, { id: ++liveSegmentIdRef.current, speaker, text: t, interim: false }]
     }
     const capped = next.slice(-MAX_LIVE_SEGMENTS)
     speechSegmentsRef.current = capped
     setLiveTranscriptSegments(capped)
   }, [])
 
-  useEffect(() => {
-    if (!ipc) return
-    ipc.invoke('ocr:status').then((s) => {
-      const st = s?.state || 'idle'
-      setOcrStatus(st)
-      ocrStatusRef.current = st
-    })
-    const unsub = ipc.on('ocr-status-update', (_, payload) => {
-      const st = payload?.state || 'idle'
-      setOcrStatus(st)
-      ocrStatusRef.current = st
-    })
-    return unsub
+  const setLiveSegmentInterim = useCallback((speaker, textChunk) => {
+    const t = String(textChunk || '').trim()
+    if (!t) return
+    currentSpeakerRef.current = speaker
+    const segs = speechSegmentsRef.current
+    const last = segs[segs.length - 1]
+    let next
+    if (last && last.speaker === speaker && last.interim) {
+      next = [...segs.slice(0, -1), { ...last, text: t }]
+    } else if (last && last.speaker === speaker && !last.interim) {
+      next = [...segs, { id: ++liveSegmentIdRef.current, speaker, text: t, interim: true }]
+    } else {
+      next = [...segs, { id: ++liveSegmentIdRef.current, speaker, text: t, interim: true }]
+    }
+    const capped = next.slice(-MAX_LIVE_SEGMENTS)
+    speechSegmentsRef.current = capped
+    setLiveTranscriptSegments(capped)
+  }, [])
+
+  const commitLiveSegmentFinal = useCallback((speaker, textChunk) => {
+    const t = String(textChunk || '').trim()
+    if (!t) return
+    const segs = speechSegmentsRef.current
+    const last = segs[segs.length - 1]
+    let next
+    if (last && last.speaker === speaker && last.interim) {
+      next = [...segs.slice(0, -1), { ...last, text: t, interim: false }]
+    } else if (last && last.speaker === speaker) {
+      next = [...segs.slice(0, -1), { ...last, text: `${last.text} ${t}`.trim(), interim: false }]
+    } else {
+      next = [...segs, { id: ++liveSegmentIdRef.current, speaker, text: t, interim: false }]
+    }
+    const capped = next.slice(-MAX_LIVE_SEGMENTS)
+    speechSegmentsRef.current = capped
+    setLiveTranscriptSegments(capped)
   }, [])
 
   useEffect(() => {
@@ -795,40 +803,12 @@ export default function App() {
     })
   }, [])
 
-  const refreshLocalOcr = useCallback(
-    async (opts = {}) => {
-      if (!ipc) return { ok: false, reason: 'no_ipc' }
-      try {
-        const text = await captureScreenTextLocal(ipc, opts)
-        if (typeof text === 'string') {
-          latestOcrTextRef.current = text
-          lastOcrUpdateRef.current = Date.now()
-          if (opts.allowAutoTrigger === true && screenOcrUsableForAssist(text)) {
-            maybeTriggerFromScreenRef.current?.()
-          }
-        }
-        return { ok: true, text: String(text || '') }
-      } catch (e) {
-        return { ok: false, error: e?.message || String(e) }
-      }
-    },
-    [],
-  )
 
   const cancelStreamScroll = useCallback(() => {
     if (streamScrollRafRef.current != null) {
       cancelAnimationFrame(streamScrollRafRef.current)
       streamScrollRafRef.current = null
     }
-  }, [])
-
-  const scrollPanelToAnswerTop = useCallback(() => {
-    if (streamScrollRafRef.current != null) return
-    streamScrollRafRef.current = requestAnimationFrame(() => {
-      streamScrollRafRef.current = null
-      const el = panelRef.current
-      if (el) el.scrollTop = 0
-    })
   }, [])
 
   const clearStreamDom = useCallback(() => {
@@ -842,22 +822,24 @@ export default function App() {
   }, [])
 
   /**
-   * Single microtask scheduler: at most one queued flush; all sync tokens merge into domTokenBufferRef.
-   * DOM: appendChild(createTextNode(chunk)) per flush — avoids O(n) re-copy of the full string each time.
+   * rAF-throttled preview flush — brief + detailed modes (phone companion already streams tokens live).
    */
   const scheduleStreamPreviewFlush = useCallback(() => {
-    if (answerStyleRef.current === 'brief') return
     if (streamPreviewFlushRef.current != null) return
-    streamPreviewFlushRef.current = window.setTimeout(() => {
+    streamPreviewFlushRef.current = window.requestAnimationFrame(() => {
       streamPreviewFlushRef.current = null
       setStreamPreview(streamAccumRef.current)
-    }, 180)
+    })
   }, [])
 
   const appendTokenToStreamDom = useCallback(
     (t) => {
       if (t == null || t === '' || !streamDomAcceptingRef.current) return
       streamAccumRef.current += t
+      const textEl = streamTextRef.current
+      if (textEl) {
+        textEl.textContent = streamAccumRef.current
+      }
       scheduleStreamPreviewFlush()
       if (!perfFirstTokenLoggedRef.current) {
         perfFirstTokenLoggedRef.current = true
@@ -876,7 +858,7 @@ export default function App() {
 
     const onStart = (_, meta) => {
       cancelStreamScroll()
-      streamDomAcceptingRef.current = true
+      streamDomAcceptingRef.current = false
       streamAccumRef.current = ''
       setStreamPreview('')
       perfFirstTokenLoggedRef.current = false
@@ -918,13 +900,11 @@ export default function App() {
           ])
         }
       })
-      queueMicrotask(() => {
-        clearStreamDom()
-      })
+      clearStreamDom()
+      streamDomAcceptingRef.current = true
       if (perfAskT0Ref.current) {
         console.log('UI_AI_START_MS', Date.now() - perfAskT0Ref.current)
       }
-      scrollPanelToAnswerTop()
     }
     const onToken = (_, t) => {
       appendTokenToStreamDom(t)
@@ -955,10 +935,6 @@ export default function App() {
               screenContext: turnMeta?.screenContext || null,
             },
           ])
-          requestAnimationFrame(() => {
-            const el = panelRef.current
-            if (el) el.scrollTop = 0
-          })
         }
       } finally {
         activeTurnMetaRef.current = null
@@ -970,17 +946,27 @@ export default function App() {
     }
     const onThinking = (_, v) => {
       setIsThinking(v)
-      if (!v) {
-        commit()
-        setStreamPreview('')
-        ipc.invoke('session-active').then((a) => setStatus(a ? 'active' : 'idle'))
-      } else setStatus('thinking')
+      if (v) {
+        streamDomAcceptingRef.current = true
+        setStatus('thinking')
+        return
+      }
+      if (streamPreviewFlushRef.current != null) {
+        cancelAnimationFrame(streamPreviewFlushRef.current)
+        streamPreviewFlushRef.current = null
+      }
+      commit()
+      setStreamPreview('')
+      // Resume mic chunk processing after AI finishes speaking
+      setTimeout(() => { micPausedForAskRef.current = false }, 400)
+      ipc.invoke('session-active').then((a) => setStatus(a ? 'active' : 'idle'))
     }
     const onAborted = () => {
       setIsThinking(false)
       setStreamPreview('')
       responseLockRef.current = false
       isProcessingAskRef.current = false
+      micPausedForAskRef.current = false
       commit()
     }
     const onError = (_, msg) => {
@@ -1010,13 +996,13 @@ export default function App() {
       latestTranscriptRef.current = ''
       clearRollingSpeech()
       lastAudioUpdateRef.current = 0
-      lastOcrUpdateRef.current = 0
+
       lastSpeechActivityRef.current = 0
       lastLoudEnergyAtRef.current = Date.now()
-      latestOcrTextRef.current = ''
-      lastOcrTriggerRef.current = ''
-      lastScreenTriggerTimeRef.current = 0
-      lastGlobalTriggerTimeRef.current = 0
+
+
+
+
       lastResponseRef.current = ''
       commitLockRef.current = false
       responseLockRef.current = false
@@ -1026,8 +1012,17 @@ export default function App() {
       /* Preserve overlay content; thinking state ends via ai-thinking false → commit. */
     }
     const onTrigger = () => {
+      handleAskRef.current?.(null, { bypassCaptureCooldown: true, visionAsk: true })
       setExpanded(true)
-      handleAskRef.current?.(null, { bypassCaptureCooldown: true })
+    }
+    const onTriggerNoScreen = () => {
+      handleAskRef.current?.(null, { bypassCaptureCooldown: true, noScreen: true })
+      setExpanded(true)
+    }
+    const onFocusInput = () => {
+      setExpanded(true)
+      setFocusInputOpen(true)
+      window.setTimeout(() => inputBarRef.current?.focus?.(), 50)
     }
 
     ipc.on('ai-start', onStart)
@@ -1038,15 +1033,16 @@ export default function App() {
     ipc.on('ai-error', onError)
     ipc.on('clear-conversation', onClear)
     ipc.on('trigger-ask-ai', onTrigger)
-    ipc.on('scroll', (_, dir) => panelRef.current?.scrollBy(0, dir * 80))
+    ipc.on('trigger-ask-ai-no-screen', onTriggerNoScreen)
+    ipc.on('overlay:focus-input', onFocusInput)
 
     return () => {
       cancelStreamScroll()
-      ;['ai-start', 'ai-token', 'ai-thinking', 'ai-aborted', 'ai-no-output', 'ai-error', 'clear-conversation', 'trigger-ask-ai', 'scroll'].forEach((ch) =>
+      ;['ai-start', 'ai-token', 'ai-thinking', 'ai-aborted', 'ai-no-output', 'ai-error', 'clear-conversation', 'trigger-ask-ai', 'trigger-ask-ai-no-screen', 'overlay:focus-input'].forEach((ch) =>
         ipc.removeAllListeners(ch),
       )
     }
-  }, [scrollBottom, cancelStreamScroll, scrollPanelToAnswerTop, clearStreamDom, appendTokenToStreamDom, clearRollingSpeech])
+  }, [scrollBottom, cancelStreamScroll, clearStreamDom, appendTokenToStreamDom, clearRollingSpeech])
 
   useEffect(() => {
     if (!ipc) return
@@ -1063,10 +1059,22 @@ export default function App() {
     )
     ipc.invoke('get-store', 'overlayTeleprompter').then((v) => setOverlayTeleprompter(v === true))
     ipc.invoke('get-store', 'overlayFocusMode').then((v) => setOverlayFocusMode(v === true))
+    ipc.invoke('get-store', 'overlayLiveTranscriptEnabled').then((v) => setOverlayLiveTranscriptEnabled(v !== false))
+    ipc.invoke('get-store', 'overlayTranscriptAutoScroll').then((v) => setOverlayTranscriptAutoScroll(v !== false))
+    ipc.invoke('get-store', 'overlayAnswerPinToTop').then((v) => setOverlayAnswerPinToTop(v !== false))
+    ipc.invoke('get-store', 'globalMeetingSearchEnabled').then((v) => setGlobalMeetingSearchEnabled(v === true))
+    ipc.invoke('get-store', 'sttMode').then((m) => {
+      sttModeRef.current = m === 'cloud' ? 'cloud' : 'local'
+    })
     ipc.invoke('get-window-bounds').then((b) => {
       if (b && b.height > COLLAPSED_H) expandedSize.current = { w: b.width, h: b.height }
     })
-    void syncOverlayWindowSize(expandedSize.current.w, COLLAPSED_H)
+    // Defer collapse until after first paint — avoids Chromium WidgetHost IPC races at startup.
+    requestAnimationFrame(() => {
+      requestAnimationFrame(() => {
+        void syncOverlayWindowSize(expandedSize.current.w, COLLAPSED_H)
+      })
+    })
   }, [syncOverlayWindowSize])
 
   useEffect(() => {
@@ -1083,6 +1091,9 @@ export default function App() {
       }
       if (p?.overlayTeleprompter != null) setOverlayTeleprompter(!!p.overlayTeleprompter)
       if (p?.overlayFocusMode != null) setOverlayFocusMode(!!p.overlayFocusMode)
+      if (p?.overlayLiveTranscriptEnabled != null) setOverlayLiveTranscriptEnabled(!!p.overlayLiveTranscriptEnabled)
+      if (p?.overlayTranscriptAutoScroll != null) setOverlayTranscriptAutoScroll(!!p.overlayTranscriptAutoScroll)
+      if (p?.overlayAnswerPinToTop != null) setOverlayAnswerPinToTop(!!p.overlayAnswerPinToTop)
       if (p?.width != null && p?.height != null) expandedSize.current = { w: p.width, h: p.height }
       if (p?.assistAutoTrigger != null) assistAutoTriggerRef.current = !!p.assistAutoTrigger
     }
@@ -1122,6 +1133,8 @@ export default function App() {
       sessionOnRef.current = a
       setSessionOn(a)
       setStatus(a ? 'active' : 'idle')
+      // Main may have sent session-status before this listener mounted (auto-start race).
+      if (a && !isListening.current) startMicRef.current()
     })
     return () => unsub?.()
   }, [])
@@ -1166,13 +1179,14 @@ export default function App() {
       micTranscriptRef.current = ''
       latestTranscriptRef.current = ''
       clearRollingSpeech()
+      setModeSuggestion(null)
       lastAudioUpdateRef.current = 0
       lastSpeechActivityRef.current = 0
       lastLoudEnergyAtRef.current = Date.now()
-      latestOcrTextRef.current = ''
-      lastOcrTriggerRef.current = ''
-      lastScreenTriggerTimeRef.current = 0
-      lastGlobalTriggerTimeRef.current = 0
+
+
+
+
       lastResponseRef.current = ''
       commitLockRef.current = false
       responseLockRef.current = false
@@ -1182,6 +1196,39 @@ export default function App() {
     const unsub = ipc.on('session-purge', onPurge)
     return () => unsub?.()
   }, [clearRollingSpeech, cancelStreamScroll, clearStreamDom])
+
+  useEffect(() => {
+    if (!ipc) return
+    const onModeSuggestion = (_, payload) => {
+      if (!payload || !payload.promptId) {
+        setModeSuggestion(null)
+        return
+      }
+      setModeSuggestion(payload)
+    }
+    const unsub = ipc.on('mode-suggestion', onModeSuggestion)
+    return () => unsub?.()
+  }, [])
+
+  useEffect(() => {
+    if (!ipc) return
+    const onLocalStt = (_, payload) => {
+      if (!payload?.text || sttModeRef.current !== 'local') return
+      const channel = payload.channel === 'sys' ? 'sys' : 'mic'
+      processTranscribedTextRef.current?.(payload.text, channel, { isFinal: !!payload.isFinal })
+    }
+    const unsubLocal = ipc.on('local-stt:transcript', onLocalStt)
+    const onStreamingStt = (_, payload) => {
+      if (!payload?.text || sttModeRef.current !== 'cloud' || !sttMainProcessRef.current) return
+      const channel = payload.channel === 'sys' ? 'sys' : 'mic'
+      processTranscribedTextRef.current?.(payload.text, channel, { isFinal: !!payload.isFinal })
+    }
+    const unsubStream = ipc.on('streaming-stt:transcript', onStreamingStt)
+    return () => {
+      unsubLocal?.()
+      unsubStream?.()
+    }
+  }, [])
 
   const setProtectionMode = useCallback(async (wantStealth) => {
     if (!ipc) return
@@ -1201,6 +1248,11 @@ export default function App() {
       clearInterval(energyIntervalRef.current)
       energyIntervalRef.current = null
     }
+    pcmTapCleanupRef.current.forEach((fn) => fn?.())
+    pcmTapCleanupRef.current = []
+    captureWatchCleanupRef.current.forEach((fn) => fn?.())
+    captureWatchCleanupRef.current = []
+    captureTailRef.current = { mic: null, sys: null }
     energySampleRef.current = null
     chunkEnergyRef.current = { active: false, mic: null, sys: null }
     audioPathsRef.current = { hasMic: false, hasSys: false }
@@ -1209,12 +1261,128 @@ export default function App() {
     audioCtx.current = null
   }
 
+  function attachPcmTaps(ctx) {
+    pcmTapCleanupRef.current.forEach((fn) => fn?.())
+    pcmTapCleanupRef.current = []
+    const tails = captureTailRef.current
+    const rate = ctx?.sampleRate || 48000
+    const sendChunk = (channel, pcm) => {
+      lastPcmSentAtRef.current = Date.now()
+      if (sttModeRef.current === 'local') {
+        ipc?.send('local-stt:write-chunk', { channel, pcm, sampleRate: rate })
+      } else if (sttMainProcessRef.current) {
+        ipc?.send('streaming-stt:write-chunk', { channel, pcm, sampleRate: rate })
+      }
+    }
+    if (tails.mic) {
+      const off = attachPcmTap(ctx, tails.mic, (pcm) => sendChunk('mic', pcm))
+      pcmTapCleanupRef.current.push(off)
+    }
+    if (tails.sys) {
+      const off = attachPcmTap(ctx, tails.sys, (pcm) => sendChunk('sys', pcm))
+      pcmTapCleanupRef.current.push(off)
+    }
+  }
+
+  function setupCaptureRecovery() {
+    captureWatchCleanupRef.current.forEach((fn) => fn?.())
+    captureWatchCleanupRef.current = []
+    const schedule = (pathKey) => {
+      if (!isListening.current || (sttModeRef.current !== 'local' && !sttMainProcessRef.current)) return
+      const state = captureRecoveryRef.current
+      state[pathKey] = (state[pathKey] || 0) + 1
+      if (state[pathKey] > CAPTURE_RECOVERY_MAX_ATTEMPTS || state.recovering) return
+      state.recovering = true
+      setTimeout(() => {
+        void recoverCapturePath(pathKey).finally(() => {
+          captureRecoveryRef.current.recovering = false
+        })
+      }, CAPTURE_RECOVERY_DELAY_MS)
+    }
+    if (streamRef._mic) {
+      captureWatchCleanupRef.current.push(watchMediaStream(streamRef._mic, () => schedule('mic')))
+    }
+    if (streamRef._sys) {
+      captureWatchCleanupRef.current.push(watchMediaStream(streamRef._sys, () => schedule('sys')))
+    }
+  }
+
+  async function recoverCapturePath(pathKey) {
+    if (!isListening.current) return
+    if (sttModeRef.current !== 'local' && !sttMainProcessRef.current) return
+    const ctx = audioCtx.current
+    if (!ctx) return
+    const key = pathKey === 'sys' ? 'sys' : 'mic'
+    const profile =
+      key === 'sys' ? sysCaptureProfileRef.current : micCaptureProfileRef.current
+    try {
+      if (key === 'mic') {
+        streamRef._mic?.getTracks().forEach((t) => t.stop())
+        const mic = await acquireMicMeetingStream()
+        if (!mic) return
+        streamRef._mic = mic
+        const micDest = ctx.createMediaStreamDestination()
+        const micTail = buildVoiceCaptureChain(ctx, mic, micDest, profile, 'mic')
+        captureTailRef.current.mic = micTail
+        const a = ctx.createAnalyser()
+        a.fftSize = 512
+        micTail.connect(a)
+        if (energySampleRef.current) {
+          energySampleRef.current.mic = { analyser: a, data: new Uint8Array(a.fftSize) }
+        }
+        audioPathsRef.current.hasMic = true
+      } else {
+        streamRef._sys?.getTracks().forEach((t) => t.stop())
+        let sys = null
+        try {
+          sys = await acquireSystemAudioStream()
+        } catch {
+          return
+        }
+        streamRef._sys = sys
+        const sysDest = ctx.createMediaStreamDestination()
+        const sysTail = buildVoiceCaptureChain(ctx, sys, sysDest, profile, 'sys')
+        captureTailRef.current.sys = sysTail
+        const a = ctx.createAnalyser()
+        a.fftSize = 512
+        sysTail.connect(a)
+        if (energySampleRef.current) {
+          energySampleRef.current.sys = { analyser: a, data: new Uint8Array(a.fftSize) }
+        }
+        audioPathsRef.current.hasSys = true
+      }
+      attachPcmTaps(ctx)
+      setupCaptureRecovery()
+      console.warn(`[capture-recovery] ${key} path restored (attempt ${captureRecoveryRef.current[key]})`)
+    } catch (e) {
+      console.warn(`[capture-recovery] ${key} failed:`, e?.message || e)
+    }
+  }
+
   async function startMic() {
-    if ((await ipc?.invoke('get-store', 'audioEnabled')) === false || isListening.current) return
+    if (startMicInFlightRef.current) return
+    if ((await ipc?.invoke('get-store', 'audioEnabled')) === false) return
+
+    // Zombie state: flag says listening but all expected capture paths died.
+    if (isListening.current) {
+      const { hasMic, hasSys } = audioPathsRef.current
+      if (areRequiredCapturePathsLive(
+        { mic: streamRef._mic, sys: streamRef._sys },
+        { hasMic, hasSys },
+      )) return
+      console.warn('[capture] expected paths dead while listening — resetting capture (STT stays warm)')
+      stopMicCaptureOnly()
+    }
+
+    startMicInFlightRef.current = true
     try {
       const sensRaw = await ipc?.invoke('get-store', 'micSensitivity')
-      const captureProfile = resolveMicCaptureProfile(sensRaw)
-      micCaptureProfileRef.current = captureProfile
+      const sttModeStore = await ipc?.invoke('get-store', 'sttMode')
+      const localStt = sttModeStore !== 'cloud'
+      sttModeRef.current = localStt ? 'local' : 'cloud'
+      sttMainProcessRef.current = false
+      micCaptureProfileRef.current = resolveMicCaptureProfile(sensRaw)
+      const micProfile = micCaptureProfileRef.current
       const sysProfile = resolveSysCaptureProfile(sensRaw)
       sysCaptureProfileRef.current = sysProfile
 
@@ -1225,7 +1393,6 @@ export default function App() {
       } catch {}
       if (!mic && !sys) { emit('mic-error', { message: 'No audio' }); return }
 
-      // MediaRecorder chunks → cloud STT (Groq / OpenAI / NVIDIA, …)
       let ctx
       try {
         ctx = new AudioContext({ sampleRate: 48000 })
@@ -1233,31 +1400,37 @@ export default function App() {
         ctx = new AudioContext()
       }
       audioCtx.current = ctx
-      void ctx.resume().catch(() => {})
+      await ctx.resume().catch(() => {})
       streamRef._mic = mic
       streamRef._sys = sys
       streamRef.current = null
+
+      captureTailRef.current = { mic: null, sys: null }
+      captureRecoveryRef.current = { mic: 0, sys: 0, recovering: false, restarting: false }
+      lastPcmSentAtRef.current = Date.now()
 
       const samplePack = { mic: null, sys: null }
       const specs = []
 
       if (mic) {
         const micDest = ctx.createMediaStreamDestination()
-        const tail = buildVoiceCaptureChain(ctx, mic, micDest, captureProfile, 'mic')
+        const micTail = buildVoiceCaptureChain(ctx, mic, micDest, micProfile, 'mic')
+        captureTailRef.current.mic = micTail
         const a = ctx.createAnalyser()
         a.fftSize = 512
-        tail.connect(a)
-        samplePack.mic = { analyser: a, data: new Uint8Array(a.frequencyBinCount) }
-        specs.push({ key: 'mic', stream: micDest.stream })
+        micTail.connect(a)
+        samplePack.mic = { analyser: a, data: new Uint8Array(a.fftSize) }
+        if (!localStt && !sttMainProcessRef.current) specs.push({ key: 'mic', stream: micDest.stream })
       }
       if (sys) {
         const sysDest = ctx.createMediaStreamDestination()
-        const tail = buildVoiceCaptureChain(ctx, sys, sysDest, sysProfile, 'sys')
+        const sysTail = buildVoiceCaptureChain(ctx, sys, sysDest, sysProfile, 'sys')
+        captureTailRef.current.sys = sysTail
         const a = ctx.createAnalyser()
         a.fftSize = 512
-        tail.connect(a)
-        samplePack.sys = { analyser: a, data: new Uint8Array(a.frequencyBinCount) }
-        specs.push({ key: 'sys', stream: sysDest.stream })
+        sysTail.connect(a)
+        samplePack.sys = { analyser: a, data: new Uint8Array(a.fftSize) }
+        if (!localStt && !sttMainProcessRef.current) specs.push({ key: 'sys', stream: sysDest.stream })
       }
 
       streamSpecsRef.current = specs
@@ -1270,18 +1443,76 @@ export default function App() {
       }
 
       lastLoudEnergyAtRef.current = Date.now()
+      pathSpeechAtRef.current = { mic: Date.now(), sys: Date.now() }
+      sttPendingRef.current = { mic: emptySttPending(), sys: emptySttPending() }
+      sttQueueRef.current = { mic: [], sys: [] }
+      sttDrainActiveRef.current = { mic: false, sys: false }
+      sttTranscribingCountRef.current = 0
+      setSttPhaseIfChanged('idle')
+
+      if (localStt) {
+        // Model load is async inside stream-start; PCM taps attach immediately (Natively write()-while-loading).
+        void ipc?.invoke('local-stt:stream-start').catch((e) => {
+          console.warn('[local-stt] stream-start:', e?.message || e)
+        })
+      } else {
+        const cfg = await ipc?.invoke('get-transcription-config')
+        sttConfigRef.current = cfg
+        sttModeRef.current = 'cloud'
+        sttMainProcessRef.current = cfg?.useMainProcessStt === true
+        if (!cfg?.apiKey) {
+          emit('mic-error', { message: 'Add a cloud STT API key in Settings → Audio' })
+          closeMicAudioCtx()
+          streamRef._mic?.getTracks().forEach((t) => t.stop())
+          streamRef._sys?.getTracks().forEach((t) => t.stop())
+          return
+        }
+        if (sttMainProcessRef.current) {
+          const started = await ipc?.invoke('streaming-stt:start')
+          if (!started?.ok) {
+            emit('mic-error', { message: started?.error || 'Streaming STT failed to start' })
+            closeMicAudioCtx()
+            streamRef._mic?.getTracks().forEach((t) => t.stop())
+            streamRef._sys?.getTracks().forEach((t) => t.stop())
+            return
+          }
+        }
+      }
+      if (!localStt && !sttMainProcessRef.current) {
+        sttConfigRef.current = { ...(sttConfigRef.current || {}), sttMode: 'cloud' }
+      } else if (localStt) {
+        sttConfigRef.current = { sttMode: 'local' }
+      }
 
       if (energyIntervalRef.current != null) clearInterval(energyIntervalRef.current)
       energyIntervalRef.current = setInterval(() => {
         const pack = energySampleRef.current
         const ce = chunkEnergyRef.current
-        if (!pack || !isListening.current) return
+        if (!pack || !isListening.current) {
+          if (sessionOnRef.current && !isListening.current && !startMicInFlightRef.current) {
+            const sincePcm = Date.now() - (lastPcmSentAtRef.current || 0)
+            if (sincePcm > 8000) {
+              console.warn('[capture] Listen active but mic path dead — restarting capture')
+              void startMicRef.current?.()
+            }
+          }
+          return
+        }
 
-        const bumpSilence = (rms, profile) => {
+        const ctxLive = audioCtx.current
+        if (ctxLive?.state === 'suspended') {
+          void ctxLive.resume().catch(() => {})
+        }
+
+        // Per-path recovery is handled by watchMediaStream on track ended — do not stop STT here.
+
+        const bumpSilence = (rms, profile, pathKey) => {
           const t = Date.now()
           const act = profile?.speechActivityRms ?? 0.98
-          if (rms >= act) lastLoudEnergyAtRef.current = t
-          else if (t - lastLoudEnergyAtRef.current > SPEECH_SILENCE_MS) {
+          if (rms >= act) {
+            lastLoudEnergyAtRef.current = t
+            pathSpeechAtRef.current[pathKey] = t
+          } else if (t - lastLoudEnergyAtRef.current > SPEECH_SILENCE_MS) {
             lastSpeechActivityRef.current = t - 1000
           }
         }
@@ -1293,7 +1524,7 @@ export default function App() {
           node.analyser.getByteTimeDomainData(node.data)
           const rms = Math.sqrt(node.data.reduce((s, v) => s + (v - 128) ** 2, 0) / node.data.length)
           const profile = key === 'sys' ? sysCaptureProfileRef.current : micCaptureProfileRef.current
-          bumpSilence(rms, profile)
+          bumpSilence(rms, profile, key)
           if (!ce.active) return
           branch.sum += rms
           branch.count += 1
@@ -1301,36 +1532,70 @@ export default function App() {
         }
         tick(ce.mic, 'mic')
         tick(ce.sys, 'sys')
+        if (sttModeRef.current !== 'local' && !sttMainProcessRef.current) {
+          void flushSttPending('mic', false)
+          void flushSttPending('sys', false)
+        }
+        if (sttMainProcessRef.current && sttModeRef.current === 'cloud') {
+          for (const k of ['mic', 'sys']) {
+            const active = Date.now() - (pathSpeechAtRef.current[k] || 0) < 900
+            if (active) pathWasSpeechRef.current[k] = true
+            else if (pathWasSpeechRef.current[k]) {
+              pathWasSpeechRef.current[k] = false
+              ipc?.send('streaming-stt:speech-ended', { channel: k })
+            }
+          }
+        }
+        if (sttModeRef.current === 'local') {
+          for (const k of ['mic', 'sys']) {
+            const active = Date.now() - (pathSpeechAtRef.current[k] || 0) < 900
+            if (active) pathWasSpeechRef.current[k] = true
+            else if (pathWasSpeechRef.current[k]) {
+              pathWasSpeechRef.current[k] = false
+              ipc?.send('local-stt:speech-ended', { channel: k })
+            }
+          }
+        }
+
+        const speechRecent =
+          Date.now() - (pathSpeechAtRef.current.mic || 0) < 900 ||
+          Date.now() - (pathSpeechAtRef.current.sys || 0) < 900
+        if (speechRecent && sttTranscribingCountRef.current === 0) setSttPhaseIfChanged('speech')
+        else if (sttTranscribingCountRef.current > 0) setSttPhaseIfChanged('transcribing')
+        else if (!speechRecent) setSttPhaseIfChanged('idle')
       }, 50)
 
       isListening.current = true
       emit('mic-status', { active: true })
-      startChunk()
+      if (localStt || sttMainProcessRef.current) {
+        attachPcmTaps(ctx)
+        setupCaptureRecovery()
+      } else {
+        startChunk()
+      }
     } catch (e) {
       emit('mic-error', { message: e.name === 'NotAllowedError' ? 'Mic denied' : e.message })
+    } finally {
+      startMicInFlightRef.current = false
     }
   }
 
   function startChunk() {
     if (!isListening.current) return
+    if (sttModeRef.current === 'local') return
+    if (micPausedForAskRef.current) {
+      setTimeout(() => startChunk(), 500)
+      return
+    }
     const specs = streamSpecsRef.current || []
     if (!specs.length) return
 
     const ce = chunkEnergyRef.current
-    if (ce.mic) {
-      ce.mic.sum = 0
-      ce.mic.count = 0
-      ce.mic.max = 0
-    }
-    if (ce.sys) {
-      ce.sys.sum = 0
-      ce.sys.count = 0
-      ce.sys.max = 0
-    }
+    if (ce.mic) { ce.mic.sum = 0; ce.mic.count = 0; ce.mic.max = 0 }
+    if (ce.sys) { ce.sys.sum = 0; ce.sys.count = 0; ce.sys.max = 0 }
     ce.active = true
 
     const mime = getMimeType()
-    /** Higher Opus bitrate → clearer consonants for Whisper vs browser default (~32–64k). */
     const recOpts = mime
       ? { mimeType: mime, audioBitsPerSecond: 128000 }
       : { audioBitsPerSecond: 128000 }
@@ -1349,22 +1614,24 @@ export default function App() {
           chunkEnergyRef.current.active = false
           if (isListening.current) startChunk()
         }
-
         if (chunks.length === 0) return
         const blob = new Blob(chunks, { type: mr.mimeType || 'audio/webm' })
         const branch = spec.key === 'mic' ? chunkEnergyRef.current.mic : chunkEnergyRef.current.sys
         const { hasMic, hasSys } = audioPathsRef.current
-        const prof =
-          spec.key === 'sys' ? sysCaptureProfileRef.current : micCaptureProfileRef.current
+        const prof = spec.key === 'sys' ? sysCaptureProfileRef.current : micCaptureProfileRef.current
         const pathOk =
-          spec.key === 'mic'
-            ? hasMic && pathEnergyActive(branch, prof)
-            /**
-             * Teams participant audio can be low/compressed and often fails RMS gates.
-             * For system loopback, accept any non-trivial chunk when the stream exists.
-             */
-            : hasSys
-        if (blob.size >= MIN_RECORDING_BYTES && pathOk) void transcribe(blob, mr.mimeType, spec.key)
+          sttModeRef.current === 'local'
+            ? spec.key === 'mic' ? hasMic : hasSys
+            : spec.key === 'mic'
+              ? hasMic && pathEnergyActive(branch, prof)
+              : hasSys
+        if (blob.size >= MIN_RECORDING_BYTES && pathOk) {
+          const pathKey = spec.key === 'sys' ? 'sys' : 'mic'
+          const pending = sttPendingRef.current[pathKey]
+          pending.blobs.push(blob)
+          pending.accumulatedMs += STT_SLICE_MS
+          void flushSttPending(pathKey, false)
+        }
       }
       try {
         mr.start()
@@ -1376,16 +1643,45 @@ export default function App() {
 
     recorderRef.current = recorders.length === 1 ? recorders[0] : recorders
     if (!recorders.length && isListening.current) {
-      setTimeout(() => startChunk(), AUDIO_CHUNK_MS)
+      setTimeout(() => startChunk(), STT_SLICE_MS)
     }
-
     setTimeout(() => {
       recorders.forEach((r) => r.state === 'recording' && r.stop())
-    }, AUDIO_CHUNK_MS)
+    }, STT_SLICE_MS)
+  }
+
+  function stopMicCaptureOnly() {
+    isListening.current = false
+    captureRecoveryRef.current = { mic: 0, sys: 0, recovering: false, restarting: false }
+    const r = recorderRef.current
+    if (Array.isArray(r)) r.forEach((x) => x.state !== 'inactive' && x.stop())
+    else r?.state !== 'inactive' && r?.stop()
+    streamRef._mic?.getTracks().forEach((t) => t.stop())
+    streamRef._sys?.getTracks().forEach((t) => t.stop())
+    streamRef.current = null
+    streamRef._mic = null
+    streamRef._sys = null
+    recorderRef.current = null
+    streamSpecsRef.current = []
+    closeMicAudioCtx()
+    emit('mic-status', { active: false })
   }
 
   function stopMic() {
     isListening.current = false
+    if (sttModeRef.current === 'local') {
+      // Session stop drains on main first; mid-session never kill STT (Natively keeps write() path hot).
+      if (!sessionOnRef.current) {
+        void ipc?.invoke('local-stt:stop').catch(() => {})
+      }
+    } else if (sttMainProcessRef.current) {
+      void ipc?.invoke('streaming-stt:stop').catch(() => {})
+    } else {
+      void flushSttPending('mic', true)
+      void flushSttPending('sys', true)
+    }
+    sttMainProcessRef.current = false
+    captureRecoveryRef.current = { mic: 0, sys: 0, recovering: false, restarting: false }
     const r = recorderRef.current
     if (Array.isArray(r)) r.forEach((x) => x.state !== 'inactive' && x.stop())
     else r?.state !== 'inactive' && r?.stop()
@@ -1404,9 +1700,10 @@ export default function App() {
     latestTranscriptRef.current = ''
   }
 
-  /** Post-processing after cloud STT: speaker tagging, rolling buffer, live segments, AI trigger. */
-  function processTranscribedText(text, audioPathKey) {
+  /** Post-processing after STT: speaker tagging, rolling buffer, live segments, AI trigger. */
+  function processTranscribedText(text, audioPathKey, { isFinal = true } = {}) {
     const trimmedChunk = text.trim()
+    if (!trimmedChunk) return
     const tChunk = Date.now()
     const silenceBeforeMs = lastSpeechTimeRef.current > 0 ? tChunk - lastSpeechTimeRef.current : 0
     let speaker
@@ -1414,14 +1711,27 @@ export default function App() {
     else if (audioPathKey === 'sys') { speaker = 'other'; lastSpeakerRef.current = 'other' }
     else { speaker = assignChunkSpeaker(trimmedChunk, silenceBeforeMs, lastSpeakerRef) }
     const roleTag = speaker === 'me' ? 'Me' : 'Participant'
+    const labeled = `${roleTag}: ${trimmedChunk}`
+
+    if (!isFinal) {
+      setLiveSegmentInterim(speaker, trimmedChunk)
+      emit('transcript-updated', { latest: `${labeled} …`, full: micTranscriptRef.current })
+      const speechRecent =
+        Date.now() - (pathSpeechAtRef.current.mic || 0) < 900 ||
+        Date.now() - (pathSpeechAtRef.current.sys || 0) < 900
+      if (speechRecent) setSttPhaseIfChanged('transcribing')
+      return
+    }
 
     lastChunkRef.current = trimmedChunk
     const stamp = Date.now()
     lastAudioUpdateRef.current = stamp
     lastSpeechActivityRef.current = stamp
 
-    const labeled = `${roleTag}: ${trimmedChunk}`
-    ipc?.invoke('session-transcript-append', labeled)
+    // Local STT finals are recorded in main via local-stt:transcript callback (avoids stop-order race).
+    if (sttModeRef.current !== 'local') {
+      ipc?.invoke('session-transcript-append', labeled)
+    }
 
     if (speechTriggerDelayRef.current != null) {
       clearTimeout(speechTriggerDelayRef.current)
@@ -1433,7 +1743,7 @@ export default function App() {
       : trimmedChunk
     speechBufferRef.current = trimBufferSmart(mergedBuff)
     lastSpeechTimeRef.current = Date.now()
-    appendLiveSegment(speaker, trimmedChunk)
+    commitLiveSegmentFinal(speaker, trimmedChunk)
 
     setMicTranscript((prev) => {
       const combined = (prev + ' ' + trimmedChunk).trim().split(/\s+/).slice(-600).join(' ')
@@ -1446,34 +1756,121 @@ export default function App() {
     maybeTriggerAIRef.current?.()
   }
 
+  processTranscribedTextRef.current = processTranscribedText
+
   startMicRef.current = startMic
   stopMicRef.current = stopMic
 
+  async function drainSttQueue(pathKey) {
+    const key = pathKey === 'sys' ? 'sys' : 'mic'
+    if (sttDrainActiveRef.current[key]) return
+    sttDrainActiveRef.current[key] = true
+    try {
+      while (sttQueueRef.current[key].length > 0) {
+        const blobs = sttQueueRef.current[key].shift()
+        if (!blobs?.length) continue
+        sttTranscribingCountRef.current += 1
+        setSttPhaseIfChanged('transcribing')
+        try {
+          if (sttModeRef.current === 'local') {
+            const pcm = await blobsToPcm16kMono(blobs, audioCtx.current)
+            if (pcm && pcm.byteLength >= MIN_WAV_BYTES - 44) {
+              const res = await ipc?.invoke('local-stt:feed-pcm', { channel: key, pcm })
+              if (res?.text) {
+                processTranscribedTextRef.current?.(res.text, key, { isFinal: true })
+              }
+            }
+          } else {
+            const wav = await blobsToGroqWav16k(blobs, audioCtx.current)
+            if (wav && wav.size >= MIN_WAV_BYTES) await transcribe(wav, 'audio/wav', key)
+          }
+        } catch (e) {
+          console.warn('[STT] queue item failed', key, e?.message || e)
+        } finally {
+          sttTranscribingCountRef.current = Math.max(0, sttTranscribingCountRef.current - 1)
+        }
+      }
+    } finally {
+      sttDrainActiveRef.current[key] = false
+      if (sttQueueRef.current[key].length) void drainSttQueue(key)
+      if (sttTranscribingCountRef.current === 0) {
+        const speechRecent =
+          Date.now() - (pathSpeechAtRef.current.mic || 0) < 900 ||
+          Date.now() - (pathSpeechAtRef.current.sys || 0) < 900
+        setSttPhaseIfChanged(speechRecent ? 'speech' : 'idle')
+      }
+    }
+  }
+
+  function flushSttPending(pathKey, force) {
+    const key = pathKey === 'sys' ? 'sys' : 'mic'
+    const pending = sttPendingRef.current[key]
+    if (!pending?.blobs?.length) return
+    const silenceMs = Date.now() - (pathSpeechAtRef.current[key] || 0)
+    const ms = pending.accumulatedMs
+    const shouldFlush =
+      (force && pending.blobs.length > 0) ||
+      ms >= STT_BATCH_MAX_MS ||
+      (ms >= STT_BATCH_MIN_MS && silenceMs >= STT_FLUSH_SILENCE_MS) ||
+      (ms >= STT_BATCH_FAST_MS && silenceMs >= STT_FLUSH_FAST_MS && pending.blobs.length >= 1)
+    if (!shouldFlush) return
+    const blobs = pending.blobs.splice(0)
+    pending.accumulatedMs = 0
+    sttQueueRef.current[key].push(blobs)
+    void drainSttQueue(key)
+  }
+
   async function transcribe(blob, mimeType, audioPathKey) {
     try {
-      const cfg = await ipc?.invoke('get-transcription-config')
+      if (sttModeRef.current === 'local') return
+      let cfg = sttConfigRef.current
+      if (!cfg?.apiKey) {
+        cfg = await ipc?.invoke('get-transcription-config')
+        sttConfigRef.current = cfg
+      }
       if (!cfg?.apiKey) return
 
-      if (cfg.sttKind === 'nvidia_riva') {
-        const pcm = await blobToLinear16Mono(blob)
-        const { text: nvidiaText } =
-          (await ipc?.invoke('nvidia-transcribe-pcm', {
-            pcm,
-            sampleRate: 16000,
-            languageCode: cfg.languageCode || 'multi',
-          })) || {}
-        const text = String(nvidiaText || '').trim()
-        if (!text || text.length < 3 || HALLUCINATIONS.some((r) => r.test(text))) return
+      if (cfg.sttKind === 'nvidia_nim') {
+        let uploadBlob = blob
+        if (mimeType !== 'audio/wav') {
+          try {
+            const wav = await blobsToGroqWav16k([blob], audioCtx.current)
+            if (!wav || wav.size < MIN_WAV_BYTES) return
+            uploadBlob = wav
+          } catch {
+            return
+          }
+        }
+        const wavAb = await uploadBlob.arrayBuffer()
+        const res = await ipc?.invoke('nvidia-nim:transcribe-wav', { wav: wavAb })
+        if (!res?.ok) {
+          console.warn('[STT] NVIDIA NIM failed:', res?.error || 'unknown')
+          return
+        }
+        const text = String(res.text || '').trim()
+        if (!text || text.length < 3 || HALLUCINATIONS.some((r) => r.test(text)) || isRepetitionHallucination(text)) return
         processTranscribedText(text, audioPathKey)
         return
       }
 
       if (!cfg.url) return
 
-      const ext = (mimeType || '').includes('ogg') ? 'ogg' : 'webm'
+      let uploadBlob = blob
+      let uploadExt = 'wav'
+      if (mimeType !== 'audio/wav') {
+        try {
+          const wav = await blobsToGroqWav16k([blob], audioCtx.current)
+          if (!wav || wav.size < MIN_WAV_BYTES) return
+          uploadBlob = wav
+          uploadExt = 'wav'
+        } catch {
+          return
+        }
+      }
+
       const post = (format) => {
         const fd = new FormData()
-        fd.append('file', blob, `a.${ext}`)
+        fd.append('file', uploadBlob, `a.${uploadExt}`)
         fd.append('model', cfg.model)
         fd.append('temperature', '0')
         if (cfg.language) fd.append('language', cfg.language)
@@ -1513,7 +1910,6 @@ export default function App() {
           if (useWhisperMeta) {
             const gated = filterWhisperVerboseJson(j, audioPathKey === 'sys' ? 'sys' : 'mic')
             text = String(gated.text || '').trim()
-
             const allowed = Array.isArray(cfg.allowedLanguages) ? cfg.allowedLanguages : null
             if (text && allowed && gated.detectedLanguage) {
               const wrongLang = !allowed.includes(gated.detectedLanguage)
@@ -1522,7 +1918,6 @@ export default function App() {
                 audioPathKey !== 'sys' || (agg != null && Number.isFinite(agg) && agg > -0.55)
               if (wrongLang && confidentDetection) text = ''
             }
-
             const hardMin = audioPathKey === 'sys' ? -0.90 : AGGREGATE_DROP_HARD_MIN
             const agg = gated.aggregateLogprob
             if (text && typeof agg === 'number' && Number.isFinite(agg) && agg < hardMin) text = ''
@@ -1535,14 +1930,8 @@ export default function App() {
       } else {
         text = (await res.text()).trim()
       }
-      if (!text || text.length < 3 || HALLUCINATIONS.some((r) => r.test(text.trim()))) return
-
-      const trimmedChunk = text.trim()
-      const tChunk = Date.now()
-      const silenceBeforeMs =
-        lastSpeechTimeRef.current > 0 ? tChunk - lastSpeechTimeRef.current : 0
-      /** System loopback = remote meeting audio; mic = you. Do not infer from text/heuristics alone. */
-      processTranscribedText(trimmedChunk, audioPathKey)
+      if (!text || text.length < 3 || HALLUCINATIONS.some((r) => r.test(text.trim())) || isRepetitionHallucination(text.trim())) return
+      processTranscribedText(text.trim(), audioPathKey)
     } catch {}
   }
 
@@ -1606,8 +1995,6 @@ export default function App() {
         : opts.source === 'speech-failsafe'
           ? 'speech-failsafe'
           : 'speech'
-      /** Screen-read always bypasses OCR cooldown to get fresh context. */
-      if (isScreenRead) opts = { ...opts, bypassCaptureCooldown: true }
       if (responseLockRef.current) {
         console.log('BLOCKED: response in-flight')
         return
@@ -1617,45 +2004,35 @@ export default function App() {
         return
       }
       if (isProcessingAskRef.current) return
-      const trimmed = q?.trim() || null
+      let trimmed = q?.trim() || null
+      let skillSlug = opts.skillSlug || null
+      const skillInvoke = trimmed ? parseSkillInvoke(trimmed) : null
+      if (skillInvoke) {
+        skillSlug = skillInvoke.skillSlug
+        trimmed = skillInvoke.question || null
+      }
       const hasText = !!(trimmed && trimmed.length > 0)
-      if (!sessionOnRef.current && !hasText) return
+      if (!sessionOnRef.current && !hasText && !skillSlug) return
       if (!isAuto && Date.now() - lastAskTimeRef.current < MIN_ASK_GAP_MS) return
 
       const hasSpeechBuff = String(speechBufferRef.current || '').trim().length > 0
-      const hasScreenText = String(latestOcrTextRef.current || '').trim().length > 0
 
       if (isAuto) {
-        if (!hasText && !hasSpeechBuff && hasScreenText && assistSource !== 'screen') return
+        if (!hasText && !hasSpeechBuff) return
 
-        let screenSnapshot = ''
-        if (assistSource === 'screen') {
-          screenSnapshot = String(latestOcrTextRef.current || '')
-          if (!screenOcrUsableForAssist(screenSnapshot)) return
-          if (isSemanticallySameScreen(screenSnapshot, lastOcrTriggerRef.current)) return
-          if (Date.now() - lastScreenTriggerTimeRef.current < SCREEN_ASSIST_COOLDOWN_MS) return
-          if (Date.now() - lastGlobalTriggerTimeRef.current < GLOBAL_TRIGGER_COOLDOWN_MS) return
-          lastGlobalTriggerTimeRef.current = Date.now()
-        } else if (assistSource === 'speech-failsafe') {
+        if (assistSource === 'speech-failsafe') {
           const sp = String(speechBufferRef.current || '').trim()
           if (sp.length <= 20) return
-        } else {
+        } else if (assistSource !== 'screen') {
           const sp = String(speechBufferRef.current || '').trim()
           if (sp.length < MIN_SPEECH_LENGTH) return
           if (Date.now() - lastSpeechTimeRef.current <= SPEECH_STABILITY_MS) return
         }
-
-        if (assistSource === 'screen') {
-          lastOcrTriggerRef.current = screenSnapshot
-          lastScreenTriggerTimeRef.current = Date.now()
-        }
       }
 
-      const bypassCapture =
-        opts.bypassCaptureCooldown === true || bypassCaptureOnceRef.current
       bypassCaptureOnceRef.current = false
 
-      lastAskRef.current = { q: trimmed, opts: { source: opts.source, auto: isAuto } }
+      lastAskRef.current = { q: q?.trim() || null, opts: { source: opts.source, auto: isAuto, skillSlug } }
 
       void (async () => {
         try {
@@ -1665,11 +2042,14 @@ export default function App() {
           const bufferedSpeech = String(speechBufferRef.current || '').trim()
           const segmentSnapshot = [...speechSegmentsRef.current]
           const isManualAsk = !isAuto
+          const isVisionAsk = isManualAsk && !opts.noScreen && !trimmed
           const promptModeEarly = trimmed
             ? 'typed'
-            : (isScreenRead || (!bufferedSpeech && segmentSnapshot.length === 0))
-              ? 'screen'
-              : 'audio'
+            : opts.noScreen
+              ? 'audio'
+              : isVisionAsk || isScreenRead
+                ? 'screen'
+                : 'audio'
           if (
             isManualAsk &&
             promptModeEarly !== 'screen' &&
@@ -1678,26 +2058,6 @@ export default function App() {
             clearRollingSpeech()
           }
 
-          if (sessionOnRef.current && ipc) {
-            const ocrAgeMs = Date.now() - lastOcrUpdateRef.current
-            const hasFreshOcr =
-              ocrAgeMs >= 0 &&
-              ocrAgeMs <= FRESH_OCR_MAX_AGE_MS &&
-              String(latestOcrTextRef.current || '').trim().length > 0
-            const preferFastStart = isScreenRead
-            if (hasFreshOcr && preferFastStart) {
-              // Keep latency low for Ctrl+Enter: use fresh OCR now, refresh in background.
-              void refreshLocalOcr({ bypassCaptureCooldown: false })
-            } else {
-              const r = await refreshLocalOcr({
-                bypassCaptureCooldown: bypassCapture,
-              })
-              if (r?.ok && typeof r.text === 'string') {
-                latestOcrTextRef.current = r.text
-                lastOcrUpdateRef.current = Date.now()
-              }
-            }
-          }
 
           if (isProcessingAskRef.current || isThinkingRef.current || responseLockRef.current) return
 
@@ -1708,101 +2068,58 @@ export default function App() {
           isProcessingAskRef.current = true
           applySpeechSilenceWindow()
 
-          console.log('TRIGGER SOURCE:', opts?.source || 'speech')
-          console.log('SPEECH:', bufferedSpeech)
-          console.log('SCREEN:', latestOcrTextRef.current)
-
-          const ocrText = latestOcrTextRef.current || ''
-          const structuredOcr = structureScreenOcr(ocrText)
-          const filteredScreenText = structuredOcr.promptText || structuredOcr.displayText || ocrText
-          const screenLimited =
-            isOcrQualityGood(filteredScreenText) ||
-            looksLikeCodeScreen(filteredScreenText) ||
-            structuredOcr.confidence >= 3
-              ? String(filteredScreenText).slice(0, MAX_SCREEN_CONTEXT_CHARS)
-              : ''
-
-          if (isAuto && promptModeEarly === 'screen' && !screenLimited && !trimmed) {
-            isProcessingAskRef.current = false
-            console.log('BLOCKED: no usable screen OCR for auto assist')
-            return
-          }
-
-          const promptMode = promptModeEarly
-
+          // Assemble speech context for this turn.
+          const promptMode = trimmed ? 'typed' : opts.noScreen ? 'audio' : isVisionAsk || isScreenRead ? 'screen' : 'audio'
           const maxSegs = isManualAsk ? MAX_LLM_SEGMENTS_MANUAL : MAX_LLM_SEGMENTS
+          const includeSpeechWithScreen = isVisionAsk || !isScreenRead
           const segmentedTranscript =
-            promptMode === 'screen'
+            promptMode === 'screen' && !includeSpeechWithScreen
               ? ''
               : formatSegmentsForLLM(segmentSnapshot, maxSegs) || bufferedSpeech
-
-          /**
-           * Screen mode must NOT inject stale audio — the user wants screen info,
-           * not a replay of what they said minutes ago ("Am I audible to the meeting").
-           */
-          const rawSpeech = promptMode === 'screen' ? '' : segmentedTranscript
+          const rawSpeech =
+            promptMode === 'screen' && !includeSpeechWithScreen ? '' : segmentedTranscript
           const transcriptToSend = rawSpeech
-
-          console.log(
-            '🔀 PROMPT MODE:',
-            promptMode,
-            '| ocr_useful:',
-            !!screenLimited,
-            '| ocr_filtered:',
-            !!structuredOcr.question,
-            '| segments:',
-            segmentSnapshot.length,
-            '| manual:',
-            isManualAsk,
-            '| audio_len:',
-            rawSpeech.length,
-          )
 
           const finalPrompt = buildStructuredUserPrompt({
             rawSpeech,
             micFallback: transcriptToSend,
-            screenText: screenLimited,
+            screenText: '',
             typedQuestion: trimmed,
             mode: promptMode,
           })
-          console.log('FINAL PROMPT:', finalPrompt)
 
-          const screenContext = String(structuredOcr.promptText || screenLimited || '').slice(0, 3000)
-
-          if (hasText) {
-            setMessages((m) => [...m, { role: 'user', text: trimmed, id: ++msgId.current }])
+          if (hasText || skillSlug) {
+            setMessages((m) => [...m, { role: 'user', text: q?.trim() || `/${skillSlug}`, id: ++msgId.current }])
             scrollBottom()
           }
+
+          // Pause new mic chunks during the AI response to prevent echo capture.
+          if (!isAuto) micPausedForAskRef.current = true
 
           lastAskTimeRef.current = Date.now()
           perfAskT0Ref.current = Date.now()
           const meta = {
             transcript: transcriptToSend,
-            screen: ocrText,
-            screenContext,
             structuredUserPrompt: finalPrompt,
             mode: promptMode,
+            noScreen: !!opts.noScreen,
+            bypassCaptureCooldown: !!opts.bypassCaptureCooldown,
             promptSummary: {
               hasTypedQuestion: !!trimmed,
               hasSpeechContext: !!(rawSpeech || String(transcriptToSend || '').trim()),
-              hasScreen: !!String(ocrText || '').trim(),
+              hasScreen: isVisionAsk || isScreenRead,
             },
-            assistTrigger: assistSource,
+            assistTrigger: isVisionAsk || isScreenRead ? 'screen' : assistSource,
             source: trimmed ? 'typed' : rawSpeech ? 'speech' : 'screen',
+            skillSlug: skillSlug || undefined,
+            pastMeetingContext: opts.pastMeetingContext || undefined,
             _llmTriggerAt: perfAskT0Ref.current,
           }
-          console.log('TRIGGER INPUT', {
-            mode: promptMode,
-            speech: rawSpeech?.slice(0, 120),
-            transcriptLen: transcriptToSend.length,
-            ocr: ocrText?.slice(0, 80),
-          })
 
           try {
             responseLockRef.current = true
             activeTurnMetaRef.current = {
               ...(activeTurnMetaRef.current || {}),
-              screenContext,
             }
             const askP = ipc?.invoke('ask-ai-with-transcript', trimmed, transcriptToSend, meta)
             if (askP) {
@@ -1849,6 +2166,32 @@ export default function App() {
     handleAsk(q, { ...opts, bypassCaptureCooldown: true })
   }, [handleAsk])
 
+  const handleActionChip = useCallback(
+    (chip) => {
+      if (!chip?.prompt || isThinking) return
+      handleAsk(chip.prompt, {
+        source: 'action-chip',
+        bypassCaptureCooldown: true,
+        noScreen: false,
+      })
+      setExpanded(true)
+    },
+    [handleAsk, isThinking],
+  )
+
+  const handlePastMeetingSearchAsk = useCallback(
+    (hit) => {
+      if (!hit?.text || isThinking) return
+      handleAsk(null, {
+        pastMeetingContext: hit.text,
+        source: 'past-meeting-search',
+        bypassCaptureCooldown: true,
+      })
+      setExpanded(true)
+    },
+    [handleAsk, isThinking],
+  )
+
   useEffect(() => {
     clearRollingSpeechRef.current = clearRollingSpeech
   }, [clearRollingSpeech])
@@ -1868,42 +2211,12 @@ export default function App() {
     return () => clearInterval(tick)
   }, [sessionOn, applySpeechSilenceWindow])
 
-  useEffect(() => {
-    if (!sessionOn) return
-    void (async () => {
-      const w = await warmupLocalOcr()
-      if (!w?.ok) return
-      void refreshLocalOcr({ allowAutoTrigger: false })
-    })()
-  }, [sessionOn, refreshLocalOcr])
-
-  useEffect(() => {
-    if (!sessionOn) return
-    if (localOcrTickRef.current) clearInterval(localOcrTickRef.current)
-    localOcrTickRef.current = window.setInterval(() => {
-      if (!sessionOnRef.current || responseLockRef.current || isThinkingRef.current) return
-      if (ocrStatusRef.current !== 'ready') return
-      void refreshLocalOcr({ allowAutoTrigger: true })
-    }, 1200)
-    return () => {
-      if (localOcrTickRef.current) {
-        clearInterval(localOcrTickRef.current)
-        localOcrTickRef.current = null
-      }
-    }
-  }, [sessionOn, refreshLocalOcr])
-
   useEffect(
     () => () => {
       if (speechTriggerDelayRef.current != null) {
         clearTimeout(speechTriggerDelayRef.current)
         speechTriggerDelayRef.current = null
       }
-      if (localOcrTickRef.current) {
-        clearInterval(localOcrTickRef.current)
-        localOcrTickRef.current = null
-      }
-      void terminateLocalOcr()
     },
     [],
   )
@@ -1991,7 +2304,7 @@ export default function App() {
         <div className="crystal-pill crystal-notch-shell relative z-20 shrink-0 overflow-hidden">
           <StatusBar
             sessionOn={sessionOn}
-            ocrStatus={ocrStatus}
+
             onToggleSession={onToggleSession}
             onOpenSettings={onOpenSettings}
             onQuit={quitApp}
@@ -2017,66 +2330,97 @@ export default function App() {
           >
             <div className="crystal-panel-edge shrink-0" aria-hidden />
 
-            <div className="crystal-divider flex shrink-0 items-center gap-2 border-b px-3 py-2">
-              <div className="crystal-transcript-bar min-w-0 flex-1">
-                {(() => {
-                  if (!sessionOn) {
+            <div className="crystal-divider flex shrink-0 flex-col border-b">
+              <div className="flex items-center gap-2 px-3 py-2">
+                <div className="crystal-transcript-bar min-w-0 flex-1">
+                  {(() => {
+                    if (!sessionOn) {
+                      return (
+                        <div className="crystal-transcript-idle truncate">
+                          <span className="crystal-transcript-idle-mark" aria-hidden />
+                          <span>Start Listen to capture meeting audio</span>
+                        </div>
+                      )
+                    }
+                    const line =
+                      formatPanelTranscriptLine(liveTranscriptSegments) ||
+                      (micTranscript.trim()
+                        ? `Me: ${micTranscript.trim().length > 140 ? `…${micTranscript.trim().slice(-138)}` : micTranscript.trim()}`
+                        : '')
+                    if (line) {
+                      return (
+                        <p className="crystal-transcript-live truncate">
+                          <SpeakerTranscriptText line={line} bodyClassName="crystal-transcript-live-body" />
+                        </p>
+                      )
+                    }
+                    if (sttLivePhase === 'transcribing') {
+                      return (
+                        <div className="crystal-transcript-listening truncate">
+                          <span className="crystal-listening-dot" aria-hidden />
+                          <span className="crystal-listening-label">Transcribing</span>
+                          <span className="crystal-listening-sub">processing speech</span>
+                        </div>
+                      )
+                    }
+                    if (sttLivePhase === 'speech') {
+                      return (
+                        <div className="crystal-transcript-listening truncate">
+                          <span className="crystal-listening-dot" aria-hidden />
+                          <span className="crystal-listening-label">Speaking</span>
+                          <span className="crystal-listening-sub">capturing audio</span>
+                        </div>
+                      )
+                    }
                     return (
-                      <div className="crystal-transcript-idle truncate">
-                        <span className="crystal-transcript-idle-mark" aria-hidden />
-                        <span>Start Listen to capture meeting audio</span>
+                      <div className="crystal-transcript-listening truncate">
+                        <span className="crystal-listening-dot" aria-hidden />
+                        <span className="crystal-listening-label">Listening</span>
+                        <span className="crystal-listening-sub">waiting for speech</span>
                       </div>
                     )
-                  }
-                  const line = formatPanelTranscriptLine(liveTranscriptSegments)
-                  if (line) {
-                    return (
-                      <p className="crystal-transcript-live truncate">
-                        <SpeakerTranscriptText line={line} bodyClassName="crystal-transcript-live-body" />
-                      </p>
-                    )
-                  }
-                  return (
-                    <div className="crystal-transcript-listening truncate">
-                      <span className="crystal-listening-dot" aria-hidden />
-                      <span className="crystal-listening-label">Listening</span>
-                      <span className="crystal-listening-sub">waiting for speech</span>
-                    </div>
-                  )
-                })()}
-              </div>
-              <div
-                role="group"
-                aria-label="Screen capture visibility"
-                className="crystal-stealth-track shrink-0"
-              >
-                <button
-                  type="button"
-                  title="Visible — may appear in screen share"
-                  aria-label="Visible mode"
-                  aria-pressed={!stealthMode}
-                  onClick={() => void setProtectionMode(false)}
-                  className={[
-                    'crystal-stealth-btn cursor-default transition-all duration-150 active:scale-95',
-                    !stealthMode ? 'crystal-stealth-btn-active' : 'crystal-stealth-btn-idle',
-                  ].join(' ')}
+                  })()}
+                </div>
+                <div
+                  role="group"
+                  aria-label="Screen capture visibility"
+                  className="crystal-stealth-track shrink-0"
                 >
-                  <EyeVisibleIcon />
-                </button>
-                <button
-                  type="button"
-                  title="Stealth — hidden from screen capture"
-                  aria-label="Stealth mode"
-                  aria-pressed={stealthMode}
-                  onClick={() => void setProtectionMode(true)}
-                  className={[
-                    'crystal-stealth-btn cursor-default transition-all duration-150 active:scale-95',
-                    stealthMode ? 'crystal-stealth-btn-active' : 'crystal-stealth-btn-idle',
-                  ].join(' ')}
-                >
-                  <IncognitoGlyph />
-                </button>
+                  <button
+                    type="button"
+                    title="Visible — may appear in screen share"
+                    aria-label="Visible mode"
+                    aria-pressed={!stealthMode}
+                    onClick={() => void setProtectionMode(false)}
+                    className={[
+                      'crystal-stealth-btn cursor-default transition-all duration-150 active:scale-95',
+                      !stealthMode ? 'crystal-stealth-btn-active' : 'crystal-stealth-btn-idle',
+                    ].join(' ')}
+                  >
+                    <EyeVisibleIcon />
+                  </button>
+                  <button
+                    type="button"
+                    title="Stealth — hidden from screen capture"
+                    aria-label="Stealth mode"
+                    aria-pressed={stealthMode}
+                    onClick={() => void setProtectionMode(true)}
+                    className={[
+                      'crystal-stealth-btn cursor-default transition-all duration-150 active:scale-95',
+                      stealthMode ? 'crystal-stealth-btn-active' : 'crystal-stealth-btn-idle',
+                    ].join(' ')}
+                  >
+                    <IncognitoGlyph />
+                  </button>
+                </div>
               </div>
+              {sessionOn && overlayLiveTranscriptEnabled ? (
+                <LiveTranscriptPanel
+                  segments={liveTranscriptSegments}
+                  autoScroll={overlayTranscriptAutoScroll}
+                  className="border-t border-white/[0.06]"
+                />
+              ) : null}
             </div>
 
             <div className="relative z-10 flex min-h-0 flex-1 flex-col overflow-hidden">
@@ -2088,8 +2432,8 @@ export default function App() {
                 streamPulseRef={streamPulseRef}
                 fontSize={fontSize}
                 answerStyle={answerStyle}
-                overlayAnswerView={overlayAnswerView}
                 overlayTeleprompter={overlayTeleprompter}
+                overlayAnswerPinToTop={overlayAnswerPinToTop}
                 streamPreview={streamPreview}
                 activeAskSource={activeAskSource}
                 sessionOn={sessionOn}
@@ -2098,6 +2442,45 @@ export default function App() {
               />
 
               <div className="crystal-divider shrink-0 border-t">
+                {modeSuggestion && sessionOn ? (
+                  <div className="flex flex-wrap items-center justify-between gap-2 border-b border-white/[0.06] bg-black/25 px-3 py-2">
+                    <p className="min-w-0 text-[11px] text-zinc-300">
+                      Sounds like <span className="font-medium text-white">{modeSuggestion.modeName}</span> — switch profile mode?
+                    </p>
+                    <div className="flex shrink-0 gap-2">
+                      <button
+                        type="button"
+                        className="rounded-md border border-white/15 px-2.5 py-1 text-[10px] text-zinc-200 hover:bg-white/[0.06]"
+                        onClick={() => {
+                          void ipc?.invoke('accept-mode-suggestion', modeSuggestion.promptId).then(() => {
+                            setModeSuggestion(null)
+                          })
+                        }}
+                      >
+                        Switch
+                      </button>
+                      <button
+                        type="button"
+                        className="rounded-md px-2.5 py-1 text-[10px] text-zinc-500 hover:text-zinc-300"
+                        onClick={() => {
+                          void ipc?.invoke('dismiss-mode-suggestion', modeSuggestion.template).then(() => {
+                            setModeSuggestion(null)
+                          })
+                        }}
+                      >
+                        Dismiss
+                      </button>
+                    </div>
+                  </div>
+                ) : null}
+                {globalMeetingSearchEnabled ? (
+                  <PastMeetingSearch disabled={isThinking} onAskWithContext={handlePastMeetingSearchAsk} />
+                ) : null}
+                <ActionChips
+                  sessionOn={sessionOn}
+                  disabled={isThinking}
+                  onChip={handleActionChip}
+                />
                 {overlayFocusMode && !focusInputOpen ? (
                   <button
                     type="button"
@@ -2109,6 +2492,7 @@ export default function App() {
                   </button>
                 ) : (
                   <InputBar
+                    ref={inputBarRef}
                     onAsk={(t, opts) => {
                       handleAsk(t, opts || {})
                       if (overlayFocusMode) setFocusInputOpen(false)

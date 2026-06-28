@@ -2,8 +2,8 @@
 // Unauthorized copying or distribution is prohibited.
 
 /**
- * AI vendor registry — base URLs and store field mapping.
- * OpenAI-compatible vendors use the official OpenAI Node SDK with baseURL.
+ * AI vendor registry — aligned with Natively AI's provider set.
+ * Providers: Groq, OpenAI, Anthropic, Google Gemini, DeepSeek, Custom (OpenAI-compat).
  */
 
 const REGISTRY = {
@@ -12,10 +12,10 @@ const REGISTRY = {
     baseURL: 'https://api.groq.com/openai/v1',
     keyField: 'groqKey',
     modelField: 'groqModel',
-    defaultModel: 'llama-3.3-70b-versatile',
-    testModel: 'llama-3.1-8b-instant',
-    vision: false,
-    ui: { label: 'Groq', badge: 'FAST', color: '#22c55e', desc: 'Llama — low latency', docs: 'https://console.groq.com/keys' },
+    defaultModel: 'meta-llama/llama-4-scout-17b-16e-instruct',
+    testModel: 'meta-llama/llama-4-scout-17b-16e-instruct',
+    vision: true,
+    ui: { label: 'Groq', badge: 'FAST', color: '#22c55e', desc: 'Llama 4 vision — screen + transcript', docs: 'https://console.groq.com/keys' },
   },
   openai: {
     kind: 'openai_compat',
@@ -27,94 +27,14 @@ const REGISTRY = {
     vision: true,
     ui: { label: 'OpenAI', badge: '4o', color: '#38bdf8', desc: 'GPT-4o + vision', docs: 'https://platform.openai.com/api-keys' },
   },
-  nvidia: {
-    kind: 'openai_compat',
-    baseURL: 'https://integrate.api.nvidia.com/v1',
-    keyField: 'nvidiaKey',
-    modelField: 'nvidiaModel',
-    defaultModel: 'meta/llama-3.3-70b-instruct',
-    testModel: 'meta/llama-3.3-70b-instruct',
-    vision: false,
-    ui: { label: 'NVIDIA NIM', badge: 'NIM', color: '#a78bfa', desc: 'Hosted Llama / Qwen', docs: 'https://build.nvidia.com/' },
-  },
   anthropic: {
     kind: 'anthropic',
     keyField: 'anthropicKey',
     modelField: 'anthropicModel',
-    defaultModel: 'claude-3-5-sonnet-20241022',
+    defaultModel: 'claude-sonnet-4-6',
     testModel: 'claude-3-5-haiku-20241022',
     vision: true,
     ui: { label: 'Anthropic', badge: 'Claude', color: '#d97757', desc: 'Claude — reasoning + vision', docs: 'https://console.anthropic.com/' },
-  },
-  deepseek: {
-    kind: 'openai_compat',
-    baseURL: 'https://api.deepseek.com/v1',
-    keyField: 'deepseekKey',
-    modelField: 'deepseekModel',
-    defaultModel: 'deepseek-chat',
-    testModel: 'deepseek-chat',
-    vision: false,
-    ui: { label: 'DeepSeek', badge: 'V3', color: '#60a5fa', desc: 'OpenAI-compatible API', docs: 'https://platform.deepseek.com/' },
-  },
-  moonshot: {
-    kind: 'openai_compat',
-    baseURL: 'https://api.moonshot.ai/v1',
-    keyField: 'moonshotKey',
-    modelField: 'moonshotModel',
-    defaultModel: 'moonshot-v1-8k',
-    testModel: 'moonshot-v1-8k',
-    vision: false,
-    ui: { label: 'Kimi (Moonshot)', badge: 'Kimi', color: '#f472b6', desc: 'Global api.moonshot.ai — China: .cn', docs: 'https://platform.moonshot.ai/' },
-  },
-  mistral: {
-    kind: 'openai_compat',
-    baseURL: 'https://api.mistral.ai/v1',
-    keyField: 'mistralKey',
-    modelField: 'mistralModel',
-    defaultModel: 'mistral-small-latest',
-    testModel: 'mistral-small-latest',
-    vision: false,
-    ui: { label: 'Mistral', badge: 'EU', color: '#f59e0b', desc: 'La Plateforme', docs: 'https://console.mistral.ai/' },
-  },
-  xai: {
-    kind: 'openai_compat',
-    baseURL: 'https://api.x.ai/v1',
-    keyField: 'xaiKey',
-    modelField: 'xaiModel',
-    defaultModel: 'grok-2-latest',
-    testModel: 'grok-2-latest',
-    vision: false,
-    ui: { label: 'xAI', badge: 'Grok', color: '#e5e5e5', desc: 'Grok API', docs: 'https://console.x.ai/' },
-  },
-  openrouter: {
-    kind: 'openai_compat',
-    baseURL: 'https://openrouter.ai/api/v1',
-    keyField: 'openrouterKey',
-    modelField: 'openrouterModel',
-    defaultModel: 'openai/gpt-4o-mini',
-    testModel: 'openai/gpt-4o-mini',
-    vision: false,
-    ui: { label: 'OpenRouter', badge: 'HUB', color: '#a855f7', desc: 'Many models — one key', docs: 'https://openrouter.ai/keys' },
-  },
-  together: {
-    kind: 'openai_compat',
-    baseURL: 'https://api.together.xyz/v1',
-    keyField: 'togetherKey',
-    modelField: 'togetherModel',
-    defaultModel: 'meta-llama/Llama-3.3-70B-Instruct-Turbo',
-    testModel: 'meta-llama/Llama-3.3-70B-Instruct-Turbo',
-    vision: false,
-    ui: { label: 'Together AI', badge: 'OSS', color: '#14b8a6', desc: 'Open models hosted', docs: 'https://api.together.xyz/' },
-  },
-  perplexity: {
-    kind: 'openai_compat',
-    baseURL: 'https://api.perplexity.ai/v1',
-    keyField: 'perplexityKey',
-    modelField: 'perplexityModel',
-    defaultModel: 'sonar',
-    testModel: 'sonar',
-    vision: false,
-    ui: { label: 'Perplexity', badge: 'Sonar', color: '#22d3ee', desc: 'Search-grounded chat', docs: 'https://docs.perplexity.ai/' },
   },
   google: {
     kind: 'openai_compat',
@@ -124,27 +44,33 @@ const REGISTRY = {
     defaultModel: 'gemini-2.0-flash',
     testModel: 'gemini-2.0-flash',
     vision: true,
-    ui: { label: 'Google Gemini', badge: 'Gemini', color: '#4285f4', desc: 'OpenAI-compat endpoint', docs: 'https://ai.google.dev/' },
+    ui: { label: 'Google Gemini', badge: 'Gemini', color: '#4285f4', desc: 'Gemini Flash + Pro — vision', docs: 'https://ai.google.dev/' },
   },
-  fireworks: {
+  nvidia: {
     kind: 'openai_compat',
-    baseURL: 'https://api.fireworks.ai/inference/v1',
-    keyField: 'fireworksKey',
-    modelField: 'fireworksModel',
-    defaultModel: 'accounts/fireworks/models/llama-v3p3-70b-instruct',
-    testModel: 'accounts/fireworks/models/llama-v3p3-70b-instruct',
-    vision: false,
-    ui: { label: 'Fireworks', badge: 'FW', color: '#fb7185', desc: 'Fast inference', docs: 'https://fireworks.ai/' },
+    baseURL: 'https://integrate.api.nvidia.com/v1',
+    keyField: 'nvidiaKey',
+    modelField: 'nvidiaModel',
+    defaultModel: 'nvidia/nemotron-nano-12b-v2-vl',
+    testModel: 'nvidia/llama-3.1-nemotron-nano-vl-8b-v1',
+    vision: true,
+    ui: {
+      label: 'NVIDIA NIM',
+      badge: 'NIM',
+      color: '#a78bfa',
+      desc: 'Nemotron + Llama 4 vision — screen capture',
+      docs: 'https://build.nvidia.com/',
+    },
   },
-  cerebras: {
+  deepseek: {
     kind: 'openai_compat',
-    baseURL: 'https://api.cerebras.ai/v1',
-    keyField: 'cerebrasKey',
-    modelField: 'cerebrasModel',
-    defaultModel: 'llama3.1-8b',
-    testModel: 'llama3.1-8b',
+    baseURL: 'https://api.deepseek.com/v1',
+    keyField: 'deepseekKey',
+    modelField: 'deepseekModel',
+    defaultModel: 'deepseek-chat',
+    testModel: 'deepseek-chat',
     vision: false,
-    ui: { label: 'Cerebras', badge: 'CB', color: '#84cc16', desc: 'Wafer-scale inference', docs: 'https://inference.cerebras.ai/' },
+    ui: { label: 'DeepSeek', badge: 'V3', color: '#60a5fa', desc: 'DeepSeek V3 — text only', docs: 'https://platform.deepseek.com/' },
   },
   custom: {
     kind: 'openai_compat',
@@ -158,7 +84,7 @@ const REGISTRY = {
       label: 'Custom (OpenAI-compat)',
       badge: 'URL',
       color: '#94a3b8',
-      desc: 'Any /v1 base — Azure, local, etc.',
+      desc: 'Any /v1 base — LiteLLM, Ollama, Azure, local',
       docs: 'https://platform.openai.com/docs/api-reference',
     },
   },
@@ -168,17 +94,9 @@ const ORDER = [
   'groq',
   'openai',
   'anthropic',
-  'deepseek',
-  'moonshot',
-  'mistral',
-  'xai',
-  'openrouter',
-  'together',
-  'perplexity',
   'google',
-  'fireworks',
-  'cerebras',
   'nvidia',
+  'deepseek',
   'custom',
 ]
 
@@ -248,10 +166,90 @@ function getProviderMetadataForUI() {
   })
 }
 
-const STT_CAPABLE_IDS = ['groq', 'openai', 'together', 'mistral', 'fireworks', 'nvidia']
+const STT_CAPABLE_IDS = ['groq', 'openai', 'nvidia', 'deepgram', 'elevenlabs', 'azure', 'google', 'soniox']
+
+const STT_UI = {
+  groq: {
+    id: 'groq',
+    label: 'Groq Whisper',
+    keyField: 'groqKey',
+    modelField: 'groqWhisperModel',
+    defaultModel: 'whisper-large-v3',
+    docs: 'https://console.groq.com/keys',
+    desc: 'Whisper via Groq — fast batch cloud STT',
+  },
+  openai: {
+    id: 'openai',
+    label: 'OpenAI Whisper',
+    keyField: 'apiKey',
+    modelField: null,
+    defaultModel: 'whisper-1',
+    docs: 'https://platform.openai.com/api-keys',
+    desc: 'Whisper-1 batch transcription',
+  },
+  nvidia: {
+    id: 'nvidia',
+    label: 'NVIDIA NIM',
+    keyField: 'nvidiaKey',
+    modelField: 'nvidiaWhisperModel',
+    defaultModel: 'nvidia/parakeet-1.1b-rnnt-multilingual-asr',
+    docs: 'https://build.nvidia.com/',
+    desc: 'Parakeet multilingual ASR — NVCF gRPC (grpc.nvcf.nvidia.com)',
+  },
+  deepgram: {
+    id: 'deepgram',
+    label: 'Deepgram',
+    keyField: 'deepgramKey',
+    modelField: 'deepgramModel',
+    defaultModel: 'nova-2',
+    docs: 'https://console.deepgram.com/',
+    desc: 'Live streaming STT (Nova) — lower latency',
+    streaming: true,
+  },
+  elevenlabs: {
+    id: 'elevenlabs',
+    label: 'ElevenLabs Scribe',
+    keyField: 'elevenLabsKey',
+    modelField: 'elevenLabsModel',
+    defaultModel: 'scribe_v2_realtime',
+    docs: 'https://elevenlabs.io/app/speech-to-text',
+    desc: 'Scribe v2 Realtime — ~150ms latency, 90+ languages',
+    streaming: true,
+  },
+  azure: {
+    id: 'azure',
+    label: 'Azure Speech',
+    keyField: 'azureSpeechKey',
+    modelField: null,
+    defaultModel: 'conversation',
+    docs: 'https://portal.azure.com/',
+    desc: 'Microsoft Cognitive Services — cloud STT via main process',
+    streaming: true,
+  },
+  google: {
+    id: 'google',
+    label: 'Google Cloud STT',
+    keyField: 'googleSttKey',
+    modelField: null,
+    defaultModel: 'default',
+    docs: 'https://console.cloud.google.com/apis/credentials',
+    desc: 'Google Speech-to-Text REST — API key required',
+    streaming: true,
+  },
+  soniox: {
+    id: 'soniox',
+    label: 'Soniox',
+    keyField: 'sonioxKey',
+    modelField: 'sonioxModel',
+    defaultModel: 'stt-rt-v5',
+    docs: 'https://soniox.com/',
+    desc: 'Soniox real-time WebSocket — low latency multilingual',
+    streaming: true,
+  },
+}
 
 function getSttProviderMetadataForUI() {
-  return getProviderMetadataForUI().filter((p) => STT_CAPABLE_IDS.includes(p.id))
+  return STT_CAPABLE_IDS.map((id) => STT_UI[id]).filter(Boolean)
 }
 
 module.exports = {
@@ -270,4 +268,5 @@ module.exports = {
   getProviderMetadataForUI,
   getSttProviderMetadataForUI,
   STT_CAPABLE_IDS,
+  STT_UI,
 }

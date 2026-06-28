@@ -1,5 +1,6 @@
 node_modules/
 dist/
+dist-v100/
 out/
 build/
 *.log

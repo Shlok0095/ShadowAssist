@@ -15,6 +15,20 @@ Thumbs.db
 # Local archives
 *.zip
 
+# Quarantine (recoverable cleanup — see _quarantine/README.md)
+_quarantine/**/*
+!_quarantine/README.md
+
+# Dev / test artifacts (ShadowAssist app folder)
+shadowassist-electron/ShadowAssist/.test-cache/
+shadowassist-electron/ShadowAssist/.test-tmp/
+shadowassist-electron/ShadowAssist/.natively-*.txt
+shadowassist-electron/ShadowAssist/onnx-community/
+shadowassist-electron/ShadowAssist/debug-out.png
+shadowassist-electron/ShadowAssist/t1.png
+shadowassist-electron/ShadowAssist/t2.png
+shadowassist-electron/ShadowAssist/logo.prepared.tmp.png
+
 # Editor
 .idea/
 .vscode/

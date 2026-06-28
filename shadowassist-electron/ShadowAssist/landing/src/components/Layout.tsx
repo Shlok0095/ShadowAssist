@@ -1,4 +1,5 @@
 import { NavLink, Outlet } from 'react-router-dom'
+import brandLogo from '../../../logo.png'
 import { downloadInstallerSetup } from '@/lib/releases'
 import { homeSection } from '@/lib/paths'
 import { SITE } from '@/lib/siteConfig'
@@ -8,7 +9,8 @@ export function Layout() {
     <div className="shell">
       <header className="glass-nav">
         <NavLink className="brand" to="/" end>
-          VeilAssist
+          <img src={brandLogo} alt="" className="brand-logo" />
+          <span>VeilAssist</span>
         </NavLink>
         <nav className="nav-links" aria-label="Primary">
           <a href={homeSection('features')}>Product</a>
@@ -35,7 +37,10 @@ export function Layout() {
 
       <footer className="foot">
         <div className="foot-inner">
-          <span className="foot-brand">VeilAssist</span>
+          <span className="foot-brand">
+            <img src={brandLogo} alt="" className="foot-brand-logo" />
+            VeilAssist
+          </span>
           <span className="sep">·</span>
           <NavLink to="/legal/terms">Terms</NavLink>
           <NavLink to="/legal/privacy">Privacy</NavLink>

@@ -1,26 +1,23 @@
 // Copyright (c) 2026 ShadowAssist. All rights reserved.
 // Unauthorized copying or distribution is prohibited.
 
-import React, { useState, useRef, memo } from 'react'
+import React, { useState, useRef, memo, forwardRef, useImperativeHandle } from 'react'
+import { Send } from 'lucide-react'
+import AppIcon from '../../shared/AppIcon'
 
-/** Paper-plane send glyph — shape from reference; drawn in white on the red button. */
-function SendIcon() {
-  return (
-    <svg width="17" height="17" viewBox="0 0 24 24" fill="none" aria-hidden>
-      <path fill="#ffffff" d="M21 12 3 7.25 3 12Z" />
-      <path fill="#ffffff" d="M21 12 3 12 3 16.75Z" />
-      <path d="M3 12h18" stroke="rgba(127, 29, 29, 0.42)" strokeWidth="0.7" strokeLinecap="round" />
-    </svg>
-  )
-}
-
-function InputBar({ onAsk, onAbort, isThinking, sessionOn = false, focusMode = false }) {
+function InputBarInner({ onAsk, onAbort, isThinking, sessionOn = false, focusMode = false }, ref) {
   const [value, setValue] = useState('')
   const textRef = useRef(null)
 
+  useImperativeHandle(ref, () => ({
+    focus() {
+      textRef.current?.focus()
+    },
+  }))
+
   const placeholder = sessionOn
-    ? 'Ask about the meeting… or Enter to read screen'
-    : 'Type a question… or Enter to read screen · Ctrl+Enter anytime'
+    ? 'Ask or /skill-name… Ctrl+↵ screen · Ctrl+⇧+↵ audio only'
+    : 'Type a question or /skill-name… Ctrl+↵ screen · Ctrl+⇧+↵ audio only'
 
   const submitText = () => {
     const trimmed = value.trim()
@@ -79,11 +76,12 @@ function InputBar({ onAsk, onAbort, isThinking, sessionOn = false, focusMode = f
             isThinking && !value.trim() ? 'opacity-50' : '',
           ].join(' ')}
         >
-          <SendIcon />
+          <AppIcon icon={Send} size={16} strokeWidth={2.25} className="text-white" />
         </button>
       )}
     </div>
   )
 }
 
-export default memo(InputBar)
+const InputBar = memo(forwardRef(InputBarInner))
+export default InputBar

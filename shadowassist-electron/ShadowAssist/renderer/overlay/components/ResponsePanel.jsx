@@ -2,11 +2,10 @@
 // Unauthorized copying or distribution is prohibited.
 
 import React, { useCallback, useEffect, useMemo, useRef, memo, useState } from 'react'
-import { createIpcShim } from '../../shared/ipcShim'
-import { inferResponseIntent } from '../../shared/responseIntent'
 import { SpeakerTranscriptBlock } from '../../shared/SpeakerTranscriptText'
+import { createIpcShim } from '../../shared/ipcShim'
 
-const panelIpc = createIpcShim()
+const ipc = createIpcShim()
 
 /** User / heard transcript / assistant replies grouped into exchanges. */
 function groupMessagesIntoTurns(list) {
@@ -48,6 +47,7 @@ function groupMessagesIntoTurns(list) {
 }
 import hljs from './hljsRegister'
 import 'highlight.js/styles/tokyo-night-dark.min.css'
+// Note: allowCode is always true — the LLM controls whether code appears; display must not strip it.
 
 const LANG_MAP = {
   js: 'javascript',
@@ -604,13 +604,73 @@ const MessageBubble = memo(function MessageBubble({
   )
 })
 
-/** Brief mode: calm shell — no raw token stream on screen. */
-function ComposingShell({ onAbort, teleprompter = false }) {
+/** Brief mode: live stream via ref (no React re-render per token — keeps scroll stable). */
+function BriefStreamPreview({
+  streamTextRef,
+  onAbort,
+  teleprompter = false,
+  heardText = '',
+  heardContext = null,
+}) {
+  const heard = String(heardText || '').trim()
+
+  return (
+    <div
+      className={`mx-auto w-full ${teleprompter ? 'max-w-[46rem]' : 'max-w-[44rem]'}`}
+    >
+      {heard && !teleprompter ? (
+        <div className="mb-4">
+          <p className="crystal-sublabel mb-1 text-[10px] normal-case">From conversation</p>
+          <p className="whitespace-pre-wrap text-[13px] font-medium leading-relaxed">
+            <SpeakerTranscriptBlock text={heard} bodyClassName="crystal-answer-text" />
+          </p>
+          {heardContext ? (
+            <div className="mt-2 whitespace-pre-wrap text-[11px] leading-relaxed opacity-80">
+              <span className="crystal-sublabel mb-0.5 block text-[9px] normal-case">Earlier</span>
+              <SpeakerTranscriptBlock text={heardContext} bodyClassName="crystal-muted" lineClassName="block" />
+            </div>
+          ) : null}
+        </div>
+      ) : null}
+      <div className="mb-2 flex items-center justify-between gap-2">
+        <div className="flex items-center gap-2" style={{ color: 'rgba(200,235,255,0.88)' }}>
+          <span
+            className="h-2 w-2 animate-pulse rounded-full"
+            style={{ background: 'rgba(180,225,255,0.65)', boxShadow: '0 0 8px rgba(160,215,245,0.45)' }}
+          />
+          <span className="crystal-sublabel text-[10px] normal-case">Generating</span>
+        </div>
+        {onAbort ? (
+          <button
+            type="button"
+            onClick={onAbort}
+            className="crystal-panel-inset rounded-lg px-2 py-0.5 text-[10px] crystal-muted hover:text-white/90"
+          >
+            Stop
+          </button>
+        ) : null}
+      </div>
+      <div className="crystal-answer-shell rounded-xl px-3.5 py-3.5">
+        <p
+          ref={streamTextRef}
+          className={`crystal-answer-text whitespace-pre-wrap font-medium ${
+            teleprompter ? 'text-[17px] leading-[1.85]' : 'text-[15px] leading-[1.8]'
+          }`}
+        />
+      </div>
+    </div>
+  )
+}
+
+/** Brief mode: calm shell before first token arrives. */
+function ComposingShell({ onAbort, teleprompter = false, heardText = '', heardContext = null }) {
   const [slow, setSlow] = useState(false)
   useEffect(() => {
     const t = window.setTimeout(() => setSlow(true), 2200)
     return () => clearTimeout(t)
   }, [])
+
+  const heard = String(heardText || '').trim()
 
   return (
     <div
@@ -618,6 +678,20 @@ function ComposingShell({ onAbort, teleprompter = false }) {
         teleprompter ? 'max-w-[46rem]' : 'max-w-[44rem]'
       }`}
     >
+      {heard && !teleprompter ? (
+        <div className="mb-4">
+          <p className="crystal-sublabel mb-1 text-[10px] normal-case">From conversation</p>
+          <p className="whitespace-pre-wrap text-[13px] font-medium leading-relaxed">
+            <SpeakerTranscriptBlock text={heard} bodyClassName="crystal-answer-text" />
+          </p>
+          {heardContext ? (
+            <div className="mt-2 whitespace-pre-wrap text-[11px] leading-relaxed opacity-80">
+              <span className="crystal-sublabel mb-0.5 block text-[9px] normal-case">Earlier</span>
+              <SpeakerTranscriptBlock text={heardContext} bodyClassName="crystal-muted" lineClassName="block" />
+            </div>
+          ) : null}
+        </div>
+      ) : null}
       <div className="flex items-center justify-between gap-3">
         <div className="flex items-center gap-2" style={{ color: 'rgba(200,235,255,0.88)' }}>
           <span
@@ -639,18 +713,33 @@ function ComposingShell({ onAbort, teleprompter = false }) {
         ) : null}
       </div>
       <p className="crystal-muted mt-3 text-[12px] leading-relaxed">
-        Your answer will appear fully formatted when ready — no raw draft on screen.
+        Answer will stream here as it generates.
       </p>
     </div>
   )
 }
 
 /** Detailed mode: throttled markdown preview while generating. */
-function DetailedStreamPreview({ streamPreview, onAbort, teleprompter = false }) {
+function DetailedStreamPreview({
+  streamPreview,
+  onAbort,
+  teleprompter = false,
+  heardText = '',
+  heardContext = null,
+}) {
   const nodes = useMemo(() => parseMarkdown(streamPreview || ''), [streamPreview])
   const hasPreview = nodes.length > 0
 
-  if (!hasPreview) return <ComposingShell onAbort={onAbort} teleprompter={teleprompter} />
+  if (!hasPreview) {
+    return (
+      <ComposingShell
+        onAbort={onAbort}
+        teleprompter={teleprompter}
+        heardText={heardText}
+        heardContext={heardContext}
+      />
+    )
+  }
 
   return (
     <div className={`mx-auto w-full space-y-2 ${teleprompter ? 'max-w-[46rem]' : 'max-w-[44rem]'}`}>
@@ -673,35 +762,9 @@ function DetailedStreamPreview({ streamPreview, onAbort, teleprompter = false })
   )
 }
 
-function AnswerPanelToolbar({ answerStyle, overlayAnswerView, onViewChange }) {
-  const setView = (v) => {
-    onViewChange?.(v)
-    void panelIpc?.invoke('set-store', 'overlayAnswerView', v)
-  }
+function SessionFeedHeader({ answerStyle }) {
   return (
-    <div className="crystal-divider mb-3 flex flex-wrap items-center justify-between gap-2 border-b pb-2">
-      <div className="flex items-center gap-1.5">
-        {[
-          { id: 'latest', label: 'Latest' },
-          { id: 'history', label: 'History' },
-        ].map((opt) => (
-          <button
-            key={opt.id}
-            type="button"
-            onClick={() => setView(opt.id)}
-            className={[
-              'crystal-tab-btn cursor-default transition-all duration-150 active:scale-95',
-              overlayAnswerView === opt.id
-                ? opt.id === 'history'
-                  ? 'crystal-tab-btn-history-active'
-                  : 'crystal-tab-btn-latest-active'
-                : 'crystal-tab-btn-idle',
-            ].join(' ')}
-          >
-            {opt.label}
-          </button>
-        ))}
-      </div>
+    <div className="crystal-divider mb-3 flex items-center justify-end border-b pb-2">
       <span className="crystal-sublabel text-[10px] normal-case">
         {answerStyle === 'brief' ? 'Brief · summary layout' : 'Detailed · full markdown'}
       </span>
@@ -733,8 +796,8 @@ const ResponsePanelInner = React.forwardRef(function ResponsePanel(
     streamPulseRef,
     fontSize,
     answerStyle = 'brief',
-    overlayAnswerView = 'latest',
     overlayTeleprompter = false,
+    overlayAnswerPinToTop = true,
     streamPreview = '',
     activeAskSource = null,
     sessionOn = false,
@@ -745,10 +808,30 @@ const ResponsePanelInner = React.forwardRef(function ResponsePanel(
 ) {
   const scrollRef = useRef(null)
   const answerAnchorRef = useRef(null)
-  const scrollKickRef = useRef(null)
-  /** While generating, keep viewport pinned to answer top unless user scrolls away. */
-  const pinAnswerTopRef = useRef(false)
-  const userScrolledRef = useRef(false)
+
+  const applyScrollDelta = useCallback((delta) => {
+    const el = scrollRef.current
+    if (!el) return
+    const max = Math.max(0, el.scrollHeight - el.clientHeight)
+    el.scrollTop = Math.max(0, Math.min(max, el.scrollTop + delta))
+  }, [])
+
+  useEffect(() => {
+    if (!ipc) return
+    const unsub = ipc.on('scroll', (_, dir) => applyScrollDelta(Number(dir) * 120))
+    return () => {
+      if (typeof unsub === 'function') unsub()
+    }
+  }, [applyScrollDelta])
+
+  const mergedScrollRef = useCallback(
+    (node) => {
+      scrollRef.current = node
+      if (typeof ref === 'function') ref(node)
+      else if (ref) ref.current = node
+    },
+    [ref],
+  )
 
   const turns = useMemo(() => {
     const raw = groupMessagesIntoTurns(messages)
@@ -760,98 +843,76 @@ const ResponsePanelInner = React.forwardRef(function ResponsePanel(
     }))
   }, [messages])
   const hasActiveReply = !!isThinking
-  const [answerView, setAnswerView] = useState(overlayAnswerView)
-  useEffect(() => {
-    setAnswerView(overlayAnswerView === 'history' ? 'history' : 'latest')
-  }, [overlayAnswerView])
+
+  const activeHeard = useMemo(() => {
+    for (let i = messages.length - 1; i >= 0; i -= 1) {
+      const m = messages[i]
+      if (m?.role === 'heard') return m
+    }
+    return null
+  }, [messages])
 
   useEffect(() => {
-    if (answerView !== 'history' || !scrollRef.current) return
+    if (!scrollRef.current || turns.length === 0 || isThinking || !overlayAnswerPinToTop) return
     scrollRef.current.scrollTop = 0
-  }, [answerView, turns.length])
+  }, [turns.length, isThinking, overlayAnswerPinToTop])
 
+  /** Natively-style: one scrollable session feed — newest exchange at top, all replies kept. */
   const visibleTurns = useMemo(() => {
     if (turns.length === 0) return turns
-    if (answerView === 'latest') {
-      const last = turns[turns.length - 1]
-      if (!last) return turns
-      const replies =
-        last.replies.length > 0 ? [last.replies[last.replies.length - 1]] : []
-      return [{ ...last, replies }]
-    }
-    // History: newest exchange at top, older below.
     return [...turns].reverse()
-  }, [turns, answerView])
-
-  useEffect(() => {
-    if (isThinking) {
-      pinAnswerTopRef.current = true
-      userScrolledRef.current = false
-    }
-  }, [isThinking])
-
-  const scrollAnswerToTop = useCallback(() => {
-    const el = scrollRef.current
-    if (!el) return
-    el.scrollTop = 0
-  }, [])
-
-  useEffect(() => {
-    if (scrollKickRef.current != null) cancelAnimationFrame(scrollKickRef.current)
-    scrollKickRef.current = requestAnimationFrame(() => {
-      scrollKickRef.current = null
-      if (messages.length === 0 && !isThinking) {
-        if (scrollRef.current) scrollRef.current.scrollTop = 0
-        return
-      }
-      if (pinAnswerTopRef.current && !userScrolledRef.current) {
-        scrollAnswerToTop()
-      }
-    })
-    return () => {
-      if (scrollKickRef.current != null) {
-        cancelAnimationFrame(scrollKickRef.current)
-        scrollKickRef.current = null
-      }
-    }
-  }, [isThinking, messages, streamPreview, scrollAnswerToTop])
+  }, [turns])
 
   return (
-    <div
-      ref={(r) => {
-        scrollRef.current = r
-        if (typeof ref === 'function') ref(r)
-        else if (ref) ref.current = r
-      }}
-      className="response-scroll flex min-h-0 flex-1 flex-col overflow-y-auto overflow-x-hidden"
-      style={{
-        fontSize: overlayTeleprompter
-          ? fontSize === 'large'
-            ? 16
-            : fontSize === 'small'
+    <div className="flex min-h-0 flex-1 flex-col overflow-hidden">
+      <div
+        ref={mergedScrollRef}
+        className="response-scroll z-0 min-h-0 flex-1 overflow-y-auto overflow-x-hidden"
+        style={{
+          fontSize: overlayTeleprompter
+            ? fontSize === 'large'
+              ? 16
+              : fontSize === 'small'
+                ? 14
+                : 15
+            : fontSize === 'large'
               ? 14
-              : 15
-          : fontSize === 'large'
-            ? 14
-            : fontSize === 'small'
-              ? 12
-              : 13,
-      }}
-      onScroll={() => {
-        if (!scrollRef.current || !pinAnswerTopRef.current) return
-        if (scrollRef.current.scrollTop > 24) userScrolledRef.current = true
-      }}
-    >
-      <div className="flex w-full flex-1 flex-col px-3 pb-2 pt-3">
+              : fontSize === 'small'
+                ? 12
+                : 13,
+        }}
+      >
+      <div className="w-full px-3 pb-2 pt-3">
         {(messages.length > 0 || isThinking) && !overlayTeleprompter && (
-          <AnswerPanelToolbar
-            answerStyle={answerStyle}
-            overlayAnswerView={answerView}
-            onViewChange={setAnswerView}
-          />
+          <SessionFeedHeader answerStyle={answerStyle} />
+        )}
+        {hasActiveReply && isThinking && (
+          <div className="mx-auto w-full max-w-full mb-2">
+            {!overlayTeleprompter && activeAskSource && (
+              <p className="crystal-sublabel mb-2 text-[10px] normal-case">{labelForAskSource(activeAskSource)}</p>
+            )}
+            {answerStyle === 'detailed' ? (
+              <DetailedStreamPreview
+                streamPreview={streamPreview}
+                onAbort={onAbort}
+                teleprompter={overlayTeleprompter}
+                heardText={activeHeard?.text}
+                heardContext={activeHeard?.context}
+              />
+            ) : answerStyle === 'brief' ? (
+              <BriefStreamPreview
+                streamTextRef={streamTextRef}
+                onAbort={onAbort}
+                teleprompter={overlayTeleprompter}
+                heardText={activeHeard?.text}
+                heardContext={activeHeard?.context}
+              />
+            ) : null}
+            <div ref={streamPulseRef} className="hidden" aria-hidden />
+          </div>
         )}
         {messages.length === 0 && !isThinking && (
-          <div className="crystal-muted flex flex-1 flex-col items-center justify-center px-4 py-8 text-center">
+          <div className="crystal-muted flex min-h-[14rem] flex-col items-center justify-center px-4 py-8 text-center">
             <div
               className="mb-3 flex h-12 w-12 items-center justify-center rounded-full border-2"
               style={{ borderColor: 'rgba(180,225,255,0.22)' }}
@@ -875,28 +936,28 @@ const ResponsePanelInner = React.forwardRef(function ResponsePanel(
           </div>
         )}
 
-        <div ref={answerAnchorRef} className="mx-auto w-full max-w-full">
+        <div
+          ref={answerAnchorRef}
+          className={`mx-auto w-full max-w-full${
+            hasActiveReply && isThinking && visibleTurns.length > 0 ? ' crystal-divider mt-6 border-t pt-6' : ''
+          }`}
+        >
           {visibleTurns.map((turn, idx) => {
             const isLatestTurn = turn.id === turns[turns.length - 1]?.id
             const hasAssistantDone = turn.replies.some((r) => r.role === 'ai' || r.role === 'error')
             const highlightLatest = isLatestTurn && hasAssistantDone && !hasActiveReply
             const ribbonSource =
               isLatestTurn && hasActiveReply ? (activeAskSource ?? turn.askSource) : turn.askSource
-            const exchangeNum = turns.findIndex((t) => t.id === turn.id) + 1
-            const questionCtx = String(turn.user?.text || turn.heard?.text || '').trim()
-            const allowCode =
-              inferResponseIntent({
-                userQuestion: questionCtx,
-                screen: turn.screenContext || '',
-              }) === 'coding'
+            const exchangeNum = turns.length - turns.findIndex((t) => t.id === turn.id)
+            const allowCode = true
             return (
-              <div key={turn.id} className={idx > 0 ? 'crystal-divider mt-8 border-t pt-8' : ''}>
+              <div key={turn.id} className={idx > 0 ? 'crystal-divider mt-6 border-t pt-6' : ''}>
                 {!overlayTeleprompter && (
                   <div className="mb-3 flex items-center gap-2">
                     <span
                       className={`text-[10px] font-medium ${highlightLatest ? 'crystal-label' : 'crystal-muted'}`}
                     >
-                      {highlightLatest ? 'Latest reply' : answerView === 'history' ? `Exchange ${exchangeNum}` : 'Current'}
+                      {highlightLatest ? 'Latest' : `Exchange ${exchangeNum}`}
                     </span>
                     {ribbonSource && (
                       <>
@@ -914,7 +975,9 @@ const ResponsePanelInner = React.forwardRef(function ResponsePanel(
                       <MessageBubble role="user" text={turn.user.text} />
                     </div>
                   )}
-                  {turn.heard && !overlayTeleprompter && !(isLatestTurn && hasActiveReply) && (
+                  {turn.heard &&
+                    !overlayTeleprompter &&
+                    !(isLatestTurn && hasActiveReply && turn.replies.length === 0) && (
                     <div>
                       <p className="crystal-sublabel mb-1 text-[10px] normal-case">From conversation</p>
                       <p className="whitespace-pre-wrap text-[13px] font-medium leading-relaxed">
@@ -963,27 +1026,8 @@ const ResponsePanelInner = React.forwardRef(function ResponsePanel(
             )
           })}
         </div>
-
-        {hasActiveReply && isThinking && (
-          <div className={`mx-auto w-full max-w-full ${messages.length > 0 ? 'crystal-divider mt-6 border-t pt-6' : 'mt-2'}`}>
-            {!overlayTeleprompter && activeAskSource && (
-              <p className="crystal-sublabel mb-2 text-[10px] normal-case">{labelForAskSource(activeAskSource)}</p>
-            )}
-            {answerStyle === 'brief' ? (
-              <ComposingShell onAbort={onAbort} teleprompter={overlayTeleprompter} />
-            ) : (
-              <DetailedStreamPreview
-                streamPreview={streamPreview}
-                onAbort={onAbort}
-                teleprompter={overlayTeleprompter}
-              />
-            )}
-            {/* Hidden refs kept for App stream lifecycle compatibility */}
-            <div ref={streamTextRef} className="hidden" aria-hidden />
-            <div ref={streamPulseRef} className="hidden" aria-hidden />
-          </div>
-        )}
       </div>
+    </div>
     </div>
   )
 })

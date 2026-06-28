@@ -155,6 +155,12 @@ function formatNotesTemplateBlock(prompt) {
 
 const INTERVIEWEE_NAME_RE = /\b(looking for work)\b/i
 const INTERVIEWEE_CONTENT_RE = /\bi am (?:in a|a .{1,60}? in a) .{0,40}interview\b/i
+const SALES_MODE_RE = /\bsales\b/i
+const SALES_CONTENT_RE = /\b(salesperson|selling to|close the sale|prospective buyer)\b/i
+const RECRUITING_MODE_RE = /\brecruiting\b/i
+const RECRUITING_CONTENT_RE = /\b(interviewing a candidate|evaluate their answers)\b/i
+const MEETING_MODE_RE = /\b(team meet|meeting)\b/i
+const LECTURE_MODE_RE = /\blecture\b/i
 
 function isIntervieweeMode(prompt) {
   const name = String(prompt?.name || '')
@@ -162,16 +168,34 @@ function isIntervieweeMode(prompt) {
   return INTERVIEWEE_NAME_RE.test(name) || INTERVIEWEE_CONTENT_RE.test(content)
 }
 
+function detectLiveModeKind(prompt) {
+  const name = String(prompt?.name || '')
+  const content = promptContent(prompt)
+  if (isIntervieweeMode(prompt)) return 'interviewee'
+  if (SALES_MODE_RE.test(name) || SALES_CONTENT_RE.test(content)) return 'sales'
+  if (RECRUITING_MODE_RE.test(name) || RECRUITING_CONTENT_RE.test(content)) return 'recruiting'
+  if (MEETING_MODE_RE.test(name) || /\bteam meeting\b/i.test(content)) return 'meeting'
+  if (LECTURE_MODE_RE.test(name) || /\blecture or training\b/i.test(content)) return 'lecture'
+  return 'general'
+}
+
+const MODE_PRIORITY_PREAMBLE = `
+- **Priority:** These mode rules override <unclear_or_empty_screen> and generic "I'm not sure…" replies whenever a screenshot is attached or ## AUDIO is present.
+- NEVER say you cannot see the screen or that context is missing when a screenshot is attached.
+- Apply the ACTIVE PROMPT role to everything visible on screen and everything in the transcript.`
+
 function formatModeSessionRules(prompt) {
   const content = promptContent(prompt).trim()
   if (!content) return ''
   const name = String(prompt?.name || 'Mode').trim()
+  const kind = detectLiveModeKind(prompt)
 
-  if (isIntervieweeMode(prompt)) {
+  if (kind === 'interviewee') {
     return `
 
 ## MODE SESSION RULES — INTERVIEW (priority over ALL other formatting rules)
 You are helping the user ANSWER interview questions in real time. The user is the INTERVIEWEE.
+${MODE_PRIORITY_PREAMBLE}
 
 - When you see a question from "Participant" in the transcript or a question on screen: provide the DIRECT ANSWER the user should speak — in first person ("I ...").
 - NEVER narrate or describe what was asked ("The interviewer asked...", "The participant is asking..."). Just give the answer.
@@ -179,20 +203,78 @@ You are helping the user ANSWER interview questions in real time. The user is th
 - NEVER ask for clarification — infer from context and answer immediately.
 - Keep answers short and speakable: under 120 words unless the question requires technical depth.
 - Behavioral questions: STAR structure in 4 brief sentences (Situation / Task / Action / Result).
-- Technical questions: direct answer first, then 2–3 supporting points.
+- Technical questions: direct answer first, then 2–3 supporting points; include code if the screen shows a coding question.
 - If the screen shows an interview question, answer it directly — treat it as the question being asked TO the user right now.
-- Use reference files for the user's real experience and resume — never fabricate.`
+- Use REFERENCE FILES for the user's real experience — never fabricate.`
+  }
+
+  if (kind === 'sales') {
+    return `
+
+## MODE SESSION RULES — SALES (priority over generic formatting and unclear-screen rules)
+You are a live sales copilot. The user is the seller in an active conversation.
+${MODE_PRIORITY_PREAMBLE}
+
+- Structure live replies: **Takeaway** → what to say next (discovery question, pitch line, or objection response).
+- Use discovery, objection handling, and closing language from the ACTIVE PROMPT.
+- If the screen shows a CRM, deck, or product page, tie your answer to what is visible.
+- NEVER reply "I'm not sure what information you're looking for" when screen or audio is present.
+- Do NOT use NOTES TEMPLATE headings unless the user asks for meeting notes.`
+  }
+
+  if (kind === 'recruiting') {
+    return `
+
+## MODE SESSION RULES — RECRUITING (priority over generic formatting and unclear-screen rules)
+You are a live recruiting copilot. The user is the interviewer evaluating a candidate.
+${MODE_PRIORITY_PREAMBLE}
+
+- Suggest strong follow-up questions, evaluation points, and red/green flags based on screen + audio.
+- Keep answers actionable for what the user should ask or say next in the interview.
+- NEVER reply "I'm not sure what information you're looking for" when screen or audio is present.
+- Do NOT use NOTES TEMPLATE headings unless the user asks for interview notes.`
+  }
+
+  if (kind === 'meeting') {
+    return `
+
+## MODE SESSION RULES — MEETING (priority over generic formatting and unclear-screen rules)
+You are a live meeting copilot tracking decisions, action items, and open questions.
+${MODE_PRIORITY_PREAMBLE}
+
+- Highlight decisions, owners, deadlines, and follow-ups from screen + audio.
+- Give concise talking points the user can use right now.
+- NEVER reply "I'm not sure what information you're looking for" when screen or audio is present.
+- Do NOT use NOTES TEMPLATE headings unless the user asks for a written summary.`
+  }
+
+  if (kind === 'lecture') {
+    return `
+
+## MODE SESSION RULES — LECTURE (priority over generic formatting and unclear-screen rules)
+You are a live lecture/training copilot extracting key concepts and definitions.
+${MODE_PRIORITY_PREAMBLE}
+
+- Explain concepts on screen clearly; define terms; connect ideas for review later.
+- NEVER reply "I'm not sure what information you're looking for" when screen or audio is present.
+- Do NOT use NOTES TEMPLATE headings unless the user asks for lecture notes.`
   }
 
   return `
 
-## ACTIVE MODE CONTEXT — ${name}
-The prompt above describes the user's current role and situation. Use it to make your answers more specific and relevant — it **supplements** your core response rules, it does not replace them.
+## MODE SESSION RULES — ${name} (priority over unclear-screen rules)
+${MODE_PRIORITY_PREAMBLE}
 
-- All base formatting rules still apply: lead with a direct Takeaway, use prose for explanations, code blocks for code.
-- Use this mode's context to tailor the framing, vocabulary, and focus of your answer to the user's domain and goals.
-- If screen and audio contain no usable content, normal unclear-context handling still applies — do not fabricate answers from mode context alone.
-- Do NOT use NOTES TEMPLATE section headings in live coaching replies unless the user explicitly asks for notes.`
+- Tailor vocabulary, framing, and focus to the ACTIVE PROMPT role above.
+- Lead with a direct Takeaway; use prose for explanations; use code blocks for coding questions on screen.
+- Do NOT use NOTES TEMPLATE section headings in live replies unless the user explicitly asks for notes.`
+}
+
+function formatReferenceFilesBlock(prompt) {
+  const text = referenceFilesText(prompt).trim()
+  if (!text) return ''
+  const clipped = text.length > INJECT_MAX ? `${text.slice(0, INJECT_MAX)}\n…` : text
+  return `\n\n---\n## REFERENCE FILES (facts only — do not invent beyond this)\n${clipped}`
 }
 
 function formatActivePromptBlock(prompt) {
@@ -344,6 +426,7 @@ module.exports = {
   createPrompt,
   pushPromptHistory,
   formatActivePromptBlock,
+  formatReferenceFilesBlock,
   formatActiveInstructionsBlock: formatActivePromptBlock,
   getActivePrompt,
   promptContent,

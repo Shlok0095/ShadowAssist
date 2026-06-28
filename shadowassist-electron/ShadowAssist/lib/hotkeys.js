@@ -6,7 +6,12 @@ const store = require('./store')
 
 const DEFAULT_HOTKEYS = {
   toggleOverlay: 'CommandOrControl+\\',
+  /** Escape hides the overlay (does not quit or stop the session). */
+  hideOverlay: 'Escape',
+  /** Ask with screen capture (vision + audio/text) — Natively Ctrl+Enter */
   askAI: 'CommandOrControl+Return',
+  /** Ask without screen (audio/text only, no screenshot) — Natively Ctrl+Shift+Enter */
+  askAINoScreen: 'CommandOrControl+Shift+Return',
   clearChat: 'CommandOrControl+R',
   toggleSession: 'CommandOrControl+Shift+\\',
   moveUp: 'CommandOrControl+Up',
@@ -17,6 +22,10 @@ const DEFAULT_HOTKEYS = {
   scrollDown: 'CommandOrControl+Shift+Down',
   settings: 'CommandOrControl+Shift+S',
   copyResponse: 'CommandOrControl+Shift+C',
+  /** Capture a screenshot and add it to the queue (Natively-style Cmd+H). */
+  captureScreenshot: 'CommandOrControl+H',
+  /** Show overlay and focus the ask input (stealth typing). */
+  focusOverlayInput: 'CommandOrControl+Shift+T',
 }
 
 const handlers = {}
