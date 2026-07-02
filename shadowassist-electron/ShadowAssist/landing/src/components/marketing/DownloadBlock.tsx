@@ -1,5 +1,5 @@
 import { GlowCta } from '@/components/marketing/GlowCta'
-import { SITE } from '@/config/site'
+import { APP_VERSION, SITE } from '@/config/site'
 import { useRollingReleaseMeta } from '@/hooks/useRollingReleaseMeta'
 import { cn } from '@/components/ui/cn'
 
@@ -31,7 +31,7 @@ export function DownloadBlock({ layout = 'section', className }: DownloadBlockPr
           <GlowCta href={SITE.downloadSetupExeUrl} size={compact ? 'md' : 'lg'} className="mt-1 w-full">
             Download VeilAssist Setup
           </GlowCta>
-          <p className="font-mono text-[11px] text-zinc-600">VeilAssist-Setup.exe · v1.0.0</p>
+          <p className="font-mono text-[11px] text-zinc-600">VeilAssist-Setup.exe · v{APP_VERSION}</p>
         </article>
 
         <article className="va-download-card flex flex-col items-center gap-3 rounded-2xl border border-white/[0.08] bg-white/[0.03] p-6 text-center">

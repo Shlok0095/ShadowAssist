@@ -244,6 +244,11 @@ let mousePassthroughPollTimer = null
 /** Last applied capture mode — avoids spamming setIgnoreMouseEvents every poll tick. */
 let overlayMouseCaptureApplied = null
 let savedOpacity = 0.92
+/** Last protection value pushed to the overlay HWND — Natively dedupes to avoid DWM churn/blinks. */
+let overlayContentProtectionApplied = null
+/** Pending win32 stealth fade-in after protection arms (Natively Opacity Shield). */
+let overlayOpacityShieldTimer = null
+const STEALTH_OPACITY_SHIELD_MS = 60
 let lastResponse = ''
 let llmResponseInFlight = false
 let currentAbortController = null
@@ -418,20 +423,22 @@ function createOverlayWindow() {
     : path.join(__dirname, '..', 'renderer', 'overlay', 'index.html'))
 
   overlayWindow.once('ready-to-show', () => {
-    overlayWindow.show()
-    applyContentProtectionAllWindows()
     applyTaskbarVisibility()
     overlayWindow.setAlwaysOnTop(true, 'screen-saver')
     overlayWindow.setVisibleOnAllWorkspaces(true)
     overlayWindow.setFullScreenable(false)
-    // Opacity only after show — setting before first show breaks transparency on some Windows builds
-    overlayWindow.setOpacity(overlayVisible ? savedOpacity : 0)
-    syncOverlayMouseCapture()
+    if (overlayVisible) {
+      presentOverlayWindow({ inactive: false })
+    } else {
+      overlayWindow.setOpacity(0)
+    }
+    syncOverlayVisibilityToRenderer()
   })
   overlayWindow.webContents.on('dom-ready', () => applyContentProtectionAllWindows())
   overlayWindow.webContents.on('did-finish-load', () => {
     applyContentProtectionAllWindows()
     syncOverlayMouseCapture()
+    syncOverlayVisibilityToRenderer()
     // Re-sync after overlay reload — session-status may have fired before React mounted.
     if (sessionActive) sendToOverlay('session-status', true)
   })
@@ -439,6 +446,8 @@ function createOverlayWindow() {
     console.error('[overlay] did-fail-load', code, desc, url)
   })
   overlayWindow.on('closed', () => {
+    clearOverlayOpacityShield()
+    overlayContentProtectionApplied = null
     overlayWindow = null
     overlayMouseCaptureApplied = null
     stopMousePassthroughPoll()
@@ -457,12 +466,102 @@ function isStealthModeEnabled() {
  * - Stealth mode (stealth ON): protection ON — hidden from screen capture, shares, and recordings.
  * Ctrl+Enter capture uses hide()+opacity shield (see withOverlayExcludedFromScreenCapture).
  */
-function applyOverlayContentProtection() {
-  if (overlayWindow && !overlayWindow.isDestroyed()) {
-    try {
-      overlayWindow.setContentProtection(isStealthModeEnabled())
-    } catch (_) {}
+function clearOverlayOpacityShield() {
+  if (overlayOpacityShieldTimer != null) {
+    clearTimeout(overlayOpacityShieldTimer)
+    overlayOpacityShieldTimer = null
   }
+}
+
+function applyOverlayContentProtection(force = false) {
+  if (!overlayWindow || overlayWindow.isDestroyed()) return
+  const stealth = isStealthModeEnabled()
+  if (!force && overlayContentProtectionApplied === stealth) return
+  overlayContentProtectionApplied = stealth
+  try {
+    if (stealth && overlayVisible && overlayWindow.isVisible()) {
+      overlayWindow.setOpacity(savedOpacity)
+    }
+    overlayWindow.setContentProtection(stealth)
+  } catch (_) {}
+}
+
+function reassertOverlayContentProtection() {
+  overlayContentProtectionApplied = null
+  applyOverlayContentProtection(true)
+}
+
+/**
+ * Natively Opacity Shield (win32 + stealth): present at opacity 0, arm protection, then fade in.
+ * Prevents millisecond frame leaks into Google Meet / DXGI capture during show/restore.
+ */
+function presentOverlayWindow({ inactive = false } = {}) {
+  if (!overlayWindow || overlayWindow.isDestroyed()) return
+  clearOverlayOpacityShield()
+
+  const stealth = isStealthModeEnabled()
+  const targetOpacity = overlayVisible ? savedOpacity : 0
+
+  if (process.platform === 'win32' && stealth && overlayVisible) {
+    overlayWindow.setOpacity(0)
+    try {
+      overlayWindow.setAlwaysOnTop(true, 'screen-saver')
+      overlayWindow.setVisibleOnAllWorkspaces(true)
+    } catch (_) {}
+    if (!overlayWindow.isVisible()) {
+      if (inactive) overlayWindow.showInactive()
+      else overlayWindow.show()
+    }
+    try {
+      overlayWindow.setContentProtection(true)
+      overlayContentProtectionApplied = true
+    } catch (_) {}
+    overlayOpacityShieldTimer = setTimeout(() => {
+      overlayOpacityShieldTimer = null
+      if (!overlayWindow || overlayWindow.isDestroyed() || !overlayVisible) return
+      overlayWindow.setOpacity(savedOpacity)
+      try {
+        overlayWindow.setAlwaysOnTop(true, 'screen-saver')
+        overlayWindow.setVisibleOnAllWorkspaces(true)
+      } catch (_) {}
+      if (!inactive) {
+        try { overlayWindow.focus() } catch (_) {}
+      }
+      syncOverlayMouseCapture()
+    }, STEALTH_OPACITY_SHIELD_MS)
+    return
+  }
+
+  try {
+    overlayWindow.setAlwaysOnTop(true, 'screen-saver')
+    overlayWindow.setVisibleOnAllWorkspaces(true)
+  } catch (_) {}
+  if (!overlayWindow.isVisible()) {
+    if (inactive) overlayWindow.showInactive()
+    else overlayWindow.show()
+  }
+  overlayWindow.setOpacity(targetOpacity)
+  applyOverlayContentProtection()
+  if (!inactive && overlayVisible) {
+    try { overlayWindow.focus() } catch (_) {}
+  }
+  syncOverlayMouseCapture()
+}
+
+/** Hide overlay from compositor before a screenshot — Natively hideMainWindow pattern. */
+function hideOverlayForCapture() {
+  if (!overlayWindow || overlayWindow.isDestroyed()) return
+  clearOverlayOpacityShield()
+  if (process.platform === 'win32') {
+    overlayWindow.setOpacity(0)
+  }
+  if (overlayWindow.isVisible()) {
+    overlayWindow.hide()
+  }
+}
+
+function syncOverlayVisibilityToRenderer() {
+  sendToOverlay('overlay-visibility', overlayVisible)
 }
 
 /** Windows that must follow Stealth (content protection). Never include meeting toast or future summary window. */
@@ -699,47 +798,35 @@ function startCalendarReminderPoll() {
   }, CALENDAR_REMINDER_POLL_MS)
 }
 
-/** Compositor settle time after hiding overlay — matches Natively macOS v2.0.9 (150ms). */
-const CAPTURE_COMPOSITOR_MS = 150
+/** Compositor settle after hide — Natively v2.0.9: 80ms darwin, 40ms win32 (was 150ms). */
+const CAPTURE_COMPOSITOR_MS = process.platform === 'darwin' ? 80 : 40
 
 /**
  * Natively-style capture wrapper: opacity 0 → hide() → compositor wait → snap → restore.
- * Works in visible mode (content protection OFF): overlay is fully removed from the
- * compositor so the background captures cleanly. Stealth mode briefly lifts protection
- * while hidden so Windows DXGI can still grab the desktop.
+ * Stealth mode keeps content protection ON — hidden window is enough; lifting protection
+ * caused millisecond leaks into screen share (Natively never disables it for capture).
  */
 async function withOverlayExcludedFromScreenCapture(fn) {
   if (!overlayWindow || overlayWindow.isDestroyed()) return fn()
 
   const restoreAfterCapture = overlayVisible
-  const stealth = isStealthModeEnabled()
 
   try {
-    overlayWindow.setOpacity(0)
-    if (overlayWindow.isVisible()) {
-      overlayWindow.hide()
-    }
-    if (stealth) {
-      try { overlayWindow.setContentProtection(false) } catch (_) {}
-    }
+    hideOverlayForCapture()
     await new Promise((resolve) => setTimeout(resolve, CAPTURE_COMPOSITOR_MS))
     return await fn()
   } finally {
     if (!overlayWindow.isDestroyed()) {
-      applyOverlayContentProtection()
       if (restoreAfterCapture) {
-        overlayWindow.setOpacity(savedOpacity)
-        if (!overlayWindow.isVisible()) {
-          overlayWindow.showInactive()
-        }
-        try {
-          overlayWindow.setAlwaysOnTop(true, 'screen-saver')
-          overlayWindow.setVisibleOnAllWorkspaces(true)
-        } catch (_) {}
-        syncOverlayMouseCapture()
+        presentOverlayWindow({ inactive: true })
+        syncOverlayVisibilityToRenderer()
       } else {
         overlayWindow.setOpacity(0)
       }
+      setImmediate(() => {
+        if (!overlayWindow || overlayWindow.isDestroyed()) return
+        applyTaskbarVisibility()
+      })
     }
   }
 }
@@ -752,22 +839,30 @@ function showOverlay() {
     return
   }
   if (!overlayWindow.isDestroyed()) {
-    if (!overlayWindow.isVisible()) overlayWindow.show()
-    overlayWindow.setOpacity(savedOpacity)
-    syncOverlayMouseCapture()
-    applyContentProtectionAllWindows()
-    applyTaskbarVisibility()
+    syncOverlayVisibilityToRenderer()
+    presentOverlayWindow({ inactive: false })
+    setImmediate(() => {
+      if (!overlayWindow || overlayWindow.isDestroyed() || !overlayVisible) return
+      applyTaskbarVisibility()
+      if (!(process.platform === 'win32' && isStealthModeEnabled())) {
+        applyContentProtectionAllWindows()
+      }
+    })
   }
 }
 
 function hideOverlay() {
   overlayVisible = false
+  clearOverlayOpacityShield()
   if (tray?.updateTrayMenu) tray.updateTrayMenu()
-  if (overlayWindow) {
+  if (overlayWindow && !overlayWindow.isDestroyed()) {
     overlayWindow.setOpacity(0)
+    syncOverlayVisibilityToRenderer()
     syncOverlayMouseCapture()
-    applyContentProtectionAllWindows()
-    applyTaskbarVisibility()
+    setImmediate(() => {
+      if (!overlayWindow || overlayWindow.isDestroyed()) return
+      applyTaskbarVisibility()
+    })
   }
 }
 
@@ -1910,11 +2005,11 @@ function setupHotkeys() {
   hotkeys.register('moveLeft', () => moveOverlay(-40, 0))
   hotkeys.register('moveRight', () => moveOverlay(40, 0))
   hotkeys.register('scrollUp', () => {
-    showOverlay()
+    if (!overlayVisible) return
     sendToOverlay('scroll', -1)
   })
   hotkeys.register('scrollDown', () => {
-    showOverlay()
+    if (!overlayVisible) return
     sendToOverlay('scroll', 1)
   })
   hotkeys.register('settings', createSettingsWindow)
@@ -1975,7 +2070,12 @@ function setupIPC() {
   ipcMain.handle('protection:set', (_, enabled) => {
     const v = !!enabled
     store.set('stealth_mode', v)
-    applyContentProtectionAllWindows()
+    overlayContentProtectionApplied = null
+    if (v && process.platform === 'win32' && overlayVisible && overlayWindow && !overlayWindow.isDestroyed()) {
+      presentOverlayWindow({ inactive: true })
+    } else {
+      applyContentProtectionAllWindows()
+    }
     applyTaskbarVisibility()
     sendToOverlay('stealth-mode-update', v)
     sendToSettingsWindow('stealth-mode-update', v)
@@ -2275,10 +2375,16 @@ function setupIPC() {
       return true
     }
     if (key === 'stealth_mode') {
-      store.set('stealth_mode', !!value)
-      applyContentProtectionAllWindows()
+      const v = !!value
+      store.set('stealth_mode', v)
+      overlayContentProtectionApplied = null
+      if (v && process.platform === 'win32' && overlayVisible && overlayWindow && !overlayWindow.isDestroyed()) {
+        presentOverlayWindow({ inactive: true })
+      } else {
+        applyContentProtectionAllWindows()
+      }
       applyTaskbarVisibility()
-      sendToOverlay('stealth-mode-update', !!value)
+      sendToOverlay('stealth-mode-update', v)
       return true
     }
     if (key === 'overlayMousePassthroughEnabled') {

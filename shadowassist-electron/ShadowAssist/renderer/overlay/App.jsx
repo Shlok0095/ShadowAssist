@@ -587,6 +587,8 @@ export default function App() {
   const [modeSuggestion, setModeSuggestion] = useState(null)
   const [expanded, setExpanded] = useState(false)
   const [hiding, setHiding] = useState(false)
+  /** Mirrors main-process overlayVisible — instant hide/show without waiting on window opacity. */
+  const [overlayMainVisible, setOverlayMainVisible] = useState(true)
   const [stealthMode, setStealthMode] = useState(false)
 
 
@@ -1141,9 +1143,16 @@ export default function App() {
 
   useEffect(() => {
     if (!ipc) return
+    const unsubVisibility = ipc.on('overlay-visibility', (_, visible) => {
+      setOverlayMainVisible(!!visible)
+      if (!visible) setHiding(false)
+    })
     ipc.invoke('protection:get').then((v) => setStealthMode(!!v))
     const unsub = ipc.on('stealth-mode-update', (_, v) => setStealthMode(!!v))
-    return () => unsub?.()
+    return () => {
+      unsubVisibility?.()
+      unsub?.()
+    }
   }, [])
 
   useEffect(() => {
@@ -2248,7 +2257,9 @@ export default function App() {
 
   const hideOverlay = useCallback(() => {
     setHiding(true)
-    setTimeout(() => { setHiding(false); ipc?.send('overlay-hide') }, 220)
+    setOverlayMainVisible(false)
+    ipc?.send('overlay-hide')
+    window.setTimeout(() => setHiding(false), 180)
   }, [])
 
   const quitApp = useCallback(() => {
@@ -2294,9 +2305,10 @@ export default function App() {
     <div
       className="crystal-stack relative flex h-full w-full flex-col"
       style={{
-        opacity: hiding ? 0 : 1,
+        opacity: hiding || !overlayMainVisible ? 0 : 1,
         transform: hiding ? 'translateY(-6px) scale(0.98)' : 'translateY(0) scale(1)',
-        transition: hiding ? 'opacity 0.18s ease, transform 0.18s ease' : 'none',
+        transition: hiding ? 'opacity 0.15s ease, transform 0.15s ease' : 'none',
+        pointerEvents: overlayMainVisible ? 'auto' : 'none',
       }}
     >
       {/* ── Fixed-width notch — centered above panel ── */}

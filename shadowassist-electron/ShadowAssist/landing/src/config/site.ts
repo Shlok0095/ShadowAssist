@@ -17,7 +17,7 @@ export const DOWNLOAD_ROUTES = {
 } as const
 
 /** App marketing version — keep in sync with electron package.json. */
-export const APP_VERSION = '1.0.0'
+export const APP_VERSION = '1.0.1'
 
 function releaseAssetUrl(file: string, tag = rollingTag) {
   return `https://github.com/${repoOwner}/${repoName}/releases/download/${tag}/${file}`
