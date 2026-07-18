@@ -5,7 +5,7 @@ const catalog = require('./chatModelCatalog.json')
 
 /** @type {Record<string, RegExp[]>} */
 const EXTRA_PATTERNS = {
-  groq: [/llama-4-(scout|maverick)/i],
+  groq: [/qwen3\.6-27b/i, /qwen\/qwen3\.6/i],
   nvidia: [
     /nemotron-nano-12b-v2-vl/i,
     /nemotron-nano-vl/i,

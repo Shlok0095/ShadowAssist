@@ -38,7 +38,7 @@ const schema = {
   selectedModel: { type: 'string', default: 'gpt-4o' },
   // ── Groq ────────────────────────────────────────────────────────────────────
   groqKey: { type: 'string', default: '' },
-  groqModel: { type: 'string', default: 'meta-llama/llama-4-scout-17b-16e-instruct' },
+  groqModel: { type: 'string', default: 'qwen/qwen3.6-27b' },
   groqWhisperModel: { type: 'string', default: 'whisper-large-v3' },
   // ── NVIDIA NIM (cloud STT + chat vision) ─────────────────────────────────────
   nvidiaKey: { type: 'string', default: '' },
@@ -347,12 +347,17 @@ function migrateProfileTrees() {
   } catch (_) {}
 }
 
+const DEPRECATED_GROQ_VISION_MODELS = new Set([
+  'meta-llama/llama-4-scout-17b-16e-instruct',
+  'meta-llama/llama-4-maverick-17b-128e-instruct',
+])
+
 function migrateGroqChatModelToVision() {
   try {
     const { isMultimodalChatModel } = require('./chatMultimodalModels')
     const m = String(get('groqModel') || '').trim()
-    if (m && !isMultimodalChatModel('groq', m)) {
-      set('groqModel', 'meta-llama/llama-4-scout-17b-16e-instruct')
+    if (!m || DEPRECATED_GROQ_VISION_MODELS.has(m) || !isMultimodalChatModel('groq', m)) {
+      set('groqModel', 'qwen/qwen3.6-27b')
     }
   } catch (_) {}
 }

@@ -12,10 +12,10 @@ const REGISTRY = {
     baseURL: 'https://api.groq.com/openai/v1',
     keyField: 'groqKey',
     modelField: 'groqModel',
-    defaultModel: 'meta-llama/llama-4-scout-17b-16e-instruct',
-    testModel: 'meta-llama/llama-4-scout-17b-16e-instruct',
+    defaultModel: 'qwen/qwen3.6-27b',
+    testModel: 'qwen/qwen3.6-27b',
     vision: true,
-    ui: { label: 'Groq', badge: 'FAST', color: '#22c55e', desc: 'Llama 4 vision — screen + transcript', docs: 'https://console.groq.com/keys' },
+    ui: { label: 'Groq', badge: 'FAST', color: '#22c55e', desc: 'Qwen 3.6 vision — screen + transcript', docs: 'https://console.groq.com/docs/vision' },
   },
   openai: {
     kind: 'openai_compat',

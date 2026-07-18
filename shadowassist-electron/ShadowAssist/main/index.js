@@ -1889,13 +1889,19 @@ async function handleAskAI(userQuestion, audioTranscript, _askMeta = {}) {
           ? userContent.filter((p) => p && p.type === 'text').map((p) => p.text || '').join('\n\n')
           : ''
     let fullText = ''
+    // The Groq on-demand tier allows 8K TPM for Qwen 3.6. Screenshot and
+    // prompt input commonly consume 3–4K tokens, so leave output headroom.
+    const maxTokens =
+      provider === 'groq' && model === 'qwen/qwen3.6-27b'
+        ? 3072
+        : 8192
     for await (const token of getAiClient().streamChat(
       provider,
       apiKey,
       {
         messages,
         model,
-        maxTokens: 8192,
+        maxTokens,
         signal: abortController.signal,
         userQuestion: userQ || retrievalQuery,
       },

@@ -167,11 +167,22 @@ async function* streamChatOpenAICompat(apiKey, baseURL, options) {
   const { messages, model = 'gpt-4o', maxTokens = 8192, signal, inferenceParams } = options
   const client = getOpenAICompatClient(apiKey, baseURL)
   const oSeries = isOpenAINativeApi(baseURL) && isOSeriesModel(model)
+  const qwenGroqVision =
+    openaiNativeHostname(baseURL) === 'api.groq.com' &&
+    String(model).toLowerCase() === 'qwen/qwen3.6-27b'
   const inferParams = oSeries
     ? {}
-    : inferenceParams?.diversity
-      ? { temperature: inferenceParams.temperature ?? 0.4, seed: inferenceParams.seed ?? 7 }
-      : { temperature: 0.2, seed: 7 }
+    : qwenGroqVision
+      ? {
+          // Non-thinking mode streams visible output immediately, matching
+          // the old Scout overlay experience instead of hiding a long prelude.
+          temperature: 0.7,
+          top_p: 0.8,
+          reasoning_effort: 'none',
+        }
+      : inferenceParams?.diversity
+        ? { temperature: inferenceParams.temperature ?? 0.4, seed: inferenceParams.seed ?? 7 }
+        : { temperature: 0.2, seed: 7 }
   const stream = await client.chat.completions.create(
     { model, messages, stream: true, ...inferParams, ...chatCompletionTokenParams(maxTokens, baseURL, model) },
     { signal }
