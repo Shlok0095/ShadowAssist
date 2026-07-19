@@ -1,0 +1,786 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+/*
+ * Glossy dark glass (Cluely-style notch)
+ * Electron transparent windows: backdrop-filter blurs empty pixels → grey mud.
+ * We simulate glass with opaque dark fill + top specular shine + edge highlights.
+ */
+:root {
+  --accent-rgb: 59 130 246;
+  --accent-mid-rgb: 37 99 235;
+  --accent-light-rgb: 147 197 253;
+  --glass-base: rgba(18, 18, 22, 0.92);
+  --glass-base-pill: rgba(20, 20, 25, 0.94);
+  --glass-base-panel: rgba(16, 16, 20, 0.93);
+  --glass-border: rgba(255, 255, 255, 0.10);
+  --glass-border-top: rgba(255, 255, 255, 0.32);
+  --glass-border-left: rgba(255, 255, 255, 0.18);
+  --glass-text: rgba(255, 255, 255, 0.97);
+  --glass-sub: rgba(255, 255, 255, 0.72);
+  --glass-muted: rgba(255, 255, 255, 0.55);
+  --glass-answer: rgba(255, 255, 255, 0.98);
+  --glass-cap: linear-gradient(
+    180deg,
+    rgba(255, 255, 255, 0.22) 0%,
+    rgba(255, 255, 255, 0.08) 14%,
+    rgba(255, 255, 255, 0.02) 32%,
+    transparent 48%
+  );
+  --glass-sheen: linear-gradient(
+    118deg,
+    rgba(255, 255, 255, 0.10) 0%,
+    transparent 42%,
+    transparent 100%
+  );
+}
+
+@keyframes answerIn {
+  from { opacity: 0; transform: translateY(4px); }
+  to   { opacity: 1; transform: translateY(0); }
+}
+
+.animate-answer-in {
+  animation: answerIn 0.25s ease-out both;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .animate-answer-in { animation: none !important; }
+}
+
+* { box-sizing: border-box; margin: 0; padding: 0; }
+
+html, body {
+  overflow: hidden;
+  height: 100%;
+  width: 100%;
+  margin: 0;
+  background: transparent !important;
+}
+
+#root {
+  width: 100%;
+  height: 100%;
+  min-height: 100%;
+  background: transparent;
+}
+
+.crystal-stack { background: transparent; }
+
+.crystal-notch-shell {
+  width: 252px;
+  min-width: 252px;
+  max-width: 252px;
+  height: 42px;
+  min-height: 42px;
+  box-sizing: border-box;
+}
+
+.crystal-notch-bar {
+  width: 252px;
+  min-width: 252px;
+  max-width: 252px;
+  height: 100%;
+  box-sizing: border-box;
+  -webkit-app-region: drag;
+  cursor: move;
+}
+
+/* Shared glossy surface — no backdrop-filter, no outer shadow */
+.crystal-pill,
+.crystal-panel,
+.glass-modal-card {
+  position: relative;
+  isolation: isolate;
+  border-style: solid;
+  border-width: 1px;
+  border-color: var(--glass-border);
+  border-top-color: var(--glass-border-top);
+  border-left-color: var(--glass-border-left);
+  background:
+    var(--glass-cap),
+    var(--glass-sheen),
+    var(--glass-base);
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.26),
+    inset 0 -1px 0 rgba(0, 0, 0, 0.45);
+}
+
+.crystal-pill {
+  background:
+    var(--glass-cap),
+    var(--glass-sheen),
+    var(--glass-base-pill);
+  border-radius: 9999px;
+}
+
+.crystal-pill::before,
+.crystal-panel::before {
+  content: '';
+  position: absolute;
+  top: 1px;
+  left: 10%;
+  right: 10%;
+  height: 1px;
+  border-radius: 9999px;
+  background: linear-gradient(
+    90deg,
+    transparent 0%,
+    rgba(255, 255, 255, 0.70) 50%,
+    transparent 100%
+  );
+  pointer-events: none;
+  z-index: 30;
+}
+
+.crystal-pill::after,
+.crystal-panel::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  border-radius: inherit;
+  background: radial-gradient(
+    ellipse 80% 50% at 50% -20%,
+    rgba(255, 255, 255, 0.08) 0%,
+    transparent 70%
+  );
+  pointer-events: none;
+  z-index: 1;
+}
+
+.crystal-panel {
+  background:
+    var(--glass-cap),
+    var(--glass-sheen),
+    var(--glass-base-panel);
+  border-radius: 16px;
+}
+
+.crystal-panel-edge {
+  height: 1px;
+  background: rgba(255, 255, 255, 0.06);
+}
+
+.crystal-status-row {
+  position: relative;
+  z-index: 10;
+  background: transparent;
+}
+
+.crystal-divider {
+  border-color: rgba(255, 255, 255, 0.07);
+}
+
+.crystal-label {
+  color: var(--glass-text);
+  font-weight: 600;
+  letter-spacing: 0.02em;
+}
+
+.crystal-sublabel {
+  color: var(--glass-sub);
+  font-size: 9.5px;
+  letter-spacing: 0.04em;
+}
+
+.crystal-status-text {
+  color: var(--glass-text);
+}
+
+.crystal-transcript-bar {
+  display: flex;
+  align-items: center;
+  min-height: 40px;
+  padding: 0 14px;
+  border-radius: 9999px;
+  border: 1px solid var(--glass-border);
+  border-top-color: var(--glass-border-top);
+  border-left-color: var(--glass-border-left);
+  background:
+    var(--glass-cap),
+    var(--glass-sheen),
+    rgba(0, 0, 0, 0.42);
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.20),
+    inset 0 0 0 1px rgba(255, 255, 255, 0.05);
+}
+
+.crystal-transcript-live {
+  color: #ffffff;
+  font-size: 13px;
+  font-weight: 700;
+  line-height: 1.35;
+  letter-spacing: 0.01em;
+  text-shadow: 0 1px 2px rgba(0, 0, 0, 0.45);
+}
+
+.crystal-transcript-live-body {
+  color: #ffffff;
+  font-weight: 700;
+  text-shadow: 0 1px 2px rgba(0, 0, 0, 0.45);
+}
+
+.crystal-speaker-me {
+  color: rgb(var(--accent-light-rgb) / 1);
+  font-weight: 800;
+  letter-spacing: 0.02em;
+}
+
+.crystal-speaker-participant {
+  color: #b91c1c;
+  font-weight: 800;
+  letter-spacing: 0.02em;
+  text-shadow: 0 1px 2px rgba(0, 0, 0, 0.35);
+}
+
+.crystal-transcript-waiting {
+  color: var(--glass-muted);
+  font-size: 11px;
+  font-weight: 500;
+  line-height: 1.35;
+}
+
+.crystal-transcript-idle {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 11.5px;
+  font-weight: 500;
+  color: var(--glass-sub);
+  letter-spacing: 0.02em;
+}
+
+.crystal-transcript-idle-mark {
+  width: 6px;
+  height: 6px;
+  flex-shrink: 0;
+  border-radius: 9999px;
+  background: rgba(255, 255, 255, 0.28);
+  box-shadow: 0 0 6px rgba(255, 255, 255, 0.12);
+}
+
+.crystal-transcript-listening {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+  font-size: 12px;
+  line-height: 1.35;
+}
+
+.crystal-listening-dot {
+  width: 7px;
+  height: 7px;
+  flex-shrink: 0;
+  border-radius: 9999px;
+  background: rgb(var(--accent-rgb) / 1);
+  box-shadow: 0 0 10px rgb(var(--accent-rgb) / 0.55);
+  animation: crystalListeningPulse 1.5s ease-in-out infinite;
+}
+
+.crystal-listening-label {
+  flex-shrink: 0;
+  font-size: 12.5px;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  color: #4ade80;
+  text-shadow: 0 0 12px rgba(74, 222, 128, 0.35);
+}
+
+.crystal-listening-sub {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 11px;
+  font-weight: 500;
+  color: var(--glass-sub);
+}
+
+@keyframes crystalListeningPulse {
+  0%, 100% { opacity: 1; transform: scale(1); }
+  50% { opacity: 0.45; transform: scale(0.82); }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .crystal-listening-dot { animation: none !important; }
+}
+
+.crystal-send-btn {
+  background: linear-gradient(180deg, #ef4444 0%, #b91c1c 100%);
+  border: 1px solid rgba(255, 255, 255, 0.18);
+  border-top-color: rgba(255, 255, 255, 0.32);
+  color: #fff;
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.28),
+    0 1px 2px rgba(0, 0, 0, 0.35);
+}
+
+.crystal-send-btn:hover {
+  background: linear-gradient(180deg, #f87171 0%, #dc2626 100%);
+}
+
+.crystal-send-btn:disabled {
+  opacity: 0.5;
+}
+
+.crystal-body-text {
+  color: var(--glass-text);
+}
+
+.crystal-answer-text {
+  color: var(--glass-answer);
+  line-height: 1.75;
+}
+
+.crystal-answer-shell {
+  background: rgba(0, 0, 0, 0.38);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-top-color: rgba(255, 255, 255, 0.12);
+  border-radius: 12px;
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.06);
+}
+
+.crystal-muted {
+  color: var(--glass-muted);
+}
+
+.crystal-icon-btn {
+  color: var(--glass-muted);
+  transition: background 0.12s, color 0.12s;
+}
+
+.crystal-icon-btn:hover {
+  background: rgba(255, 255, 255, 0.08);
+  color: var(--glass-text);
+}
+
+.crystal-notch-logo {
+  display: block;
+  height: 38px;
+  width: auto;
+  max-width: 112px;
+  object-fit: contain;
+  object-position: left center;
+}
+
+.crystal-wave-bar {
+  background: rgba(255, 255, 255, 0.78);
+}
+
+.crystal-session-btn {
+  background: transparent;
+  border: none;
+  box-shadow: none;
+  padding: 0;
+  outline: none;
+}
+
+.crystal-session-btn:focus,
+.crystal-session-btn:focus-visible {
+  outline: none;
+  box-shadow: none;
+}
+
+.crystal-listen-active {
+  background: rgba(255, 255, 255, 0.10);
+  border-color: rgba(255, 255, 255, 0.24);
+  border-top-color: rgba(255, 255, 255, 0.32);
+  color: var(--glass-text);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.14);
+}
+
+.crystal-listen-idle {
+  background: rgba(255, 255, 255, 0.04);
+  border-color: rgba(255, 255, 255, 0.10);
+  color: var(--glass-sub);
+}
+
+.crystal-listen-idle:hover {
+  background: rgba(255, 255, 255, 0.08);
+  border-color: rgba(255, 255, 255, 0.18);
+  border-top-color: rgba(255, 255, 255, 0.24);
+  color: var(--glass-text);
+}
+
+.crystal-stealth-track {
+  display: inline-flex;
+  flex-shrink: 0;
+  align-items: center;
+  gap: 2px;
+  padding: 3px;
+  border-radius: 9999px;
+  border: 1px solid var(--glass-border);
+  border-top-color: var(--glass-border-top);
+  border-left-color: var(--glass-border-left);
+  background:
+    var(--glass-cap),
+    var(--glass-sheen),
+    rgba(0, 0, 0, 0.44);
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.20),
+    inset 0 0 0 1px rgba(255, 255, 255, 0.05);
+}
+
+.crystal-stealth-btn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 28px;
+  height: 28px;
+  flex-shrink: 0;
+  border: 1px solid rgba(255, 255, 255, 0.10);
+  border-top-color: rgba(255, 255, 255, 0.18);
+  border-radius: 9999px;
+  outline: none;
+  background:
+    var(--glass-cap),
+    rgba(255, 255, 255, 0.05);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.12);
+}
+
+.crystal-stealth-btn-active {
+  background:
+    var(--glass-cap),
+    rgba(255, 255, 255, 0.14);
+  border-color: rgba(255, 255, 255, 0.18);
+  border-top-color: rgba(255, 255, 255, 0.32);
+  color: var(--glass-text);
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.24),
+    0 0 0 1px rgba(255, 255, 255, 0.04);
+}
+
+.crystal-stealth-btn-idle {
+  color: var(--glass-muted);
+  opacity: 0.78;
+}
+
+.crystal-stealth-btn-idle:hover {
+  opacity: 1;
+  background:
+    var(--glass-cap),
+    rgba(255, 255, 255, 0.08);
+  border-color: rgba(255, 255, 255, 0.14);
+  border-top-color: rgba(255, 255, 255, 0.22);
+  color: var(--glass-text);
+}
+
+.crystal-input {
+  background: rgba(0, 0, 0, 0.36);
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  border-top-color: rgba(255, 255, 255, 0.18);
+  color: var(--glass-text);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.08);
+}
+
+.crystal-input::placeholder {
+  color: rgba(255, 255, 255, 0.44);
+}
+
+.crystal-input:focus {
+  outline: none;
+  border-color: rgba(255, 255, 255, 0.26);
+  border-top-color: rgba(255, 255, 255, 0.34);
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.10),
+    0 0 0 2px rgba(255, 255, 255, 0.06);
+}
+
+.crystal-resize-handle {
+  opacity: 0;
+  transition: opacity 0.12s;
+}
+
+.crystal-resize-handle:hover {
+  opacity: 1;
+  background: rgba(255, 255, 255, 0.14);
+}
+
+.crystal-code-block {
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-top-color: rgba(255, 255, 255, 0.12);
+  background: rgba(0, 0, 0, 0.52);
+}
+
+.crystal-code-header {
+  border-bottom: 1px solid rgba(255, 255, 255, 0.06);
+  background: rgba(0, 0, 0, 0.38);
+}
+
+.crystal-panel-inset {
+  border: 1px solid rgba(255, 255, 255, 0.07);
+  border-top-color: rgba(255, 255, 255, 0.11);
+  background: rgba(0, 0, 0, 0.26);
+}
+
+.crystal-takeaway {
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-top-color: rgba(255, 255, 255, 0.12);
+  background: rgba(0, 0, 0, 0.22);
+}
+
+.crystal-user-bubble,
+.crystal-question-bubble {
+  border: 1px solid rgba(99, 116, 255, 0.72);
+  border-top-color: rgba(133, 168, 255, 0.88);
+  background:
+    linear-gradient(145deg, rgba(35, 78, 178, 0.96) 0%, rgba(29, 50, 130, 0.98) 48%, rgba(47, 37, 135, 0.98) 100%);
+  color: #fff;
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.20),
+    inset 0 -1px 0 rgba(4, 12, 48, 0.45),
+    0 8px 22px rgba(26, 43, 138, 0.28),
+    0 0 14px rgba(65, 105, 225, 0.10);
+  text-shadow: 0 1px 1px rgba(0, 8, 38, 0.45);
+}
+
+.crystal-question-bubble .crystal-speaker-me,
+.crystal-question-bubble .crystal-speaker-participant {
+  color: #fff;
+}
+
+.crystal-mode-picker {
+  display: flex;
+  height: 32px;
+  min-width: 78px;
+  max-width: 116px;
+  align-items: center;
+  justify-content: center;
+  z-index: 30;
+  border: 1px solid rgba(255, 255, 255, 0.15);
+  border-top-color: rgba(255, 255, 255, 0.28);
+  border-left-color: rgba(255, 255, 255, 0.20);
+  border-bottom-color: rgba(255, 255, 255, 0.09);
+  border-radius: 9999px;
+  background:
+    var(--glass-cap),
+    var(--glass-sheen),
+    rgba(0, 0, 0, 0.42);
+  padding: 0 8px;
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.16),
+    inset 0 0 0 1px rgba(255, 255, 255, 0.04),
+    0 1px 3px rgba(0, 0, 0, 0.28);
+  transition: border-color 120ms ease, box-shadow 120ms ease;
+}
+
+.crystal-mode-picker:focus-within {
+  border-color: rgba(255, 255, 255, 0.28);
+  border-top-color: rgba(255, 255, 255, 0.38);
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.18),
+    0 0 0 2px rgba(255, 255, 255, 0.05);
+}
+
+.crystal-mode-picker-trigger {
+  display: flex;
+  min-width: 0;
+  width: 100%;
+  height: 100%;
+  align-items: center;
+  justify-content: center;
+  gap: 5px;
+  cursor: pointer;
+  border: 0;
+  outline: 0;
+  background: transparent;
+  color: var(--glass-text);
+  font-size: 10.5px;
+  font-weight: 600;
+}
+
+.crystal-mode-picker-trigger:disabled {
+  cursor: default;
+}
+
+.crystal-mode-chevron {
+  flex: none;
+  color: rgba(255, 255, 255, 0.58);
+  font-size: 11px;
+  transform: translateY(-1px);
+}
+
+.crystal-mode-menu {
+  position: absolute;
+  top: calc(100% + 6px);
+  left: 0;
+  display: flex;
+  width: max-content;
+  min-width: 108px;
+  max-width: 154px;
+  flex-direction: column;
+  gap: 2px;
+  padding: 5px;
+  overflow: hidden;
+  border: 1px solid rgba(255, 255, 255, 0.14);
+  border-top-color: rgba(255, 255, 255, 0.25);
+  border-radius: 12px;
+  background:
+    var(--glass-cap),
+    var(--glass-sheen),
+    rgba(9, 9, 12, 0.96);
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.12),
+    0 10px 24px rgba(0, 0, 0, 0.48);
+  backdrop-filter: blur(18px) saturate(125%);
+}
+
+.crystal-mode-option {
+  display: flex;
+  width: 100%;
+  min-width: 0;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  padding: 7px 9px;
+  cursor: pointer;
+  border: 1px solid transparent;
+  border-radius: 8px;
+  background: transparent;
+  color: rgba(255, 255, 255, 0.88);
+  font-size: 11px;
+  font-weight: 550;
+  text-align: left;
+  transition: background 100ms ease, border-color 100ms ease, color 100ms ease;
+}
+
+.crystal-mode-option:hover,
+.crystal-mode-option:focus-visible {
+  outline: none;
+  border-color: rgba(255, 255, 255, 0.10);
+  background: rgba(255, 255, 255, 0.09);
+  color: #fff;
+}
+
+.crystal-mode-option-active {
+  border-color: rgba(255, 255, 255, 0.14);
+  background: rgba(255, 255, 255, 0.13);
+  color: #fff;
+}
+
+.crystal-toolbar-active {
+  background: rgba(255, 255, 255, 0.10);
+  color: var(--glass-text);
+}
+
+.crystal-quit-btn {
+  background: linear-gradient(180deg, #ef4444 0%, #b91c1c 100%);
+  border: 1px solid rgba(255, 255, 255, 0.18);
+  border-top-color: rgba(255, 255, 255, 0.32);
+  color: #fff;
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.28),
+    0 1px 2px rgba(0, 0, 0, 0.35);
+}
+
+.crystal-quit-btn:hover {
+  background: linear-gradient(180deg, #f87171 0%, #dc2626 100%);
+}
+
+.crystal-tab-btn {
+  border-radius: 8px;
+  padding: 4px 11px;
+  font-size: 10px;
+  font-weight: 600;
+  letter-spacing: 0.02em;
+  border: 1px solid rgba(255, 255, 255, 0.10);
+}
+
+.crystal-tab-btn-idle {
+  background: rgba(255, 255, 255, 0.05);
+  border-top-color: rgba(255, 255, 255, 0.14);
+  color: var(--glass-muted);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.06);
+}
+
+.crystal-tab-btn-idle:hover {
+  background: rgba(255, 255, 255, 0.10);
+  color: var(--glass-text);
+}
+
+.crystal-tab-btn-latest-active {
+  background: linear-gradient(180deg, rgba(59, 130, 246, 0.72) 0%, rgba(29, 78, 216, 0.88) 100%);
+  border-color: rgba(147, 197, 253, 0.35);
+  border-top-color: rgba(191, 219, 254, 0.50);
+  color: #fff;
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.28),
+    0 1px 3px rgba(29, 78, 216, 0.35);
+}
+
+.crystal-tab-btn-history-active {
+  background: linear-gradient(180deg, rgba(139, 92, 246, 0.72) 0%, rgba(109, 40, 217, 0.88) 100%);
+  border-color: rgba(196, 181, 253, 0.35);
+  border-top-color: rgba(221, 214, 254, 0.50);
+  color: #fff;
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.28),
+    0 1px 3px rgba(109, 40, 217, 0.35);
+}
+
+.response-scroll {
+  scrollbar-width: thin;
+  scrollbar-color: rgba(255, 255, 255, 0.18) transparent;
+  overflow-anchor: none;
+  overscroll-behavior: contain;
+  -webkit-overflow-scrolling: touch;
+}
+
+/* Clickable overlay chrome — must sit above scroll layer and opt out of notch drag. */
+.crystal-panel-controls {
+  position: relative;
+  z-index: 20;
+  -webkit-app-region: no-drag;
+}
+
+.response-scroll::-webkit-scrollbar { width: 4px; }
+.response-scroll::-webkit-scrollbar-track { background: transparent; margin: 4px 0; }
+.response-scroll::-webkit-scrollbar-thumb {
+  border-radius: 4px;
+  background: rgba(255, 255, 255, 0.18);
+}
+
+.code-scroll-x {
+  scrollbar-width: thin;
+  scrollbar-color: rgba(255, 255, 255, 0.18) transparent;
+}
+
+.code-scroll-x::-webkit-scrollbar { height: 3px; }
+.code-scroll-x::-webkit-scrollbar-track { background: transparent; }
+.code-scroll-x::-webkit-scrollbar-thumb {
+  border-radius: 4px;
+  background: rgba(255, 255, 255, 0.18);
+}
+
+.hljs { background: transparent !important; color: var(--glass-answer) !important; }
+
+.glass-modal-card {
+  border-radius: 16px;
+  /* Stand alone — no full-window dim layer behind it */
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.28),
+    inset 0 -1px 0 rgba(0, 0, 0, 0.45),
+    0 12px 40px rgba(0, 0, 0, 0.35);
+}
+
+.glass-modal-btn {
+  background: rgba(255, 255, 255, 0.08);
+  border: 1px solid rgba(255, 255, 255, 0.14);
+  border-top-color: rgba(255, 255, 255, 0.20);
+  color: var(--glass-text);
+}
+
+.glass-modal-btn-primary {
+  background: rgba(255, 255, 255, 0.14);
+  border: 1px solid rgba(255, 255, 255, 0.22);
+  border-top-color: rgba(255, 255, 255, 0.30);
+  color: var(--glass-text);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.14);
+}
+
+.glass-modal-btn:hover,
+.glass-modal-btn-primary:hover {
+  background: rgba(255, 255, 255, 0.18);
+}

@@ -1,0 +1,38 @@
+{
+  "buildCommand": "npm run build",
+  "outputDirectory": "dist",
+  "installCommand": "npm ci",
+  "framework": "vite",
+  "env": {
+    "VITE_SITE_ORIGIN": "https://veilassist.vercel.app",
+    "VITE_ROLLING_TAG": "latest"
+  },
+  "redirects": [
+    {
+      "source": "/:path*",
+      "has": [{ "type": "host", "value": "shadow-assist.vercel.app" }],
+      "destination": "https://veilassist.vercel.app/:path*",
+      "permanent": true
+    },
+    {
+      "source": "/download",
+      "destination": "https://github.com/Shlok0095/VeilAssist/releases/download/latest/VeilAssist-Setup.exe",
+      "permanent": false
+    },
+    {
+      "source": "/download/beta",
+      "destination": "https://github.com/Shlok0095/VeilAssist/releases/download/latest-stag/VeilAssist-Setup.exe",
+      "permanent": false
+    },
+    {
+      "source": "/download/portable",
+      "destination": "https://github.com/Shlok0095/VeilAssist/releases/download/latest/VeilAssist.exe",
+      "permanent": false
+    },
+    {
+      "source": "/download/checksums",
+      "destination": "https://github.com/Shlok0095/VeilAssist/releases/download/latest/SHA256SUMS.txt",
+      "permanent": false
+    }
+  ]
+}

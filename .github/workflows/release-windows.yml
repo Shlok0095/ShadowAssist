@@ -25,9 +25,6 @@ concurrency:
 jobs:
   build-release:
     runs-on: windows-latest
-    defaults:
-      run:
-        working-directory: shadowassist-electron/ShadowAssist
 
     steps:
       - uses: actions/checkout@v4
@@ -36,7 +33,7 @@ jobs:
         with:
           node-version: '20'
           cache: npm
-          cache-dependency-path: shadowassist-electron/ShadowAssist/package-lock.json
+          cache-dependency-path: package-lock.json
 
       - name: Set release tag
         id: tag
@@ -65,9 +62,6 @@ jobs:
           VEILASSIST_GOOGLE_CAL_CLIENT_ID: ${{ secrets.GOOGLE_CAL_CLIENT_ID }}
           VEILASSIST_GOOGLE_CAL_CLIENT_SECRET: ${{ secrets.GOOGLE_CAL_CLIENT_SECRET }}
 
-      - name: SHA256 checksums
-        run: npm run dist:checksums
-
       - name: Stable installer name for rolling release
         if: "!startsWith(github.ref, 'refs/tags/v')"
         shell: pwsh
@@ -81,15 +75,18 @@ jobs:
           }
           Copy-Item $setup "dist/VeilAssist-Setup.exe" -Force
 
+      - name: SHA256 checksums
+        run: npm run dist:checksums
+
       - uses: actions/upload-artifact@v4
         with:
           name: veilassist-windows-${{ github.run_id }}
           if-no-files-found: warn
           path: |
-            shadowassist-electron/ShadowAssist/dist/VeilAssist.exe
-            shadowassist-electron/ShadowAssist/dist/VeilAssist-Setup*.exe
-            shadowassist-electron/ShadowAssist/dist/latest.yml
-            shadowassist-electron/ShadowAssist/dist/SHA256SUMS.txt
+            dist/VeilAssist.exe
+            dist/VeilAssist-Setup*.exe
+            dist/latest.yml
+            dist/SHA256SUMS.txt
 
       - name: Rolling GitHub Release (stag / main)
         if: "!startsWith(github.ref, 'refs/tags/v')"
@@ -114,10 +111,11 @@ jobs:
           replacesArtifacts: true
           artifactErrorsFailBuild: true
           artifacts: |
-            shadowassist-electron/ShadowAssist/dist/VeilAssist-Setup.exe
-            shadowassist-electron/ShadowAssist/dist/VeilAssist.exe
-            shadowassist-electron/ShadowAssist/dist/latest.yml
-            shadowassist-electron/ShadowAssist/dist/SHA256SUMS.txt
+            dist/VeilAssist-Setup.exe
+            dist/VeilAssist-Setup-*.exe
+            dist/VeilAssist.exe
+            dist/latest.yml
+            dist/SHA256SUMS.txt
 
       - name: Versioned GitHub Release (git tag v*.*.*)
         if: startsWith(github.ref, 'refs/tags/v')
@@ -125,9 +123,9 @@ jobs:
         with:
           generate_release_notes: true
           files: |
-            shadowassist-electron/ShadowAssist/dist/VeilAssist.exe
-            shadowassist-electron/ShadowAssist/dist/VeilAssist-Setup-*.exe
-            shadowassist-electron/ShadowAssist/dist/latest.yml
-            shadowassist-electron/ShadowAssist/dist/SHA256SUMS.txt
+            dist/VeilAssist.exe
+            dist/VeilAssist-Setup-*.exe
+            dist/latest.yml
+            dist/SHA256SUMS.txt
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

@@ -1,0 +1,79 @@
+// SPDX-FileCopyrightText: Copyright (c) 2022 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+// SPDX-License-Identifier: MIT
+
+syntax = "proto3";
+
+package nvidia.riva.asr;
+
+option cc_enable_arenas = true;
+option go_package = "nvidia.com/riva_speech";
+
+import "riva/proto/riva_audio.proto";
+import "riva/proto/riva_common.proto";
+
+service RivaSpeechRecognition {
+  rpc Recognize(RecognizeRequest) returns (RecognizeResponse) {}
+  rpc StreamingRecognize(stream StreamingRecognizeRequest)
+      returns (stream StreamingRecognizeResponse) {}
+}
+
+message RecognizeRequest {
+  RecognitionConfig config = 1;
+  bytes audio = 2;
+  nvidia.riva.RequestId id = 100;
+}
+
+message RecognitionConfig {
+  nvidia.riva.AudioEncoding encoding = 1;
+  int32 sample_rate_hertz = 2;
+  string language_code = 3;
+  int32 max_alternatives = 4;
+  bool profanity_filter = 5;
+  int32 audio_channel_count = 7;
+  bool enable_word_time_offsets = 8;
+  bool enable_automatic_punctuation = 11;
+  string model = 13;
+}
+
+message StreamingRecognitionConfig {
+  RecognitionConfig config = 1;
+  bool interim_results = 2;
+}
+
+message StreamingRecognizeRequest {
+  oneof streaming_request {
+    StreamingRecognitionConfig streaming_config = 1;
+    bytes audio_content = 2;
+  }
+  map<string, string> runtime_config = 3;
+  nvidia.riva.RequestId id = 100;
+}
+
+message RecognizeResponse {
+  repeated SpeechRecognitionResult results = 1;
+  nvidia.riva.RequestId id = 100;
+}
+
+message SpeechRecognitionResult {
+  repeated SpeechRecognitionAlternative alternatives = 1;
+  int32 channel_tag = 2;
+  float audio_processed = 3;
+}
+
+message SpeechRecognitionAlternative {
+  string transcript = 1;
+  float confidence = 2;
+}
+
+message StreamingRecognizeResponse {
+  repeated StreamingRecognitionResult results = 1;
+  nvidia.riva.RequestId id = 100;
+}
+
+message StreamingRecognitionResult {
+  repeated SpeechRecognitionAlternative alternatives = 1;
+  bool is_final = 2;
+  float stability = 3;
+  int32 channel_tag = 5;
+  float audio_processed = 6;
+}

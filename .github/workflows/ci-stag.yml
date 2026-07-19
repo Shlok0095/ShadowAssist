@@ -1,10 +1,12 @@
-# Lightweight check so every push to `stag` shows up under Actions (no path filters).
-name: CI (stag)
+name: CI
 
 on:
   push:
     branches:
       - stag
+      - main
+      - master
+  pull_request:
   workflow_dispatch:
 
 jobs:
@@ -12,7 +14,32 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      - name: Stag push received
-        run: |
-          echo "branch=${{ github.ref_name }} sha=${{ github.sha }}"
-          echo "If you see this run, Actions is firing for stag pushes."
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: npm
+          cache-dependency-path: |
+            package-lock.json
+            landing/package-lock.json
+
+      - name: Install desktop dependencies
+        run: npm ci
+
+      - name: Test desktop core
+        run: npm run test:ci
+
+      - name: Build desktop renderers
+        run: npm run build
+
+      - name: Install website dependencies
+        working-directory: landing
+        run: npm ci
+
+      - name: Type-check website
+        working-directory: landing
+        run: npm run typecheck
+
+      - name: Build website
+        working-directory: landing
+        run: npm run build

@@ -1,8 +1,8 @@
-shadowassist-electron/ShadowAssist/dist
-shadowassist-electron/ShadowAssist/out
-shadowassist-electron/ShadowAssist/node_modules
-shadowassist-electron/ShadowAssist/landing/node_modules
-shadowassist-electron/ShadowAssist/landing/dist
+dist
+out
+node_modules
+landing/node_modules
+landing/dist
 **/node_modules
 **/.git
 **/*.exe

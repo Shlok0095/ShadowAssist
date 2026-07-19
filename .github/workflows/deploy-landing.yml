@@ -29,22 +29,23 @@ jobs:
         with:
           node-version: '20'
           cache: npm
-          cache-dependency-path: shadowassist-electron/ShadowAssist/landing/package-lock.json
+          cache-dependency-path: landing/package-lock.json
 
       - name: Build landing (Vite)
         run: npm ci && npm run build
-        working-directory: shadowassist-electron/ShadowAssist/landing
+        working-directory: landing
         env:
           VITE_BASE_PATH: '/${{ github.event.repository.name }}/'
           VITE_REPO_OWNER: ${{ github.repository_owner }}
           VITE_REPO_NAME: ${{ github.event.repository.name }}
           VITE_ROLLING_TAG: latest-stag
+          VITE_SITE_ORIGIN: https://veilassist.vercel.app
 
       - uses: actions/configure-pages@v4
 
       - uses: actions/upload-pages-artifact@v3
         with:
-          path: shadowassist-electron/ShadowAssist/landing/dist
+          path: landing/dist
 
       - id: deployment
         uses: actions/deploy-pages@v4

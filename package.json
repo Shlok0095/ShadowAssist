@@ -1,0 +1,155 @@
+{
+  "name": "veilassist",
+  "version": "1.0.1",
+  "description": "Undetectable AI for live meetings — discreet on-screen meeting assistant",
+  "author": "VeilAssist",
+  "license": "UNLICENSED",
+  "private": true,
+  "engines": {
+    "node": ">=20"
+  },
+  "main": "main/index.js",
+  "scripts": {
+    "prebuild": "node scripts/sync-brand-assets.mjs",
+    "postinstall": "electron-builder install-app-deps",
+    "build": "vite build",
+    "build:web": "npm --prefix landing run build",
+    "build:all": "npm run build && npm run build:web",
+    "start": "npm run build && node ./node_modules/electron/cli.js .",
+    "start:desktop": "npm run start",
+    "dev": "npm run build && node ./node_modules/electron/cli.js . --enable-logging",
+    "dev:desktop": "npm run dev",
+    "dev:web": "npm --prefix landing run dev",
+    "kill-electron": "taskkill /F /IM electron.exe /T 2>nul || exit 0",
+    "kill-veilassist": "taskkill /F /IM VeilAssist.exe /T 2>nul || exit 0",
+    "start:force": "npm run kill-electron && npm run start",
+    "dist": "node scripts/make-win-ico.cjs && npm run build && node scripts/run-electron-builder.cjs --win portable",
+    "dist:release": "node scripts/make-win-ico.cjs && npm run build && node scripts/run-electron-builder.cjs --win portable nsis",
+    "build:win": "node scripts/inject-oauth.cjs && npm run dist:release",
+    "dist:dir": "node scripts/make-win-ico.cjs && npm run build && node scripts/run-electron-builder.cjs --win dir",
+    "dist:checksums": "node scripts/sha256-dist.cjs",
+    "open:portable": "start \"\" \"dist\\VeilAssist.exe\"",
+    "open:unpacked": "start \"\" \"dist\\win-unpacked\\VeilAssist.exe\"",
+    "test:local-stt": "node scripts/test-local-stt.mjs",
+    "test:overlay-mouse": "node scripts/test-overlay-mouse-capture.mjs",
+    "test:conversation-memory": "node --test scripts/test-conversation-memory.cjs",
+    "test:persistent-memory": "electron scripts/test-persistent-memory.cjs",
+    "test:nvidia-streaming-stt": "node --test scripts/test-nvidia-streaming-stt.cjs",
+    "test:transcript-lifecycle": "node --test scripts/test-transcript-lifecycle.cjs",
+    "test:chat-fallback": "node --test scripts/test-chat-stream-fallback.cjs",
+    "test:ask-context": "node --test scripts/test-ask-context-priority.cjs",
+    "test:ci": "node scripts/run-ci-tests.mjs",
+    "test:web": "npm --prefix landing run typecheck",
+    "test": "npm run test:ci && npm run test:web",
+    "test:electron-sqlite": "electron scripts/test-electron-sqlite.cjs",
+    "verify": "npm run test && npm run test:persistent-memory && npm run test:electron-sqlite && npm run build:all",
+    "package:windows": "npm run build:win"
+  },
+  "build": {
+    "appId": "com.local.veilassist.v2",
+    "productName": "VeilAssist",
+    "publish": {
+      "provider": "github",
+      "owner": "Shlok0095",
+      "repo": "VeilAssist",
+      "releaseType": "release"
+    },
+    "forceCodeSigning": false,
+    "files": [
+      "main/**/*",
+      "lib/**/*",
+      "out/**/*",
+      "docs/user-guide/**/*",
+      "preload.js",
+      "preload-meeting-toast.cjs",
+      "HOW_IT_WORKS.md",
+      "logo.png",
+      "overlaylogo.png",
+      "package.json",
+      "!**/*.map",
+      "!**/*.test.*"
+    ],
+    "asarUnpack": [
+      "lib/meetingScanMeet.ps1",
+      "lib/localStt/inferenceWorker.mjs",
+      "**/*.node",
+      "node_modules/sqlite-vec*/**",
+      "node_modules/onnxruntime-node/**"
+    ],
+    "icon": "logo.png",
+    "directories": {
+      "output": "dist"
+    },
+    "extraResources": [
+      {
+        "from": "build/app.ico",
+        "to": "app.ico"
+      },
+      {
+        "from": "logo.png",
+        "to": "logo.png"
+      },
+      {
+        "from": "legal",
+        "to": "legal"
+      },
+      {
+        "from": "build/update-channel.txt",
+        "to": "update-channel.txt"
+      }
+    ],
+    "win": {
+      "icon": "build/app.ico",
+      "executableName": "VeilAssist",
+      "publisherName": "VeilAssist",
+      "target": "portable",
+      "sign": null
+    },
+    "portable": {
+      "artifactName": "VeilAssist.exe"
+    },
+    "nsis": {
+      "oneClick": true,
+      "perMachine": false,
+      "allowElevation": true,
+      "runAfterFinish": true,
+      "createDesktopShortcut": true,
+      "createStartMenuShortcut": true,
+      "shortcutName": "VeilAssist",
+      "include": "scripts/nsis/installer.nsh",
+      "artifactName": "VeilAssist-Setup-${version}.${ext}"
+    }
+  },
+  "devDependencies": {
+    "@vitejs/plugin-react": "^4.2.1",
+    "autoprefixer": "^10.4.16",
+    "electron": "34.3.0",
+    "electron-builder": "^24.9.1",
+    "png-to-ico": "^2.1.8",
+    "postcss": "^8.4.32",
+    "sharp": "^0.33.5",
+    "tailwindcss": "^3.4.0",
+    "vite": "^5.0.0"
+  },
+  "dependencies": {
+    "@anthropic-ai/sdk": "^0.39.0",
+    "@fontsource/jetbrains-mono": "^5.2.5",
+    "@fontsource/outfit": "^5.2.5",
+    "@fontsource/syne": "^5.2.5",
+    "@grpc/grpc-js": "^1.14.4",
+    "@grpc/proto-loader": "^0.7.15",
+    "@huggingface/transformers": "^3.8.1",
+    "@vectorize-io/hindsight-client": "^0.8.4",
+    "better-sqlite3": "^12.11.1",
+    "electron-store": "^8.1.0",
+    "electron-updater": "^6.8.3",
+    "highlight.js": "^11.11.1",
+    "lucide-react": "^0.525.0",
+    "openai": "^4.20.0",
+    "pdf-parse": "^1.1.1",
+    "react": "^18.2.0",
+    "react-dom": "^18.2.0",
+    "react-qr-code": "^2.2.0",
+    "sqlite-vec": "^0.1.9"
+  }
+}
