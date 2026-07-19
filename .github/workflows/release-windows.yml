@@ -49,7 +49,11 @@ jobs:
             echo "CHANNEL=latest-stag" >> "$GITHUB_OUTPUT"
           fi
 
-      - run: npm ci
+      - name: Install dependencies without Node-native build scripts
+        run: npm ci --ignore-scripts
+
+      - name: Rebuild native dependencies for Electron
+        run: npx electron-builder install-app-deps
 
       - name: Write auto-update channel file
         run: node scripts/write-update-channel.cjs ${{ steps.tag.outputs.CHANNEL }}
