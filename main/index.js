@@ -1593,7 +1593,11 @@ const CONTEXT_ROUTING_RULES = `
 - If QUESTION, AUDIO, or TRANSCRIPT contains a clear request, answer it directly. Never use the unclear-context fallback.
 - If the screenshot shows this assistant's own overlay with a prior answer, do not repeat it — focus on new screen content.`
 
-async function buildProfileContextBlock({ query = '', routeDecision = null } = {}) {
+async function buildProfileContextBlock({
+  query = '',
+  routeDecision = null,
+  skipAsyncReferenceRetrieval = false,
+} = {}) {
   const cacheKey = profileContextCacheKey(query, routeDecision)
   const cached = profileContextCache.get(cacheKey)
   if (typeof cached === 'string') return cached
@@ -1615,7 +1619,11 @@ async function buildProfileContextBlock({ query = '', routeDecision = null } = {
 
     let referenceBlock = ''
     if (useAll || routeDecision.useReferenceFiles) {
-      if (activePrompt && contextVectorStore.referenceNeedsRetrieval(activePrompt)) {
+      if (
+        activePrompt &&
+        !skipAsyncReferenceRetrieval &&
+        contextVectorStore.referenceNeedsRetrieval(activePrompt)
+      ) {
         const chunks = await contextVectorStore.retrieveChunksAsync(
           activePrompt.id,
           q,
@@ -1753,46 +1761,6 @@ async function handleAskAI(userQuestion, audioTranscript, _askMeta = {}) {
 
   sendToAiEventTarget('ai-thinking', true)
   sessionMemory.touch()
-
-  // noScreen: true = Natively's Ctrl+Shift+Enter (audio/text only — skip all screenshot capture)
-  const noScreen = !!_askMeta?.noScreen
-  const wantVision = !noScreen && providers.supportsVision(provider)
-  let visionB64 = null
-
-  if (wantVision) {
-    try {
-      // Hotkey pre-capture (taken at Ctrl+Enter instant) beats any later async capture.
-      if (pendingAskVisionB64) {
-        visionB64 = pendingAskVisionB64
-        pendingAskVisionB64 = null
-        console.log('[vision] hotkey pre-capture, b64 len:', visionB64?.length)
-      } else {
-        visionB64 = await screenCapture.captureScreenForVision({
-          bypassCaptureCooldown: !!_askMeta?.bypassCaptureCooldown,
-        })
-        console.log('[vision] live capture, b64 len:', visionB64?.length ?? 'null')
-      }
-    } catch (e) {
-      pendingAskVisionB64 = null
-      console.warn('[vision] capture failed:', e?.message || e)
-    }
-  }
-  captureFinishedAt = Date.now()
-
-  let phoneVisionB64 = null
-  if (
-    wantVision
-    && store.get('phoneMirrorIncludeInAsk') === true
-    && phoneMirror.isMirroring()
-  ) {
-    try {
-      phoneVisionB64 = await phoneMirror.captureScreenshotBase64()
-      if (phoneVisionB64) console.log('[phone-mirror] screencap for Ask, b64 len:', phoneVisionB64.length)
-    } catch (e) {
-      console.warn('[phone-mirror] screencap failed:', e?.message || e)
-    }
-  }
-
   const sp = store.get('systemPrompt')
   const systemPrompt = resolveSystemPrompt(sp)
   const isScreenMode = _askMeta?.mode === 'screen' || _askMeta?.assistTrigger === 'screen'
@@ -1862,11 +1830,61 @@ async function handleAskAI(userQuestion, audioTranscript, _askMeta = {}) {
     hasLiveTranscript: !!String(audioCombined).trim(),
   })
 
-  const profileBlock = await buildProfileContextBlock({
-    query: currentQuestion || retrievalQuery,
+  const profileQuery = currentQuestion || retrievalQuery
+  const skipAsyncReferenceRetrieval = isScreenMode && !String(profileQuery).trim()
+
+  // noScreen: true = Natively's Ctrl+Shift+Enter (audio/text only — skip all screenshot capture)
+  const noScreen = !!_askMeta?.noScreen
+  const wantVision = !noScreen && providers.supportsVision(provider)
+  let visionB64 = null
+
+  const capturePromise = (async () => {
+    if (!wantVision) return null
+    try {
+      // Hotkey pre-capture (taken at Ctrl+Enter instant) beats any later async capture.
+      if (pendingAskVisionB64) {
+        const b64 = pendingAskVisionB64
+        pendingAskVisionB64 = null
+        console.log('[vision] hotkey pre-capture, b64 len:', b64?.length)
+        return b64
+      }
+      const b64 = await screenCapture.captureScreenForVision({
+        bypassCaptureCooldown: !!_askMeta?.bypassCaptureCooldown,
+      })
+      console.log('[vision] live capture, b64 len:', b64?.length ?? 'null')
+      return b64
+    } catch (e) {
+      pendingAskVisionB64 = null
+      console.warn('[vision] capture failed:', e?.message || e)
+      return null
+    }
+  })()
+
+  const profileBlockPromise = buildProfileContextBlock({
+    query: profileQuery,
     routeDecision,
+    skipAsyncReferenceRetrieval,
   })
-  contextFinishedAt = Date.now()
+
+  const [capturedVisionB64, profileBlock] = await Promise.all([capturePromise, profileBlockPromise])
+  visionB64 = capturedVisionB64
+  captureFinishedAt = Date.now()
+  contextFinishedAt = captureFinishedAt
+
+  let phoneVisionB64 = null
+  if (
+    wantVision
+    && store.get('phoneMirrorIncludeInAsk') === true
+    && phoneMirror.isMirroring()
+  ) {
+    try {
+      phoneVisionB64 = await phoneMirror.captureScreenshotBase64()
+      if (phoneVisionB64) console.log('[phone-mirror] screencap for Ask, b64 len:', phoneVisionB64.length)
+    } catch (e) {
+      console.warn('[phone-mirror] screencap failed:', e?.message || e)
+    }
+  }
+
   const effectiveAnswerContract =
     followUp?.kind === 'coding' ? 'coding_answer' : routeDecision?.answerContract
   const contractBlock = effectiveAnswerContract ? formatAnswerContractBlock(effectiveAnswerContract) : ''
@@ -2071,7 +2089,7 @@ async function handleAskAI(userQuestion, audioTranscript, _askMeta = {}) {
         signal: abortController.signal,
         userQuestion: userQ || retrievalQuery,
         fallback,
-        firstTokenTimeoutMs: 5000,
+        firstTokenTimeoutMs: 3500,
         onAttempt: (metadata) => {
           activeStreamProvider = metadata.provider
           if (metadata.fallbackUsed) {
