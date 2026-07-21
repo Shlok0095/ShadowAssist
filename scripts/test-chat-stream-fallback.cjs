@@ -157,6 +157,14 @@ test('NVIDIA Nemotron receives explicit no-think control', () => {
   )
   assert.match(controlled[0].content, /^\/no_think\n/)
   assert.equal(original[0].content, 'Answer directly.')
+
+  const primary = applyProviderReasoningControls(
+    [{ role: 'user', content: 'Hi' }],
+    'https://integrate.api.nvidia.com/v1',
+    'nvidia/llama-3.1-nemotron-nano-vl-8b-v1',
+  )
+  assert.equal(primary[0].role, 'system')
+  assert.match(primary[0].content, /^\/no_think/)
 })
 
 test('recent eligible primary failure opens a short circuit', async () => {
@@ -176,4 +184,32 @@ test('recent eligible primary failure opens a short circuit', async () => {
   await collect(runStreamingFallback({ primary, fallback }))
   assert.equal(primaryCalls, 1)
   assert.equal(fallbackCalls, 2)
+})
+
+test('ordered same-provider fallbacks try the next multimodal model', async () => {
+  const calls = []
+  const primary = attempt('nvidia', async function* () {
+    calls.push('primary')
+    const error = new Error('rate limited')
+    error.status = 429
+    throw error
+  }, 'nvidia/llama-3.1-nemotron-nano-vl-8b-v1')
+  const fb1 = attempt('nvidia', async function* () {
+    calls.push('fb1')
+    const error = new Error('unavailable')
+    error.status = 503
+    throw error
+  }, 'mistralai/mistral-small-4-119b-2603')
+  const fb2 = attempt('nvidia', async function* () {
+    calls.push('fb2')
+    yield 'screen-ok'
+  }, 'nvidia/nemotron-nano-12b-v2-vl')
+  const result = await collect(runStreamingFallback({
+    primary,
+    fallbacks: [fb1, fb2],
+  }))
+  assert.deepEqual(calls, ['primary', 'fb1', 'fb2'])
+  assert.deepEqual(result.tokens, ['screen-ok'])
+  assert.equal(result.metadata.model, 'nvidia/nemotron-nano-12b-v2-vl')
+  assert.equal(result.metadata.fallbackUsed, true)
 })

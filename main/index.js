@@ -1750,7 +1750,7 @@ async function handleAskAI(userQuestion, audioTranscript, _askMeta = {}) {
   currentAbortController = abortController
   aiEventTarget = _askMeta?.source === 'global_chat' ? 'global_chat' : 'overlay'
 
-  const provider = store.get('provider') || 'groq'
+  const provider = store.get('provider') || 'nvidia'
   const keyField = providers.getApiKeyField(provider)
   const apiKey = store.get(keyField)
   if (!apiKey) {
@@ -2049,30 +2049,30 @@ async function handleAskAI(userQuestion, audioTranscript, _askMeta = {}) {
         ? answerStyle === 'detailed' ? 2400 : 1800
         : answerStyle === 'detailed' ? 2200 : 1200
     const isFastVisionModel =
-      (provider === 'groq' && model === 'qwen/qwen3.6-27b') ||
-      (provider === 'nvidia' && isMultimodalChatModel('nvidia', model))
+      (provider === 'nvidia' && isMultimodalChatModel('nvidia', model)) ||
+      (provider === 'groq' && model === 'qwen/qwen3.6-27b')
     const maxTokens =
       isFastVisionModel
         ? qwenOutputTokens
         : 8192
-    const nvidiaKey = provider === 'groq'
-      ? String(store.get(providers.getApiKeyField('nvidia')) || '').trim()
-      : ''
-    const nvidiaModel = nvidiaKey
-      ? providers.getModelForProvider('nvidia', getStore)
-      : ''
-    const fallback =
-      provider === 'groq' &&
-      nvidiaKey &&
-      nvidiaModel &&
-      isMultimodalChatModel('nvidia', nvidiaModel)
-        ? {
-            provider: 'nvidia',
-            apiKey: nvidiaKey,
-            model: nvidiaModel,
-            maxTokens: qwenOutputTokens,
-          }
-        : null
+    // Same-provider NVIDIA multimodal chain (bench-ranked). Chat no longer depends on Groq.
+    const NVIDIA_FALLBACK_MODELS = [
+      'mistralai/mistral-small-4-119b-2603',
+      'nvidia/nemotron-nano-12b-v2-vl',
+      'meta/llama-3.2-11b-vision-instruct',
+    ]
+    const nvidiaKey = String(store.get(providers.getApiKeyField('nvidia')) || '').trim()
+    const fallbacks =
+      provider === 'nvidia' && nvidiaKey
+        ? NVIDIA_FALLBACK_MODELS
+            .filter((id) => id !== model && isMultimodalChatModel('nvidia', id))
+            .map((id) => ({
+              provider: 'nvidia',
+              apiKey: nvidiaKey,
+              model: id,
+              maxTokens: qwenOutputTokens,
+            }))
+        : []
     let activeStreamProvider = provider
     let streamFinishMeta = null
     const requestStartedAt = Date.now()
@@ -2088,7 +2088,7 @@ async function handleAskAI(userQuestion, audioTranscript, _askMeta = {}) {
         maxTokens,
         signal: abortController.signal,
         userQuestion: userQ || retrievalQuery,
-        fallback,
+        fallbacks,
         firstTokenTimeoutMs: 3500,
         onAttempt: (metadata) => {
           activeStreamProvider = metadata.provider
@@ -3007,7 +3007,7 @@ function setupIPC() {
   ipcMain.handle('get-desktop-source-id', () => screenCapture.getDesktopSourceId())
   /** Returns true when the current provider+model supports direct image (vision) input. */
   ipcMain.handle('provider:has-vision', () => {
-    const prov = store.get('provider') || 'groq'
+    const prov = store.get('provider') || 'nvidia'
     return providers.supportsVision(prov)
   })
   // ── Screenshot queue IPC (Natively-style on-demand capture) ──────────────

@@ -9,9 +9,8 @@ import AppWindowFrame from '../shared/AppWindowFrame'
 const ipc = createIpcShim()
 
 const PROVIDERS = [
-  { id: 'groq', label: 'Groq', badge: 'FAST', color: '#3b82f6', desc: 'Llama 3.3 70B — low latency', placeholder: 'gsk_...', link: 'https://console.groq.com/keys' },
+  { id: 'nvidia', label: 'NVIDIA NIM', badge: 'NIM', color: '#a78bfa', desc: 'Nemotron VL — screen + transcript', placeholder: 'nvapi-...', link: 'https://build.nvidia.com/' },
   { id: 'openai', label: 'OpenAI', badge: 'GPT-4o', color: '#0ea5e9', desc: 'Vision & screenshots', placeholder: 'sk-...', link: 'https://platform.openai.com/api-keys' },
-  { id: 'nvidia', label: 'NVIDIA NIM', badge: 'NIM', color: '#a78bfa', desc: 'Llama, Qwen, Nemotron', placeholder: 'nvapi-...', link: 'https://build.nvidia.com/' },
 ]
 
 const BYOK_CHECKS = [
@@ -33,7 +32,7 @@ export default function Onboarding() {
     ipc.invoke('get-store', 'uiAccentTheme').then((id) => applyUiAccentTheme(document.documentElement, normalizeUiAccentId(id)))
   }, [])
 
-  const [provider, setProvider] = useState('groq')
+  const [provider, setProvider] = useState('nvidia')
   const [apiKey, setApiKey] = useState('')
   const [testResult, setTestResult] = useState(null)
   const [testing, setTesting] = useState(false)

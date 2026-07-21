@@ -3,15 +3,10 @@
     "qwen/qwen3.6-27b"
   ],
   "nvidia": [
-    "nvidia/nemotron-nano-12b-v2-vl",
     "nvidia/llama-3.1-nemotron-nano-vl-8b-v1",
-    "nvidia/cosmos-nemotron-34b",
-    "meta/llama-4-scout-17b-16e-instruct",
-    "meta/llama-4-maverick-17b-128e-instruct",
-    "meta/llama-3.2-11b-vision-instruct",
-    "meta/llama-3.2-90b-vision-instruct",
-    "microsoft/phi-3.5-vision-instruct",
-    "moonshotai/kimi-k2.5"
+    "mistralai/mistral-small-4-119b-2603",
+    "nvidia/nemotron-nano-12b-v2-vl",
+    "meta/llama-3.2-11b-vision-instruct"
   ],
   "openai": [
     "gpt-4o",

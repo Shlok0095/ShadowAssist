@@ -2,7 +2,7 @@
 // Unauthorized copying or distribution is prohibited.
 
 import React, { memo } from 'react'
-import { Mic, Settings, Square } from 'lucide-react'
+import { Settings } from 'lucide-react'
 import overlayBrandLogo from '../../shared/overlayBrandLogo'
 import AppIcon from '../../shared/AppIcon'
 
@@ -35,22 +35,26 @@ function StatusBar({ sessionOn, ocrStatus, onToggleSession, onOpenSettings, onQu
         )}
       </div>
 
-      <div className="flex shrink-0 items-center gap-1" style={{ WebkitAppRegion: 'no-drag' }}>
+      <div className="flex shrink-0 items-center gap-1.5" style={{ WebkitAppRegion: 'no-drag' }}>
         <button
           type="button"
+          role="switch"
+          aria-checked={sessionOn}
           onClick={(e) => {
             e.stopPropagation()
             onToggleSession()
           }}
-          title={sessionOn ? 'Stop listening' : 'Start listening'}
-          aria-label={sessionOn ? 'Stop listening' : 'Start listening'}
-          className="crystal-session-btn cursor-default flex h-8 w-8 shrink-0 items-center justify-center transition-opacity duration-150 hover:opacity-80 active:scale-95"
+          title={sessionOn ? 'Listening on — tap to stop' : 'Listening off — tap to start'}
+          aria-label={sessionOn ? 'Listening on' : 'Listening off'}
+          className="crystal-listen-switch cursor-default shrink-0"
         >
-          {sessionOn ? (
-            <Square size={16} fill="#ef4444" stroke="none" aria-hidden className="shrink-0" />
-          ) : (
-            <AppIcon icon={Mic} size={18} strokeWidth={2} className="text-red-500" />
-          )}
+          <span className="crystal-listen-switch-knob" aria-hidden>
+            {sessionOn ? (
+              <span className="crystal-listen-switch-stop" />
+            ) : (
+              <span className="crystal-listen-switch-play" />
+            )}
+          </span>
         </button>
 
         <button

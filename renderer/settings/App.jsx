@@ -66,7 +66,7 @@ export default function Settings() {
   const [providerMeta, setProviderMeta] = useState([])
   const [sttProviderMeta, setSttProviderMeta] = useState([])
   const [snap, setSnap] = useState(null)
-  const [provider, setProvider] = useState('groq')
+  const [provider, setProvider] = useState('nvidia')
   const [sttProvider, setSttProvider] = useState('groq')
   const [secretByProvider, setSecretByProvider] = useState({})
   const [sttSecretInput, setSttSecretInput] = useState('')
@@ -257,9 +257,9 @@ export default function Settings() {
         setSnap(s)
         setProviderMeta(meta || [])
         setSttProviderMeta(sttMeta || [])
-        const chatProv = s.provider || 'groq'
+        const chatProv = s.provider || 'nvidia'
         setProvider(chatProv)
-        setSttProvider(s.sttProvider || s.provider || 'groq')
+        setSttProvider(s.sttProvider || 'groq')
         setHasCompletedOnboarding(!!s.hasCompletedOnboarding)
         setAudioEnabled(s.audioEnabled !== false)
         setMicSensitivity(s.micSensitivity === 'boost' ? 'boost' : 'standard')
