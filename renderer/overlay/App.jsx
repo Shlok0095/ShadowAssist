@@ -29,7 +29,6 @@ import {
   watchMediaStream,
 } from '../shared/audioCaptureRecovery'
 import { parseTranscriptEchoForDisplay } from '../shared/formatTranscriptEcho'
-import { SpeakerTranscriptText } from '../shared/SpeakerTranscriptText'
 
 const ipc = createIpcShim()
 /** Inner status row height (px) — matches StatusBar `h-10` */
@@ -41,14 +40,58 @@ const PILL_H = NOTCH_INNER_H + NOTCH_BORDER_H
 /** Fixed notch width (CSS) — overlay window width stays at panel width always */
 const NOTCH_W = 252
 
-function formatPanelTranscriptLine(segments) {
-  const last = segments?.[segments.length - 1]
-  if (!last?.text) return ''
-  const who = last.speaker === 'me' ? 'Me' : 'Participant'
-  const text = String(last.text).trim()
-  const shown = text.length > 140 ? `…${text.slice(-138)}` : text
-  return `${who}: ${shown}`
+const CAPTION_BAR_MAX_CHARS = 140
+
+/** Display-only: split last final + interim for caption bar (no STT side effects). */
+function formatPanelCaptionDisplay(segments, micFallback = '') {
+  const list = Array.isArray(segments) ? segments : []
+  const last = list.length ? list[list.length - 1] : null
+  if (!last?.text && !String(micFallback || '').trim()) return null
+
+  const speaker = last?.speaker === 'other' || last?.speaker === 'participant' ? 'other' : 'me'
+  const label = speaker === 'me' ? 'Me' : 'Them'
+  const channel =
+    last?.channel || (speaker === 'other' ? 'sys' : 'mic')
+
+  let interimText = ''
+  let finalText = ''
+
+  if (last?.interim) {
+    interimText = String(last.text || '').trim()
+    for (let i = list.length - 2; i >= 0; i -= 1) {
+      const seg = list[i]
+      if (!seg?.interim && (seg.channel === channel || seg.speaker === last.speaker)) {
+        finalText = String(seg.text || '').trim()
+        break
+      }
+    }
+  } else if (last?.text) {
+    finalText = String(last.text || '').trim()
+  } else {
+    finalText = String(micFallback || '').trim()
+  }
+
+  const combined = [finalText, interimText].filter(Boolean).join(' ').trim()
+  if (!combined) return null
+
+  // Tail window for the bar only — prefer showing the live end of speech.
+  let f = finalText
+  let i = interimText
+  const total = (f ? f.length + (i ? 1 : 0) : 0) + i.length
+  if (total > CAPTION_BAR_MAX_CHARS) {
+    const budget = CAPTION_BAR_MAX_CHARS
+    if (i.length >= budget) {
+      f = ''
+      i = `…${i.slice(-(budget - 1))}`
+    } else {
+      const keepFinal = Math.max(0, budget - i.length - (i ? 1 : 0))
+      if (f.length > keepFinal) f = keepFinal > 1 ? `…${f.slice(-(keepFinal - 1))}` : ''
+    }
+  }
+
+  return { speaker, label, finalText: f, interimText: i }
 }
+
 const STACK_GAP = 10
 /** Collapsed overlay window height (pill + 1px slack so bottom radius isn't clipped) */
 const COLLAPSED_H = PILL_H + 1
@@ -2523,7 +2566,6 @@ export default function App() {
                     }}
                   >
                     <span className="truncate">{activeContextModeName}</span>
-                    <span className="crystal-mode-chevron" aria-hidden>⌄</span>
                   </button>
                   {modeMenuOpen ? (
                     <div className="crystal-mode-menu" role="menu">
@@ -2546,51 +2588,69 @@ export default function App() {
                     </div>
                   ) : null}
                 </div>
-                <div className="crystal-transcript-bar min-w-0 flex-1">
+                <div className="crystal-transcript-bar min-w-0 flex-1" aria-live="polite">
                   {(() => {
                     if (!sessionOn) {
                       return (
-                        <div className="crystal-transcript-idle truncate">
-                          <span className="crystal-transcript-idle-mark" aria-hidden />
-                          <span>Start Listen to capture meeting audio</span>
+                        <div className="crystal-caption-idle">
+                          <span className="crystal-caption-idle-dot" aria-hidden />
+                          <span>Listening off</span>
                         </div>
                       )
                     }
-                    const line =
-                      formatPanelTranscriptLine(liveTranscriptSegments) ||
-                      (micTranscript.trim()
-                        ? `Me: ${micTranscript.trim().length > 140 ? `…${micTranscript.trim().slice(-138)}` : micTranscript.trim()}`
-                        : '')
-                    if (line) {
+                    const caption = formatPanelCaptionDisplay(
+                      liveTranscriptSegments,
+                      micTranscript.trim(),
+                    )
+                    if (caption) {
                       return (
-                        <p className="crystal-transcript-live truncate">
-                          <SpeakerTranscriptText line={line} bodyClassName="crystal-transcript-live-body" />
-                        </p>
+                        <div className="crystal-caption-row">
+                          <span
+                            className={
+                              caption.speaker === 'me'
+                                ? 'crystal-caption-chip crystal-caption-chip-me'
+                                : 'crystal-caption-chip crystal-caption-chip-them'
+                            }
+                          >
+                            {caption.label}
+                          </span>
+                          <div className="crystal-caption-text">
+                            {caption.finalText ? (
+                              <span className="crystal-caption-final">{caption.finalText}</span>
+                            ) : null}
+                            {caption.interimText ? (
+                              <span className="crystal-caption-interim">
+                                {caption.finalText ? ' ' : ''}
+                                {caption.interimText}
+                              </span>
+                            ) : null}
+                          </div>
+                        </div>
                       )
                     }
                     if (sttLivePhase === 'transcribing') {
                       return (
-                        <div className="crystal-transcript-listening truncate">
-                          <span className="crystal-listening-dot" aria-hidden />
-                          <span className="crystal-listening-label">Transcribing</span>
-                          <span className="crystal-listening-sub">processing speech</span>
+                        <div className="crystal-caption-phase">
+                          <span className="crystal-caption-phase-dot" aria-hidden />
+                          <span className="crystal-caption-phase-label">Captions</span>
+                          <span className="crystal-caption-phase-sub">updating…</span>
                         </div>
                       )
                     }
                     if (sttLivePhase === 'speech') {
                       return (
-                        <div className="crystal-transcript-listening truncate">
-                          <span className="crystal-listening-dot" aria-hidden />
-                          <span className="crystal-listening-label">Speaking</span>
-                          <span className="crystal-listening-sub">capturing audio</span>
+                        <div className="crystal-caption-phase">
+                          <span className="crystal-caption-phase-dot" aria-hidden />
+                          <span className="crystal-caption-phase-label">Hearing</span>
+                          <span className="crystal-caption-phase-sub">speech</span>
                         </div>
                       )
                     }
                     return (
-                      <div className="crystal-transcript-listening truncate">
-                        <span className="crystal-listening-dot" aria-hidden />
-                        <span className="crystal-listening-label">Listening</span>
-                        <span className="crystal-listening-sub">waiting for speech</span>
+                      <div className="crystal-caption-phase">
+                        <span className="crystal-caption-phase-dot" aria-hidden />
+                        <span className="crystal-caption-phase-label">Listening</span>
+                        <span className="crystal-caption-phase-sub">ready</span>
                       </div>
                     )
                   })()}

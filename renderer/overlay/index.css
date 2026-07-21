@@ -191,21 +191,131 @@ html, body {
 .crystal-transcript-bar {
   display: flex;
   align-items: center;
+  height: 40px;
   min-height: 40px;
-  padding: 0 14px;
+  max-height: 40px;
+  padding: 0 10px 0 8px;
   border-radius: 9999px;
-  border: 1px solid var(--glass-border);
-  border-top-color: var(--glass-border-top);
-  border-left-color: var(--glass-border-left);
+  border: 1px solid rgba(255, 255, 255, 0.10);
+  border-top-color: rgba(255, 255, 255, 0.16);
   background:
-    var(--glass-cap),
-    var(--glass-sheen),
-    rgba(0, 0, 0, 0.42);
+    linear-gradient(180deg, rgba(255, 255, 255, 0.06) 0%, transparent 55%),
+    rgba(8, 8, 12, 0.55);
   box-shadow:
-    inset 0 1px 0 rgba(255, 255, 255, 0.20),
-    inset 0 0 0 1px rgba(255, 255, 255, 0.05);
+    inset 0 1px 0 rgba(255, 255, 255, 0.10),
+    inset 0 -1px 0 rgba(0, 0, 0, 0.35);
+  overflow: hidden;
 }
 
+.crystal-caption-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+  width: 100%;
+}
+
+.crystal-caption-chip {
+  flex-shrink: 0;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  height: 20px;
+  padding: 0 8px;
+  border-radius: 9999px;
+  font-size: 10px;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  line-height: 1;
+  border: 1px solid rgba(255, 255, 255, 0.12);
+}
+
+.crystal-caption-chip-me {
+  color: rgb(var(--accent-light-rgb) / 0.95);
+  background: rgb(var(--accent-rgb) / 0.16);
+  border-color: rgb(var(--accent-rgb) / 0.28);
+}
+
+.crystal-caption-chip-them {
+  color: rgba(255, 255, 255, 0.78);
+  background: rgba(255, 255, 255, 0.08);
+  border-color: rgba(255, 255, 255, 0.14);
+}
+
+.crystal-caption-text {
+  position: relative;
+  min-width: 0;
+  flex: 1;
+  overflow: hidden;
+  white-space: nowrap;
+  font-size: 12.5px;
+  font-weight: 500;
+  line-height: 1.35;
+  letter-spacing: 0.01em;
+  mask-image: linear-gradient(90deg, #000 0%, #000 calc(100% - 18px), transparent 100%);
+  -webkit-mask-image: linear-gradient(90deg, #000 0%, #000 calc(100% - 18px), transparent 100%);
+}
+
+.crystal-caption-final {
+  color: rgba(255, 255, 255, 0.88);
+  transition: opacity 0.12s ease;
+}
+
+.crystal-caption-interim {
+  color: rgba(255, 255, 255, 0.48);
+  font-weight: 500;
+  letter-spacing: 0.015em;
+  transition: opacity 0.12s ease;
+}
+
+.crystal-caption-idle,
+.crystal-caption-phase {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+  width: 100%;
+  font-size: 11.5px;
+  font-weight: 500;
+  color: rgba(255, 255, 255, 0.45);
+  letter-spacing: 0.02em;
+}
+
+.crystal-caption-idle-dot,
+.crystal-caption-phase-dot {
+  width: 6px;
+  height: 6px;
+  flex-shrink: 0;
+  border-radius: 9999px;
+  background: rgba(255, 255, 255, 0.28);
+}
+
+.crystal-caption-phase-dot {
+  background: rgb(var(--accent-rgb) / 0.75);
+  box-shadow: 0 0 8px rgb(var(--accent-rgb) / 0.35);
+  animation: crystalListeningPulse 1.6s ease-in-out infinite;
+}
+
+.crystal-caption-phase-label {
+  flex-shrink: 0;
+  font-size: 11.5px;
+  font-weight: 600;
+  color: rgba(255, 255, 255, 0.72);
+  letter-spacing: 0.03em;
+}
+
+.crystal-caption-phase-sub {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 11px;
+  font-weight: 500;
+  color: rgba(255, 255, 255, 0.38);
+}
+
+/* Legacy speaker colors — still used in answer-panel transcript echoes */
 .crystal-transcript-live {
   color: #ffffff;
   font-size: 13px;
@@ -304,7 +414,10 @@ html, body {
 }
 
 @media (prefers-reduced-motion: reduce) {
-  .crystal-listening-dot { animation: none !important; }
+  .crystal-listening-dot,
+  .crystal-caption-phase-dot { animation: none !important; }
+  .crystal-caption-final,
+  .crystal-caption-interim { transition: none !important; }
 }
 
 .crystal-send-btn {
@@ -670,7 +783,6 @@ html, body {
   height: 100%;
   align-items: center;
   justify-content: center;
-  gap: 5px;
   cursor: pointer;
   border: 0;
   outline: 0;
@@ -682,13 +794,6 @@ html, body {
 
 .crystal-mode-picker-trigger:disabled {
   cursor: default;
-}
-
-.crystal-mode-chevron {
-  flex: none;
-  color: rgba(255, 255, 255, 0.58);
-  font-size: 11px;
-  transform: translateY(-1px);
 }
 
 .crystal-mode-menu {
