@@ -4,6 +4,7 @@ const fs = require('node:fs')
 const path = require('node:path')
 
 const { resolveAskContextPriority } = require('../lib/askContextPriority.cjs')
+const { buildPreparedTranscriptContext } = require('../lib/transcriptCleaner.cjs')
 const {
   extractStructuredActiveQuestion,
   formatSegmentsForPrompt,
@@ -114,6 +115,20 @@ test('ordinary logo and web-development code requests use the coding contract', 
     assert.equal(route.plan.answerType, 'coding_question_answer', question)
     assert.equal(route.answerContract, 'coding_answer', question)
   }
+})
+
+test('Natively labeled transcript extracts the latest interviewer question', () => {
+  const now = Date.now()
+  const prepared = buildPreparedTranscriptContext([
+    { speaker: 'other', text: 'Can you explain the Transformer architecture?', capturedAt: now - 2000, interim: false },
+    { speaker: 'me', text: 'Sure, let me think', capturedAt: now - 1000, interim: false },
+    { speaker: 'other', text: 'We need to finish this by Friday.', capturedAt: now - 500, interim: false },
+  ])
+  assert.match(prepared, /\[INTERVIEWER\]: we need to finish this by friday\./)
+  assert.equal(
+    extractStructuredActiveQuestion(prepared),
+    'we need to finish this by friday.',
+  )
 })
 
 test('latest meaningful question ignores punctuation, greeting, and acknowledgement noise', () => {

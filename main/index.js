@@ -1772,7 +1772,7 @@ async function handleAskAI(userQuestion, audioTranscript, _askMeta = {}) {
 
   let audioCombined = overlayAudio
   const structuredHasSegmentedAudio =
-    !!structured && structured.includes('## ACTIVE QUESTION')
+    !!structured && (structured.includes('## ACTIVE QUESTION') || /\[(INTERVIEWER|ME)\]:/i.test(structured))
   if (!String(audioCombined).trim() && !isScreenMode && !structuredHasSegmentedAudio) {
     if (userQ) {
       audioCombined = sessionMemory.getTranscriptIfRecent(SESSION_TRANSCRIPT_MAX_AGE_MS) || audioCombined
@@ -1915,11 +1915,15 @@ async function handleAskAI(userQuestion, audioTranscript, _askMeta = {}) {
     fullSystem += `\n\n---\n## PAST MEETING CONTEXT (recall — facts only, do not invent)\n${String(_askMeta.pastMeetingContext).trim().slice(0, 4000)}`
   }
   if (structured) {
-    const segmentedTranscript = structured.includes('## ACTIVE QUESTION')
+    const segmentedTranscript =
+      structured.includes('## ACTIVE QUESTION') || /\[(INTERVIEWER|ME)\]:/i.test(structured)
+    const nativelyLabeled = /\[(INTERVIEWER|ME)\]:/i.test(structured)
     fullSystem = `${fullSystem}\n\n---\n${isScreenMode
       ? 'This is a screen-led request. Analyze the attached screenshot and solve the visible problem completely. If ## QUESTION is present, answer it directly and use the screen as evidence.'
       : segmentedTranscript
-        ? 'Answer ONLY the ACTIVE QUESTION in the user message. RECENT CONTEXT is optional clarification — do not merge unrelated earlier questions.'
+        ? nativelyLabeled
+          ? 'Answer the most recent [INTERVIEWER] line in the transcript. [ME] lines are the user\'s own speech — context only unless no interviewer question exists.'
+          : 'Answer ONLY the ACTIVE QUESTION in the user message. RECENT CONTEXT is optional clarification — do not merge unrelated earlier questions.'
         : 'Respond ONLY to the last clear question in QUESTION, AUDIO, or TRANSCRIPT. SCREEN is supporting context and must not override an unrelated spoken or typed request.'
     }`
   }

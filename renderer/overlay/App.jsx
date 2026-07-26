@@ -12,7 +12,18 @@ import PastMeetingSearch from './components/PastMeetingSearch'
 import { parseSkillInvoke } from '../../lib/skillInvoke.js'
 import { resolveAskContextPriority } from '../../lib/askContextPriority.js'
 import { formatSegmentsForPrompt } from '../../lib/transcriptQuestionSelector.js'
+import { buildPreparedTranscriptContext } from '../../lib/transcriptCleaner.js'
+import {
+  mergeRollingTranscriptFinal,
+  mergeRollingTranscriptPartial,
+} from '../../lib/rollingTranscriptState.js'
+import {
+  consumeSegmentsThrough,
+  rebuildSpeechBufferFromSegments,
+  lastSpeechTimestampFromSegments,
+} from '../../lib/transcriptConsume.js'
 import LiveTranscriptPanel from './components/LiveTranscriptPanel'
+import RollingTranscript from './components/RollingTranscript'
 import AppIcon from '../shared/AppIcon'
 import { applyUiAccentTheme, normalizeUiAccentId } from '../shared/uiAccentThemes'
 import { createIpcShim } from '../shared/ipcShim'
@@ -39,58 +50,6 @@ const NOTCH_BORDER_H = 2
 const PILL_H = NOTCH_INNER_H + NOTCH_BORDER_H
 /** Fixed notch width (CSS) — overlay window width stays at panel width always */
 const NOTCH_W = 252
-
-const CAPTION_BAR_MAX_CHARS = 140
-
-/** Display-only: split last final + interim for caption bar (no STT side effects). */
-function formatPanelCaptionDisplay(segments, micFallback = '') {
-  const list = Array.isArray(segments) ? segments : []
-  const last = list.length ? list[list.length - 1] : null
-  if (!last?.text && !String(micFallback || '').trim()) return null
-
-  const speaker = last?.speaker === 'other' || last?.speaker === 'participant' ? 'other' : 'me'
-  const label = speaker === 'me' ? 'Me' : 'Them'
-  const channel =
-    last?.channel || (speaker === 'other' ? 'sys' : 'mic')
-
-  let interimText = ''
-  let finalText = ''
-
-  if (last?.interim) {
-    interimText = String(last.text || '').trim()
-    for (let i = list.length - 2; i >= 0; i -= 1) {
-      const seg = list[i]
-      if (!seg?.interim && (seg.channel === channel || seg.speaker === last.speaker)) {
-        finalText = String(seg.text || '').trim()
-        break
-      }
-    }
-  } else if (last?.text) {
-    finalText = String(last.text || '').trim()
-  } else {
-    finalText = String(micFallback || '').trim()
-  }
-
-  const combined = [finalText, interimText].filter(Boolean).join(' ').trim()
-  if (!combined) return null
-
-  // Tail window for the bar only — prefer showing the live end of speech.
-  let f = finalText
-  let i = interimText
-  const total = (f ? f.length + (i ? 1 : 0) : 0) + i.length
-  if (total > CAPTION_BAR_MAX_CHARS) {
-    const budget = CAPTION_BAR_MAX_CHARS
-    if (i.length >= budget) {
-      f = ''
-      i = `…${i.slice(-(budget - 1))}`
-    } else {
-      const keepFinal = Math.max(0, budget - i.length - (i ? 1 : 0))
-      if (f.length > keepFinal) f = keepFinal > 1 ? `…${f.slice(-(keepFinal - 1))}` : ''
-    }
-  }
-
-  return { speaker, label, finalText: f, interimText: i }
-}
 
 const STACK_GAP = 10
 /** Collapsed overlay window height (pill + 1px slack so bottom radius isn't clipped) */
@@ -152,6 +111,7 @@ function formatTranscriptForPrompt(text, { background = false } = {}) {
   const t = String(text || '').trim()
   if (!t) return null
   if (t.startsWith('## ACTIVE QUESTION')) return t
+  if (/\[(INTERVIEWER|ME)\]:/i.test(t)) return t
   if (background) return `## TRANSCRIPT (background context)\n${t}`
   return `## TRANSCRIPT (respond to last question only)\n${t}`
 }
@@ -606,6 +566,9 @@ export default function App() {
   const streamPreviewFlushRef = useRef(null)
   const [micTranscript, setMicTranscript] = useState('')
   const [liveTranscriptSegments, setLiveTranscriptSegments] = useState([])
+  const [rollingBar, setRollingBar] = useState({ text: '', label: '', speaker: 'other' })
+  const [sysCaptureActive, setSysCaptureActive] = useState(false)
+  const [micCaptureActive, setMicCaptureActive] = useState(false)
   /** idle | speech | transcribing — live bar feedback while Groq works. */
   const [sttLivePhase, setSttLivePhase] = useState('idle')
   const [sessionOn, setSessionOn] = useState(false)
@@ -682,6 +645,7 @@ export default function App() {
   const maybeTriggerFromScreenRef = useRef(null)
   /** Side-by-side live captions: mic = me, system = other; capped in ref for UI + debug. */
   const speechSegmentsRef = useRef([])
+  const rollingByChannelRef = useRef({ mic: '', sys: '' })
   const liveSegmentIdRef = useRef(0)
   const currentSpeakerRef = useRef('me')
   const lastSpeakerRef = useRef('me')
@@ -741,7 +705,20 @@ export default function App() {
     lastSentSpeechRef.current = ''
     lastSpeakerRef.current = 'me'
     speechSegmentsRef.current = []
+    rollingByChannelRef.current = { mic: '', sys: '' }
+    setRollingBar({ text: '', label: '', speaker: 'other' })
     setLiveTranscriptSegments([])
+  }, [])
+
+  const updateRollingBarForPath = useCallback((pathKey, textChunk, { isFinal = false, speaker = 'other' } = {}) => {
+    const key = pathKey === 'sys' ? 'sys' : 'mic'
+    const prev = rollingByChannelRef.current[key] || ''
+    const merged = isFinal
+      ? mergeRollingTranscriptFinal(prev, textChunk)
+      : mergeRollingTranscriptPartial(prev, textChunk)
+    rollingByChannelRef.current[key] = merged
+    const label = speaker === 'me' ? 'Me' : 'Them'
+    setRollingBar({ text: merged, label, speaker })
   }, [])
 
   const refreshContextModes = useCallback(async () => {
@@ -793,31 +770,33 @@ export default function App() {
   }, [modeMenuOpen])
 
   const consumeRollingSpeechThrough = useCallback((watermarkId) => {
-    const cutoff = Number(watermarkId)
-    if (!Number.isFinite(cutoff)) return
     if (speechTriggerDelayRef.current != null) {
       clearTimeout(speechTriggerDelayRef.current)
       speechTriggerDelayRef.current = null
     }
-    const remaining = speechSegmentsRef.current.filter((segment) => segment.id > cutoff)
+    const { remaining } = consumeSegmentsThrough(speechSegmentsRef.current, watermarkId)
     speechSegmentsRef.current = remaining
     setLiveTranscriptSegments(remaining)
-    const finalText = remaining
-      .filter((segment) => !segment.interim)
-      .map((segment) => segment.text)
-      .join(' ')
-      .trim()
-    const bounded = trimBufferSmart(finalText)
+    rollingByChannelRef.current = { mic: '', sys: '' }
+    const bounded = trimBufferSmart(rebuildSpeechBufferFromSegments(remaining))
     speechBufferRef.current = bounded
     micTranscriptRef.current = bounded
     latestTranscriptRef.current = bounded
     setMicTranscript(bounded)
-    lastSpeechTimeRef.current = remaining.reduce(
-      (latest, segment) => Math.max(latest, Number(segment.updatedAt || segment.capturedAt || 0)),
-      0,
-    )
+    lastSpeechTimeRef.current = lastSpeechTimestampFromSegments(remaining)
     lastChunkRef.current = remaining[remaining.length - 1]?.text || ''
     lastSentSpeechRef.current = ''
+    const lastSeg = remaining[remaining.length - 1]
+    if (lastSeg?.text) {
+      const sp = lastSeg.speaker === 'me' ? 'me' : 'other'
+      setRollingBar({
+        text: String(lastSeg.text),
+        label: sp === 'me' ? 'Me' : 'Them',
+        speaker: sp,
+      })
+    } else {
+      setRollingBar({ text: '', label: '', speaker: 'other' })
+    }
   }, [])
 
   const syncOverlayWindowSize = useCallback(async (w, h) => {
@@ -993,8 +972,8 @@ export default function App() {
 
     const onStart = (_, meta) => {
       cancelStreamScroll()
-      streamDomAcceptingRef.current = false
       streamAccumRef.current = ''
+      streamDomAcceptingRef.current = true
       setStreamPreview('')
       perfFirstTokenLoggedRef.current = false
       domTokenBufferRef.current = ''
@@ -1036,7 +1015,6 @@ export default function App() {
         }
       })
       clearStreamDom()
-      streamDomAcceptingRef.current = true
       if (perfAskT0Ref.current) {
         console.log('UI_AI_START_MS', Date.now() - perfAskT0Ref.current)
       }
@@ -1599,6 +1577,8 @@ export default function App() {
 
       streamSpecsRef.current = specs
       audioPathsRef.current = { hasMic: !!mic, hasSys: !!sys }
+      setSysCaptureActive(!!sys)
+      setMicCaptureActive(!!mic)
       energySampleRef.current = samplePack
       chunkEnergyRef.current = {
         active: false,
@@ -1676,9 +1656,9 @@ export default function App() {
           const t = Date.now()
           const act = profile?.speechActivityRms ?? 0.98
           if (rms >= act) {
-            lastLoudEnergyAtRef.current = t
             pathSpeechAtRef.current[pathKey] = t
-          } else if (t - lastLoudEnergyAtRef.current > SPEECH_SILENCE_MS) {
+            lastLoudEnergyAtRef.current = t
+          } else if (t - (pathSpeechAtRef.current[pathKey] || 0) > SPEECH_SILENCE_MS) {
             lastSpeechActivityRef.current = t - 1000
           }
         }
@@ -1884,6 +1864,7 @@ export default function App() {
 
     if (!isFinal) {
       setLiveSegmentInterim(speaker, trimmedChunk, segmentMeta)
+      updateRollingBarForPath(audioPathKey, trimmedChunk, { isFinal: false, speaker })
       emit('transcript-updated', { latest: `${labeled} …`, full: micTranscriptRef.current })
       const speechRecent =
         Date.now() - (pathSpeechAtRef.current.mic || 0) < 900 ||
@@ -1913,6 +1894,7 @@ export default function App() {
     speechBufferRef.current = trimBufferSmart(mergedBuff)
     lastSpeechTimeRef.current = Date.now()
     commitLiveSegmentFinal(speaker, trimmedChunk, segmentMeta)
+    updateRollingBarForPath(audioPathKey, trimmedChunk, { isFinal: true, speaker })
 
     setMicTranscript((prev) => {
       const combined = (prev + ' ' + trimmedChunk).trim().split(/\s+/).slice(-600).join(' ')
@@ -2242,22 +2224,19 @@ export default function App() {
 
           // Close the active utterance before taking the immutable Ask snapshot. Capture remains
           // live, so speech arriving after this watermark belongs to the next turn.
+          const { hasMic, hasSys } = audioPathsRef.current
+          const flushChannels = []
           if (sttModeRef.current === 'local') {
-            await Promise.all([
-              ipc?.invoke('local-stt:flush', { channel: 'mic' }),
-              ipc?.invoke('local-stt:flush', { channel: 'sys' }),
-            ])
+            if (hasMic) flushChannels.push(ipc?.invoke('local-stt:flush', { channel: 'mic' }))
+            if (hasSys) flushChannels.push(ipc?.invoke('local-stt:flush', { channel: 'sys' }))
           } else if (sttMainProcessRef.current) {
-            await Promise.all([
-              ipc?.invoke('streaming-stt:flush', { channel: 'mic' }),
-              ipc?.invoke('streaming-stt:flush', { channel: 'sys' }),
-            ])
+            if (hasMic) flushChannels.push(ipc?.invoke('streaming-stt:flush', { channel: 'mic' }))
+            if (hasSys) flushChannels.push(ipc?.invoke('streaming-stt:flush', { channel: 'sys' }))
           } else {
-            await Promise.all([
-              flushSttPending('mic', true),
-              flushSttPending('sys', true),
-            ])
+            if (hasMic) flushChannels.push(flushSttPending('mic', true))
+            if (hasSys) flushChannels.push(flushSttPending('sys', true))
           }
+          if (flushChannels.length) await Promise.all(flushChannels)
 
           const bufferedSpeech = String(speechBufferRef.current || '').trim()
           const segmentSnapshot = [...speechSegmentsRef.current]
@@ -2295,10 +2274,15 @@ export default function App() {
           })
           const maxSegs = isManualAsk ? MAX_LLM_SEGMENTS_MANUAL : MAX_LLM_SEGMENTS
           const includeSpeechWithScreen = isVisionAsk || !isScreenRead
-          const segmentedTranscript =
+          const preparedTranscript = buildPreparedTranscriptContext(segmentSnapshot, { maxTurns: maxSegs })
+          const legacyTranscript =
             promptMode === 'screen' && !includeSpeechWithScreen
               ? ''
               : formatSegmentsForLLM(segmentSnapshot, maxSegs) || bufferedSpeech
+          const segmentedTranscript =
+            promptMode === 'screen' && !includeSpeechWithScreen
+              ? ''
+              : preparedTranscript || legacyTranscript
           const rawSpeech =
             promptMode === 'screen' && !includeSpeechWithScreen ? '' : segmentedTranscript
           const transcriptToSend = rawSpeech
@@ -2598,34 +2582,16 @@ export default function App() {
                         </div>
                       )
                     }
-                    const caption = formatPanelCaptionDisplay(
-                      liveTranscriptSegments,
-                      micTranscript.trim(),
-                    )
-                    if (caption) {
+                    if (rollingBar.text) {
                       return (
-                        <div className="crystal-caption-row">
-                          <span
-                            className={
-                              caption.speaker === 'me'
-                                ? 'crystal-caption-chip crystal-caption-chip-me'
-                                : 'crystal-caption-chip crystal-caption-chip-them'
-                            }
-                          >
-                            {caption.label}
-                          </span>
-                          <div className="crystal-caption-text">
-                            {caption.finalText ? (
-                              <span className="crystal-caption-final">{caption.finalText}</span>
-                            ) : null}
-                            {caption.interimText ? (
-                              <span className="crystal-caption-interim">
-                                {caption.finalText ? ' ' : ''}
-                                {caption.interimText}
-                              </span>
-                            ) : null}
-                          </div>
-                        </div>
+                        <RollingTranscript
+                          text={rollingBar.text}
+                          label={rollingBar.label}
+                          speaker={rollingBar.speaker}
+                          isActive={sessionOn}
+                          sysCaptureActive={sysCaptureActive}
+                          micCaptureActive={micCaptureActive}
+                        />
                       )
                     }
                     if (sttLivePhase === 'transcribing') {
@@ -2650,7 +2616,9 @@ export default function App() {
                       <div className="crystal-caption-phase">
                         <span className="crystal-caption-phase-dot" aria-hidden />
                         <span className="crystal-caption-phase-label">Listening</span>
-                        <span className="crystal-caption-phase-sub">ready</span>
+                        <span className="crystal-caption-phase-sub">
+                          {sysCaptureActive ? 'ready' : 'mic only — share audio for Them'}
+                        </span>
                       </div>
                     )
                   })()}
