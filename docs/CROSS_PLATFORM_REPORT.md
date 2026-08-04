@@ -96,6 +96,7 @@ This work made the app truly cross-platform, hardened its attack surface, and ad
 - **macOS auto-update** needs a real Developer ID certificate (`CSC_LINK`/`CSC_KEY_PASSWORD` CI secrets). Current DMGs are unsigned (right-click → Open to launch).
 - **Linux tray** requires an AppIndicator runtime (ayatana-appindicator) — standard on Ubuntu 22.04+, absent on stock minimal installs.
 - **Linux screen sharing** varies by compositor (Wayland restricts old X11 capture xDAMAGE paths).
+- **Linux `.deb` must be built on a Linux host.** Verified 2026-08-04: `npm run build:linux` from macOS produces a valid AppImage (ELF arm64) but an empty 96 B `.deb` (the macOS-cross fpm 1.9.3 tool fails to package content). The Linux CI job runs on `ubuntu-latest` where deb builds natively and correctly.
 - **Phone-mirror (adb/scrcpy)** path is Windows-oriented and untouched.
 - Windows `.exe` packaging itself was not re-tested in this session (macOS host); the `win` config is unchanged.
 
