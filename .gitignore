@@ -39,3 +39,4 @@ eng.traineddata
 
 # Graphify knowledge graph (local dev artifact)
 graphify-out/
+!build/version-state.json

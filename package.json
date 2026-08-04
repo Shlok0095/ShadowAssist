@@ -1,6 +1,6 @@
 {
   "name": "veilassist",
-  "version": "1.0.1",
+  "version": "2026.08.05.03.05",
   "description": "Undetectable AI for live meetings — discreet on-screen meeting assistant",
   "author": "VeilAssist",
   "license": "UNLICENSED",
@@ -14,7 +14,7 @@
     "postinstall": "electron-builder install-app-deps",
     "build": "vite build",
     "build:web": "npm --prefix landing run build",
-    "build:all": "npm run build && npm run build:web",
+    "build:all": "npm run build && npm run build:web && node scripts/make-icons.cjs",
     "start": "npm run build && node ./node_modules/electron/cli.js .",
     "start:desktop": "npm run start",
     "dev": "npm run build && node ./node_modules/electron/cli.js . --enable-logging",
@@ -35,7 +35,6 @@
     "build:linux": "node scripts/inject-oauth.cjs && npm run dist:linux",
     "dist:all": "node scripts/make-icons.cjs && npm run build && node scripts/run-electron-builder.cjs --mac dmg zip --win portable nsis --linux AppImage deb",
     "build:all-3": "node scripts/inject-oauth.cjs && npm run dist:all",
-    "build:all": "npm run build && npm run build:web && node scripts/make-icons.cjs",
     "dist:checksums": "node scripts/sha256-dist.cjs",
     "open:portable": "start \"\" \"dist\\VeilAssist.exe\"",
     "open:unpacked": "start \"\" \"dist\\win-unpacked\\VeilAssist.exe\"",
@@ -129,7 +128,9 @@
         "NSCameraUsageDescription": "VeilAssist uses the camera for optional on-screen assistance features.",
         "NSAppleEventsUsageDescription": "VeilAssist may control other applications to detect active meetings."
       },
-      "artifactName": "VeilAssist-${version}-${arch}.${ext}"
+      "artifactName": "VeilAssist-${version}-${arch}.${ext}",
+      "bundleShortVersion": "2026.08.05.03.05",
+      "bundleVersion": "2026.08.05.03.05"
     },
     "linux": {
       "icon": "build/icons",
@@ -144,7 +145,7 @@
       "artifactName": "VeilAssist-${version}-${arch}.${ext}"
     },
     "portable": {
-      "artifactName": "VeilAssist.exe"
+      "artifactName": "VeilAssist-${version}.${ext}"
     },
     "nsis": {
       "oneClick": true,
@@ -156,7 +157,8 @@
       "shortcutName": "VeilAssist",
       "include": "scripts/nsis/installer.nsh",
       "artifactName": "VeilAssist-Setup-${version}.${ext}"
-    }
+    },
+    "artifactName": "${productName}-${version}.${ext}"
   },
   "devDependencies": {
     "@vitejs/plugin-react": "^4.2.1",
