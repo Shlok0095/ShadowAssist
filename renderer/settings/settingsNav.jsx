@@ -19,6 +19,7 @@ import {
 } from 'lucide-react'
 import { createIpcShim } from '../shared/ipcShim'
 import AppIcon from '../shared/AppIcon'
+import { useBrand } from '../shared/branding'
 
 const ipc = createIpcShim()
 
@@ -41,6 +42,7 @@ export const SETTINGS_TABS = [
 ]
 
 export function SettingsNav({ activeTab, onSelectTab }) {
+  const { name } = useBrand()
   const quit = () => {
     ipc?.send('app-quit')
   }
@@ -69,7 +71,7 @@ export function SettingsNav({ activeTab, onSelectTab }) {
       <div className="settings-nav-footer">
         <button type="button" onClick={quit} className="settings-nav-quit">
           <AppIcon icon={LogOut} size={16} strokeWidth={1.75} />
-          <span>Quit VeilAssist</span>
+          <span>Quit {name}</span>
         </button>
       </div>
     </nav>

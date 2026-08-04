@@ -11,6 +11,7 @@ import {
 import { SectionTitle, SettingsFieldLabel, SettingsPage, ToggleSwitch } from './SettingsComponents'
 import SimpleMarkdown from '../shared/SimpleMarkdown'
 import MeetingDetailsModal from './MeetingDetailsModal'
+import { useBrand } from '../shared/branding'
 
 const ipc = createIpcShim()
 
@@ -48,6 +49,7 @@ export default function MeetingsSettingsPanel({
   onMeetingSessionsChange,
   followUpDraftEnabled = false,
 }) {
+  const { name } = useBrand()
   const [detailsSessionId, setDetailsSessionId] = useState(null)
   return (
     <SettingsPage
@@ -243,7 +245,7 @@ export default function MeetingsSettingsPanel({
           <div>
             <SectionTitle className="text-sm">Session recaps</SectionTitle>
             <p className="mt-1 text-[11px] text-zinc-500">
-              When you Stop Listen, VeilAssist saves structured notes here (AI summary when your chat key is set).
+              When you Stop Listen, {name} saves structured notes here (AI summary when your chat key is set).
             </p>
           </div>
           {meetingSessions.length > 0 ? (

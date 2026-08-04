@@ -15,4 +15,12 @@ contextBridge.exposeInMainWorld('meetingToast', {
   dismiss(eventId) {
     ipcRenderer.send('meeting-toast:dismiss', eventId || '')
   },
+  /** Synchronous brand snapshot so the toast chrome matches the custom brand. */
+  getBranding() {
+    try {
+      return ipcRenderer.sendSync('branding:get-sync')
+    } catch (_) {
+      return null
+    }
+  },
 })

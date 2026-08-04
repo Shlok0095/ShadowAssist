@@ -4,6 +4,7 @@
 import React, { useCallback, useEffect, useState } from 'react'
 import { createIpcShim } from '../shared/ipcShim'
 import brandLogo from '../shared/brandLogo'
+import { useBrand } from '../shared/branding'
 
 const ipc = createIpcShim()
 
@@ -22,6 +23,7 @@ function formatDuration(ms) {
 }
 
 export default function LauncherApp() {
+  const { name, hasCustomLogo, logoDataUrl } = useBrand()
   const [sessionActive, setSessionActive] = useState(false)
   const [recent, setRecent] = useState([])
   const [busy, setBusy] = useState(false)
@@ -64,8 +66,13 @@ export default function LauncherApp() {
     <div className="launcher-shell">
       <header className="launcher-head">
         <div className="launcher-brand-row">
-          <img src={brandLogo} alt="" className="launcher-brand-logo" draggable={false} />
-          <span className="launcher-brand">VeilAssist</span>
+          <img
+            src={hasCustomLogo && logoDataUrl ? logoDataUrl : brandLogo}
+            alt=""
+            className="launcher-brand-logo"
+            draggable={false}
+          />
+          <span className="launcher-brand">{name}</span>
         </div>
         <span className={`launcher-dot ${sessionActive ? 'on' : ''}`} title={sessionActive ? 'Listening' : 'Idle'} />
       </header>

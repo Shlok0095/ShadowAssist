@@ -5,6 +5,7 @@ import { BookOpen, ExternalLink, RefreshCw } from 'lucide-react'
 import { createIpcShim } from '../shared/ipcShim'
 import AppIcon from '../shared/AppIcon'
 import { SettingsPage, SettingsSection } from './SettingsComponents'
+import { useBrand } from '../shared/branding'
 
 const ipc = createIpcShim()
 
@@ -36,6 +37,7 @@ const FAQ = [
 ]
 
 export default function HelpSettingsPanel({ appVersion, onSelectTab }) {
+  const { name } = useBrand()
   const [doc, setDoc] = useState('')
   const [loading, setLoading] = useState(true)
   const [err, setErr] = useState('')
@@ -71,7 +73,7 @@ export default function HelpSettingsPanel({ appVersion, onSelectTab }) {
           {FAQ.map((item) => (
             <li key={item.q}>
               <p className="text-[13px] font-medium text-zinc-200">{item.q}</p>
-              <p className="mt-1 text-[12px] leading-relaxed text-zinc-500">{item.a}</p>
+              <p className="mt-1 text-[12px] leading-relaxed text-zinc-500">{item.a.replaceAll('VeilAssist', name)}</p>
             </li>
           ))}
         </ul>

@@ -33,6 +33,7 @@ import TemplateModeIcon from './TemplateModeIcons'
 import AppIcon from '../shared/AppIcon'
 
 import { SettingsPage } from './SettingsComponents'
+import { useBrand } from '../shared/branding'
 
 
 
@@ -97,6 +98,7 @@ export default function ProfileModesPanel({
   onToggleTemplates,
 
 }) {
+  const { name } = useBrand()
   const [creatingMode, setCreatingMode] = React.useState(false)
   const [newModeName, setNewModeName] = React.useState('')
 
@@ -786,7 +788,7 @@ export default function ProfileModesPanel({
 
               <p className="mb-6 max-w-sm text-[13px] text-zinc-600">
 
-                Create a mode or start from a template to define how VeilAssist responds.
+                Create a mode or start from a template to define how {name} responds.
 
               </p>
 
