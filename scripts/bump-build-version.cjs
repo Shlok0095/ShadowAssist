@@ -14,6 +14,7 @@ const ROOT = path.join(__dirname, '..')
 const STATE_FILE = path.join(ROOT, 'build', 'version-state.json')
 const META_FILE = path.join(ROOT, 'build', 'build-version.txt')
 const PKG_FILE = path.join(ROOT, 'package.json')
+const LOCK_FILE = path.join(ROOT, 'package-lock.json')
 
 const pad = (n) => String(n).padStart(2, '0')
 
@@ -50,6 +51,16 @@ function writePackageJsonVersion(version) {
   pkg.build.mac.bundleVersion = version
   if (pkg.version !== version) pkg.version = version
   fs.writeFileSync(PKG_FILE, `${JSON.stringify(pkg, null, 2)}\n`, 'utf8')
+  // Keep package-lock.json in sync so `npm ci` / `npm install` never see a
+  // dirty diff after a build bump (npm re-syncs the lock version otherwise).
+  try {
+    const lock = JSON.parse(fs.readFileSync(LOCK_FILE, 'utf8'))
+    if (lock.version !== version || lock.packages?.['']?.version !== version) {
+      if (lock.version) lock.version = version
+      if (lock.packages?.['']) lock.packages[''].version = version
+      fs.writeFileSync(LOCK_FILE, `${JSON.stringify(lock, null, 2)}\n`, 'utf8')
+    }
+  } catch (_) {}
 }
 
 function nextVersion(last) {
@@ -81,3 +92,8 @@ function main() {
 main.nextVersion = nextVersion
 main.nowPrefix = nowPrefix
 module.exports = main
+
+if (require.main === module) {
+  const code = main()
+  process.exitCode = typeof code === 'number' ? code : 0
+}

@@ -1298,8 +1298,20 @@ function applyTaskbarVisibility() {
       overlayWindow.setSkipTaskbar(!show)
     } catch (_) {}
   }
-  // Settings / Global Chat never get their own taskbar entry (avoids duplicate icons and flash on restore).
-  for (const w of [settingsWindow, globalChatWindow, launcherWindow]) {
+  // Every other window never gets its own taskbar/dock entry. This list must
+  // stay in sync with the windows created in create*Window() — a window
+  // created without `skipTaskbar: true` in its options shows a taskbar
+  // button on its FIRST show on Windows (ITaskbarList only removes buttons
+  // from already-visible windows), so constructor flags + this loop + the
+  // show/restore re-asserts below are all required.
+  for (const w of [
+    settingsWindow,
+    globalChatWindow,
+    launcherWindow,
+    consentWindow,
+    onboardingWindow,
+    meetingToastWindow,
+  ]) {
     if (w && !w.isDestroyed()) {
       try {
         w.setSkipTaskbar(true)
@@ -1312,6 +1324,11 @@ function applyTaskbarVisibility() {
       if (show) app.dock.show()
       else app.dock.hide()
     } catch (_) {}
+    // app.dock.hide() deactivates the app (documented). If the overlay is
+    // still on screen, re-focus it so it doesn't stay dimmed/unfocused.
+    if (!show && overlayVisible && overlayWindow && !overlayWindow.isDestroyed()) {
+      setImmediate(() => focusAppWindowForInput(overlayWindow))
+    }
   }
 }
 
@@ -1423,6 +1440,7 @@ function createConsentWindow() {
     transparent: true,
     backgroundColor: '#00000000',
     roundedCorners: true,
+    skipTaskbar: true,
     ...(getWindowIcon() ? { icon: getWindowIcon() } : {}),
     webPreferences: {
       preload: preloadPath,
@@ -1441,6 +1459,8 @@ function createConsentWindow() {
     consentWindow = null
     if (!appCoreStarted && !hasValidConsent()) app.quit()
   })
+  consentWindow.on('show', () => setImmediate(applyTaskbarVisibility))
+  consentWindow.once('ready-to-show', () => setImmediate(applyTaskbarVisibility))
 }
 
 function createOnboardingWindow() {
@@ -1461,6 +1481,7 @@ function createOnboardingWindow() {
     transparent: true,
     backgroundColor: '#00000000',
     roundedCorners: true,
+    skipTaskbar: true,
     ...(getWindowIcon() ? { icon: getWindowIcon() } : {}),
     webPreferences: {
       preload: preloadPath,
@@ -1479,7 +1500,11 @@ function createOnboardingWindow() {
     onboardingWindow = null
     if (!appCoreStarted && !hasCompletedOnboardingFlag()) app.quit()
   })
-  onboardingWindow.once('ready-to-show', () => applyContentProtectionAllWindows())
+  onboardingWindow.on('show', () => setImmediate(applyTaskbarVisibility))
+  onboardingWindow.once('ready-to-show', () => {
+    applyContentProtectionAllWindows()
+    setImmediate(applyTaskbarVisibility)
+  })
 }
 
 function requestSessionStart() {
@@ -1650,6 +1675,7 @@ function createLauncherWindow() {
     frame: true,
     title: `${getBrandName()} Launcher`,
     backgroundColor: '#0c0c0e',
+    skipTaskbar: true,
     ...(getWindowIcon() ? { icon: getWindowIcon() } : {}),
     webPreferences: {
       preload: preloadPath,
@@ -1661,6 +1687,12 @@ function createLauncherWindow() {
   })
   hardenWindow(launcherWindow)
   launcherWindow.loadFile(getLauncherHtmlPath())
+  // Constructor `skipTaskbar: true` plus these re-asserts keep the launcher
+  // out of the taskbar across show/restore/minimize cycles.
+  launcherWindow.on('show', () => setImmediate(applyTaskbarVisibility))
+  launcherWindow.on('restore', () => setImmediate(applyTaskbarVisibility))
+  launcherWindow.on('minimize', () => setImmediate(applyTaskbarVisibility))
+  launcherWindow.once('ready-to-show', () => setImmediate(applyTaskbarVisibility))
   launcherWindow.on('closed', () => { launcherWindow = null })
 }
 
