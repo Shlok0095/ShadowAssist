@@ -33,6 +33,8 @@
     "dist:linux": "node scripts/make-icons.cjs && npm run build && node scripts/run-electron-builder.cjs --linux AppImage deb",
     "dist:linux:dir": "node scripts/make-icons.cjs && npm run build && node scripts/run-electron-builder.cjs --linux dir",
     "build:linux": "node scripts/inject-oauth.cjs && npm run dist:linux",
+    "dist:all": "node scripts/make-icons.cjs && npm run build && node scripts/run-electron-builder.cjs --mac dmg zip --win portable nsis --linux AppImage deb",
+    "build:all-3": "node scripts/inject-oauth.cjs && npm run dist:all",
     "build:all": "npm run build && npm run build:web && node scripts/make-icons.cjs",
     "dist:checksums": "node scripts/sha256-dist.cjs",
     "open:portable": "start \"\" \"dist\\VeilAssist.exe\"",
