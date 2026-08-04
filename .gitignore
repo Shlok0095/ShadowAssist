@@ -36,3 +36,6 @@ eng.traineddata
 .vscode/
 *.swp
 .vercel/
+
+# Graphify knowledge graph (local dev artifact)
+graphify-out/

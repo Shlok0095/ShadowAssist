@@ -1,7 +1,7 @@
 // Copyright (c) 2026 VeilAssist. All rights reserved.
 // Unauthorized copying or distribution is prohibited.
 
-const { app, BrowserWindow, ipcMain, globalShortcut, Tray, nativeImage, screen, dialog, Menu, clipboard, shell, Notification } = require('electron')
+const { app, BrowserWindow, ipcMain, globalShortcut, Tray, nativeImage, screen, dialog, Menu, clipboard, shell, Notification, powerMonitor } = require('electron')
 const path = require('path')
 const fs = require('fs')
 const fsPromises = require('fs').promises
@@ -344,6 +344,25 @@ function maybeDetectMeetingMode() {
 }
 
 function createTrayIcon(active = false) {
+  // macOS: 16pt template image at 2x for crisp Retina rendering; monochrome
+  // so the menubar tints it correctly for light/dark mode.
+  if (process.platform === 'darwin') {
+    const size = 16
+    const scale = 2
+    const px = size * scale
+    const canvas = Buffer.alloc(px * px * 4)
+    for (let i = 0; i < px * px; i++) {
+      const offset = i * 4
+      const x = i % px
+      const y = Math.floor(i / px)
+      const r = Math.sqrt((x - px / 2) ** 2 + (y - px / 2) ** 2)
+      const a = r < px / 2 - 1 ? 255 : 0
+      canvas[offset] = 0; canvas[offset + 1] = 0; canvas[offset + 2] = 0; canvas[offset + 3] = a
+    }
+    const img = nativeImage.createFromBuffer(canvas, { width: size, height: size, scaleFactor: scale })
+    img.setTemplateImage(true)
+    return img
+  }
   const size = 16
   const canvas = Buffer.alloc(size * size * 4)
   const color = active ? [34, 197, 94, 255] : [55, 65, 81, 255]
@@ -363,6 +382,45 @@ function getDisplayBounds() {
   const d = screen.getPrimaryDisplay()
   const wa = d.workArea
   return { x: wa.x, y: wa.y, width: wa.width, height: wa.height }
+}
+
+/** Work-area bounds of the display nearest a point (fallback: primary). */
+function getDisplayBoundsNear(x, y) {
+  try {
+    const point = { x: Number.isFinite(x) ? x : 0, y: Number.isFinite(y) ? y : 0 }
+    const d = screen.getDisplayNearestPoint(point)
+    const wa = d.workArea
+    return { x: wa.x, y: wa.y, width: wa.width, height: wa.height }
+  } catch {
+    return getDisplayBounds()
+  }
+}
+
+/** Display the overlay currently lives on (cursor display fallback). */
+function getOverlayDisplayBounds() {
+  if (overlayWindow && !overlayWindow.isDestroyed()) {
+    const [x, y] = overlayWindow.getPosition()
+    return getDisplayBoundsNear(x, y)
+  }
+  const p = screen.getCursorScreenPoint()
+  return getDisplayBoundsNear(p.x, p.y)
+}
+
+/** Clamp the overlay back onto a display when it was unplugged or rescaled. */
+function reseatOverlayIfOffscreen() {
+  if (!overlayWindow || overlayWindow.isDestroyed()) return
+  try {
+    const b = overlayWindow.getBounds()
+    const wa = screen.getDisplayMatching(b).workArea
+    const maxX = wa.x + wa.width - Math.min(b.width, wa.width)
+    const maxY = wa.y + wa.height - Math.min(b.height, wa.height)
+    const nx = Math.max(wa.x, Math.min(maxX, b.x))
+    const ny = Math.max(wa.y, Math.min(maxY, b.y))
+    if (nx !== b.x || ny !== b.y) {
+      overlayWindow.setPosition(nx, ny)
+      store.set('overlayBounds', overlayWindow.getBounds())
+    }
+  } catch (_) {}
 }
 
 /** Top-right of work area when x/y missing or window would be off-screen */
@@ -429,6 +487,7 @@ function createOverlayWindow() {
     }
   }
   overlayWindow.setMenuBarVisibility(false)
+  hardenWindow(overlayWindow)
   overlayWindow.loadFile(useBuilt
     ? path.join(__dirname, '..', 'out', 'overlay', 'index.html')
     : path.join(__dirname, '..', 'renderer', 'overlay', 'index.html'))
@@ -583,6 +642,24 @@ function getStealthManagedWindows() {
   )
 }
 
+/**
+ * Renderer hardening applied to every window:
+ * - popups/new tabs → open in the OS browser (never a new Electron window)
+ * - in-window navigation away from the loaded page → blocked
+ */
+function hardenWindow(win) {
+  if (!win || win.isDestroyed()) return
+  win.webContents.setWindowOpenHandler(({ url }) => {
+    if (/^https?:\/\//i.test(String(url || ''))) shell.openExternal(url).catch(() => {})
+    return { action: 'deny' }
+  })
+  win.webContents.on('will-navigate', (event, url) => {
+    try {
+      if (url !== win.webContents.getURL()) event.preventDefault()
+    } catch (_) {}
+  })
+}
+
 function applyContentProtectionAllWindows() {
   applyOverlayContentProtection()
   const stealthEnabled = isStealthModeEnabled()
@@ -678,10 +755,11 @@ function showMeetingToastFromMain(payload) {
       contextIsolation: true,
       nodeIntegration: false,
       sandbox: false,
-      backgroundThrottling: false,
+      backgroundThrottling: true,
     },
   })
   meetingToastWindow.setMenuBarVisibility(false)
+  hardenWindow(meetingToastWindow)
   try {
     meetingToastWindow.setAlwaysOnTop(true, 'screen-saver')
     meetingToastWindow.setVisibleOnAllWorkspaces(true)
@@ -1007,6 +1085,13 @@ function applyTaskbarVisibility() {
       } catch (_) {}
     }
   }
+  // macOS has no taskbar — hide/show the Dock icon to honor hide-from-taskbar / stealth.
+  if (process.platform === 'darwin') {
+    try {
+      if (show) app.dock.show()
+      else app.dock.hide()
+    } catch (_) {}
+  }
 }
 
 function syncOverlayMouseCapture() {
@@ -1123,10 +1208,11 @@ function createConsentWindow() {
       contextIsolation: true,
       nodeIntegration: false,
       sandbox: false,
-      backgroundThrottling: false,
+      backgroundThrottling: true,
     },
   })
   consentWindow.setMenuBarVisibility(false)
+  hardenWindow(consentWindow)
   consentWindow.loadFile(useBuilt
     ? path.join(__dirname, '..', 'out', 'consent', 'index.html')
     : path.join(__dirname, '..', 'renderer', 'consent', 'index.html'))
@@ -1160,10 +1246,11 @@ function createOnboardingWindow() {
       contextIsolation: true,
       nodeIntegration: false,
       sandbox: false,
-      backgroundThrottling: false,
+      backgroundThrottling: true,
     },
   })
   onboardingWindow.setMenuBarVisibility(false)
+  hardenWindow(onboardingWindow)
   onboardingWindow.loadFile(useBuilt
     ? path.join(__dirname, '..', 'out', 'onboarding', 'index.html')
     : path.join(__dirname, '..', 'renderer', 'onboarding', 'index.html'))
@@ -1184,7 +1271,7 @@ function moveOverlay(dx, dy) {
   if (!overlayWindow) return
   const [x, y] = overlayWindow.getPosition()
   const [w, h] = overlayWindow.getSize()
-  const d = getDisplayBounds()
+  const d = getDisplayBoundsNear(x, y)
   overlayWindow.setPosition(
     Math.max(d.x, Math.min(d.x + d.width - w, x + dx)),
     Math.max(d.y, Math.min(d.y + d.height - h, y + dy))
@@ -1218,7 +1305,7 @@ function createSettingsWindow() {
       contextIsolation: true,
       nodeIntegration: false,
       sandbox: false,
-      backgroundThrottling: false,
+      backgroundThrottling: true,
     },
   })
   try {
@@ -1226,6 +1313,7 @@ function createSettingsWindow() {
   } catch (error) {
     console.warn('[protection] unable to initialize Settings window:', error?.message || error)
   }
+  hardenWindow(settingsWindow)
   settingsWindow.loadFile(useBuilt
     ? path.join(__dirname, '..', 'out', 'settings', 'index.html')
     : path.join(__dirname, '..', 'renderer', 'settings', 'index.html'))
@@ -1271,10 +1359,11 @@ function createGlobalChatWindow() {
       contextIsolation: true,
       nodeIntegration: false,
       sandbox: false,
-      backgroundThrottling: false,
+      backgroundThrottling: true,
     },
   })
   globalChatWindow.setMenuBarVisibility(false)
+  hardenWindow(globalChatWindow)
   globalChatWindow.loadFile(getGlobalChatHtmlPath())
   globalChatWindow.on('closed', () => { globalChatWindow = null })
   globalChatWindow.once('ready-to-show', () => {
@@ -1346,9 +1435,10 @@ function createLauncherWindow() {
       contextIsolation: true,
       nodeIntegration: false,
       sandbox: false,
-      backgroundThrottling: false,
+      backgroundThrottling: true,
     },
   })
+  hardenWindow(launcherWindow)
   launcherWindow.loadFile(getLauncherHtmlPath())
   launcherWindow.on('closed', () => { launcherWindow = null })
 }
@@ -2751,7 +2841,15 @@ function setupIPC() {
     }
     return true
   })
-  ipcMain.handle('get-all-settings', () => store.getAll())
+  ipcMain.handle('get-all-settings', () => {
+    // Secrets never leave the main process in plaintext. The renderer only
+    // needs presence ("is a key configured"), which a non-empty marker provides.
+    const all = store.getAll()
+    for (const k of store.ENCRYPTED_KEYS) {
+      if (all[k]) all[k] = '••••configured'
+    }
+    return all
+  })
   ipcMain.handle('test-api', async (_, provider, key) => {
     return getAiClient().testConnection(provider, key, (k) => store.get(k))
   })
@@ -3103,7 +3201,7 @@ function setupIPC() {
     }
   })
   ipcMain.handle('set-overlay-position-preset', (_, preset) => {
-    const d = getDisplayBounds()
+    const d = getOverlayDisplayBounds()
     const w = store.get('overlayBounds')?.width || 400
     const h = store.get('overlayBounds')?.height || 540
     const m = 20
@@ -3230,8 +3328,17 @@ async function initApp() {
   const { session } = require('electron')
   /** Packaged `file://` overlay: Chromium checks permissions before requesting; without this, mic/desktop capture can fail silently (dev often still works). */
   const capturePermissions = new Set(['media', 'display-capture', 'screen', 'speaker-selection'])
-  session.defaultSession.setPermissionCheckHandler((_wc, permission) => capturePermissions.has(permission))
-  session.defaultSession.setPermissionRequestHandler((_, permission, cb) => cb(capturePermissions.has(permission)))
+  const isTrustedRequestUrl = (url) => {
+    const u = String(url || '')
+    return u.startsWith('file:') || u.startsWith('http://localhost') || u.startsWith('http://127.0.0.1')
+  }
+  session.defaultSession.setPermissionCheckHandler(
+    (_wc, permission, _origin, details) =>
+      isTrustedRequestUrl(details?.requestingUrl) && capturePermissions.has(permission),
+  )
+  session.defaultSession.setPermissionRequestHandler((_wc, permission, cb, details) => {
+    cb(isTrustedRequestUrl(details?.requestingUrl) && capturePermissions.has(permission))
+  })
   session.defaultSession.setDisplayMediaRequestHandler((request, callback) => {
     screenCapture
       .getDisplayMediaLoopbackPayload()
@@ -3255,6 +3362,32 @@ async function initApp() {
   startMeetingForegroundPoll()
   startCalendarReminderPoll()
   scheduleVectorMemoryMaintenance()
+
+  // Display topology changes: keep the overlay on-screen when monitors are
+  // unplugged, rescaled, or reordered (multi-monitor support).
+  screen.on('display-removed', () => {
+    reseatOverlayIfOffscreen()
+    applyTaskbarVisibility()
+  })
+  screen.on('display-metrics-changed', () => {
+    reseatOverlayIfOffscreen()
+    if (overlayWindow && !overlayWindow.isDestroyed() && overlayVisible) {
+      presentOverlayWindow({ inactive: true })
+    }
+  })
+
+  // System sleep/wake: re-assert capture protection and overlay state so the
+  // assistant is not left hidden, capturable, or stuck mid-animation.
+  powerMonitor.on('resume', () => {
+    reassertOverlayContentProtection()
+    applyContentProtectionAllWindows()
+    if (overlayWindow && !overlayWindow.isDestroyed()) {
+      if (overlayVisible) presentOverlayWindow({ inactive: true })
+      else overlayWindow.setOpacity(0)
+      syncOverlayMouseCapture()
+    }
+    applyTaskbarVisibility()
+  })
   try {
     const primary = 'CommandOrControl+Shift+Alt+M'
     const fallback = 'CommandOrControl+Shift+M'
@@ -3371,6 +3504,19 @@ app.whenReady().then(() => {
 
 app.on('window-all-closed', () => {
   hotkeys.unregisterAll()
+})
+// macOS convention: clicking the Dock icon re-opens the overlay.
+app.on('activate', () => {
+  if (overlayVisible) {
+    if (overlayWindow && !overlayWindow.isDestroyed()) {
+      presentOverlayWindow({ inactive: false })
+    } else {
+      createOverlayWindow()
+      showOverlay()
+    }
+  } else {
+    showOverlay()
+  }
 })
 app.on('will-quit', () => {
   hotkeys.unregisterAll()

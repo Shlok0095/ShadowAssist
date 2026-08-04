@@ -1,0 +1,123 @@
+# Pushes to `stag` → rolling prerelease "latest-stag".
+# Pushes to `main` / `master` → rolling release "latest" (production channel).
+# Push tag v*.*.* → versioned release with checksums.
+# Auto-update feed: releases/download/<channel>/latest-linux.yml (AppImage only).
+#
+# NOTE: `electron-updater` supports AppImage auto-update; .deb installs must be
+# updated manually. Linux tray requires libappindicator/ayatana runtime.
+
+name: Release Linux
+
+on:
+  workflow_dispatch:
+  push:
+    branches:
+      - stag
+      - main
+      - master
+    tags:
+      - 'v*.*.*'
+
+permissions:
+  contents: write
+
+concurrency:
+  group: release-linux-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  build-release:
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: npm
+          cache-dependency-path: package-lock.json
+
+      - name: Set release tag
+        id: tag
+        shell: bash
+        run: |
+          if [ "${{ github.ref_name }}" = "main" ] || [ "${{ github.ref_name }}" = "master" ]; then
+            echo "TAG=latest" >> "$GITHUB_OUTPUT"
+            echo "PRERELEASE=false" >> "$GITHUB_OUTPUT"
+            echo "CHANNEL=latest" >> "$GITHUB_OUTPUT"
+          else
+            echo "TAG=latest-stag" >> "$GITHUB_OUTPUT"
+            echo "PRERELEASE=true" >> "$GITHUB_OUTPUT"
+            echo "CHANNEL=latest-stag" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Install dependencies without Node-native build scripts
+        run: npm ci --ignore-scripts
+
+      - name: Rebuild native dependencies for Electron
+        run: npx electron-builder install-app-deps
+
+      - name: Write auto-update channel file
+        run: node scripts/write-update-channel.cjs ${{ steps.tag.outputs.CHANNEL }}
+
+      - name: Build AppImage + deb
+        run: npm run build:linux
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          VEILASSIST_GOOGLE_CAL_CLIENT_ID: ${{ secrets.GOOGLE_CAL_CLIENT_ID }}
+          VEILASSIST_GOOGLE_CAL_CLIENT_SECRET: ${{ secrets.GOOGLE_CAL_CLIENT_SECRET }}
+
+      - name: SHA256 checksums
+        run: npm run dist:checksums
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: veilassist-linux-${{ github.run_id }}
+          if-no-files-found: warn
+          path: |
+            dist/VeilAssist-*.AppImage
+            dist/VeilAssist-*.deb
+            dist/latest-linux.yml
+            dist/SHA256SUMS.txt
+
+      - name: Rolling GitHub Release (stag / main)
+        if: "!startsWith(github.ref, 'refs/tags/v')"
+        uses: ncipollo/release-action@v1
+        with:
+          token: ${{ secrets.GITHUB_TOKEN }}
+          tag: ${{ steps.tag.outputs.TAG }}
+          commit: ${{ github.sha }}
+          name: VeilAssist — ${{ steps.tag.outputs.TAG }}
+          body: |
+            Automated build from **${{ github.ref_name }}** @ [`${{ github.sha }}`](${{ github.server_url }}/${{ github.repository }}/commit/${{ github.sha }}).
+
+            | Asset | Use |
+            |------|-----|
+            | **VeilAssist-*.AppImage** | Portable Linux app (chmod +x) |
+            | **VeilAssist-*.deb** | Debian/Ubuntu package |
+            | **latest-linux.yml** | Auto-update metadata (AppImage) |
+
+            **Notes:** Tray icon requires an AppIndicator (ayatana-appindicator) runtime, common on Ubuntu 22.04+. Screen sharing privacy on Linux varies by compositor (Wayland restrictions apply).
+          prerelease: ${{ steps.tag.outputs.PRERELEASE }}
+          allowUpdates: true
+          replacesArtifacts: true
+          artifactErrorsFailBuild: true
+          artifacts: |
+            dist/VeilAssist-*.AppImage
+            dist/VeilAssist-*.deb
+            dist/latest-linux.yml
+            dist/SHA256SUMS.txt
+
+      - name: Versioned GitHub Release (git tag v*.*.*)
+        if: startsWith(github.ref, 'refs/tags/v')
+        uses: softprops/action-gh-release@v2
+        with:
+          generate_release_notes: true
+          files: |
+            dist/VeilAssist-*.AppImage
+            dist/VeilAssist-*.deb
+            dist/latest-linux.yml
+            dist/SHA256SUMS.txt
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

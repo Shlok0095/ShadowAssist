@@ -23,10 +23,17 @@
     "kill-electron": "taskkill /F /IM electron.exe /T 2>nul || exit 0",
     "kill-veilassist": "taskkill /F /IM VeilAssist.exe /T 2>nul || exit 0",
     "start:force": "npm run kill-electron && npm run start",
-    "dist": "node scripts/make-win-ico.cjs && npm run build && node scripts/run-electron-builder.cjs --win portable",
-    "dist:release": "node scripts/make-win-ico.cjs && npm run build && node scripts/run-electron-builder.cjs --win portable nsis",
+    "dist": "node scripts/make-icons.cjs && npm run build && node scripts/run-electron-builder.cjs --win portable",
+    "dist:release": "node scripts/make-icons.cjs && npm run build && node scripts/run-electron-builder.cjs --win portable nsis",
     "build:win": "node scripts/inject-oauth.cjs && npm run dist:release",
-    "dist:dir": "node scripts/make-win-ico.cjs && npm run build && node scripts/run-electron-builder.cjs --win dir",
+    "dist:dir": "node scripts/make-icons.cjs && npm run build && node scripts/run-electron-builder.cjs --win dir",
+    "dist:mac": "node scripts/make-icons.cjs && npm run build && node scripts/run-electron-builder.cjs --mac dmg zip",
+    "dist:mac:dir": "node scripts/make-icons.cjs && npm run build && node scripts/run-electron-builder.cjs --mac dir",
+    "build:mac": "node scripts/inject-oauth.cjs && npm run dist:mac",
+    "dist:linux": "node scripts/make-icons.cjs && npm run build && node scripts/run-electron-builder.cjs --linux AppImage deb",
+    "dist:linux:dir": "node scripts/make-icons.cjs && npm run build && node scripts/run-electron-builder.cjs --linux dir",
+    "build:linux": "node scripts/inject-oauth.cjs && npm run dist:linux",
+    "build:all": "npm run build && npm run build:web && node scripts/make-icons.cjs",
     "dist:checksums": "node scripts/sha256-dist.cjs",
     "open:portable": "start \"\" \"dist\\VeilAssist.exe\"",
     "open:unpacked": "start \"\" \"dist\\win-unpacked\\VeilAssist.exe\"",
@@ -104,6 +111,35 @@
       "publisherName": "VeilAssist",
       "target": "portable",
       "sign": null
+    },
+    "mac": {
+      "icon": "build/app.png",
+      "category": "public.app-category.productivity",
+      "target": [
+        "dmg",
+        "zip"
+      ],
+      "darkModeSupport": true,
+      "hardenedRuntime": true,
+      "gatekeeperAssess": false,
+      "extendInfo": {
+        "NSMicrophoneUsageDescription": "VeilAssist listens to your microphone to transcribe meetings and answer spoken questions. Audio is processed locally when possible.",
+        "NSCameraUsageDescription": "VeilAssist uses the camera for optional on-screen assistance features.",
+        "NSAppleEventsUsageDescription": "VeilAssist may control other applications to detect active meetings."
+      },
+      "artifactName": "VeilAssist-${version}-${arch}.${ext}"
+    },
+    "linux": {
+      "icon": "build/icons",
+      "category": "Utility",
+      "maintainer": "VeilAssist",
+      "synopsis": "Discreet on-screen AI assistant for live meetings",
+      "description": "Undetectable AI for live meetings — a floating assistant that transcribes, answers questions, and helps you participate confidently.",
+      "target": [
+        "AppImage",
+        "deb"
+      ],
+      "artifactName": "VeilAssist-${version}-${arch}.${ext}"
     },
     "portable": {
       "artifactName": "VeilAssist.exe"
