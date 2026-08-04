@@ -1122,7 +1122,6 @@ async function runCalendarReminderTick() {
         ? `Meeting starts in ${reminderMinutes} min`
         : 'Meeting is starting now'
       const body = `${String(m.title || 'Upcoming meeting').slice(0, 120)}`
-      sendToOverlay('notify', { message: `📅 ${title}: ${body}` })
       try {
         new Notification({ title: getBrandName(), body: `${title}: ${body}` }).show()
       } catch (_) {}
