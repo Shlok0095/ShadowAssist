@@ -1,6 +1,6 @@
 {
   "name": "veilassist",
-  "version": "2026.08.05.03.06",
+  "version": "2026.08.05.13.02",
   "description": "Undetectable AI for live meetings — discreet on-screen meeting assistant",
   "author": "VeilAssist",
   "license": "UNLICENSED",
@@ -129,9 +129,9 @@
         "NSCameraUsageDescription": "VeilAssist uses the camera for optional on-screen assistance features.",
         "NSAppleEventsUsageDescription": "VeilAssist may control other applications to detect active meetings."
       },
-      "artifactName": "VeilAssist-${version}-${arch}.${ext}",
-      "bundleShortVersion": "2026.08.05.03.06",
-      "bundleVersion": "2026.08.05.03.06"
+      "artifactName": "VeilAssist${version}-${arch}.${ext}",
+      "bundleShortVersion": "2026.08.05.13.02",
+      "bundleVersion": "2026.08.05.13.02"
     },
     "linux": {
       "icon": "build/icons",
@@ -143,10 +143,10 @@
         "AppImage",
         "deb"
       ],
-      "artifactName": "VeilAssist-${version}-${arch}.${ext}"
+      "artifactName": "VeilAssist${version}-${arch}.${ext}"
     },
     "portable": {
-      "artifactName": "VeilAssist-${version}.${ext}"
+      "artifactName": "VeilAssist${version}.${ext}"
     },
     "nsis": {
       "oneClick": true,
@@ -157,9 +157,9 @@
       "createStartMenuShortcut": true,
       "shortcutName": "VeilAssist",
       "include": "scripts/nsis/installer.nsh",
-      "artifactName": "VeilAssist-Setup-${version}.${ext}"
+      "artifactName": "VeilAssistSetup${version}.${ext}"
     },
-    "artifactName": "${productName}-${version}.${ext}"
+    "artifactName": "${productName}${version}.${ext}"
   },
   "devDependencies": {
     "@vitejs/plugin-react": "^4.2.1",

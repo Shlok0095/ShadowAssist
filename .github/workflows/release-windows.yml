@@ -76,13 +76,13 @@ jobs:
             $nf = $_.Name.Replace($cleaned, $ver)
             Rename-Item $_.FullName $nf
           }
-          $setup = "dist/VeilAssist-Setup-$ver.exe"
+          $setup = "dist/VeilAssistSetup-$ver.exe"
           if (-not (Test-Path $setup)) {
             Get-ChildItem dist
             throw "Missing $setup"
           }
           Copy-Item $setup "dist/VeilAssist-Setup.exe" -Force
-          $portable = "dist/VeilAssist-$ver.exe"
+          $portable = "dist/VeilAssist$ver.exe"
           if (Test-Path $portable) { Copy-Item $portable "dist/VeilAssist.exe" -Force }
 
       - name: Record build version state
