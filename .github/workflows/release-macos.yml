@@ -70,6 +70,9 @@ jobs:
           VEILASSIST_GOOGLE_CAL_CLIENT_ID: ${{ secrets.GOOGLE_CAL_CLIENT_ID }}
           VEILASSIST_GOOGLE_CAL_CLIENT_SECRET: ${{ secrets.GOOGLE_CAL_CLIENT_SECRET }}
 
+      - name: Verify Hide from Dock policy (activation-policy harness)
+        run: npm run verify:dock
+
       - name: Use exact build version in artifact names
         shell: bash
         run: |

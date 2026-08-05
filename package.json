@@ -50,6 +50,7 @@
     "test:web": "npm --prefix landing run typecheck",
     "test": "npm run test:ci && npm run test:web",
     "test:electron-sqlite": "electron scripts/test-electron-sqlite.cjs",
+    "verify:dock": "electron scripts/verify-dock.cjs",
     "verify": "npm run test && npm run test:persistent-memory && npm run test:electron-sqlite && npm run build:all",
     "package:windows": "npm run build:win"
   },

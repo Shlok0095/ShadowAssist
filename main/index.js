@@ -46,6 +46,18 @@ if (!gotLock) {
 } else {
 const store = require('../lib/store')
 const branding = require('../lib/branding')
+const { setDockVisibility, isDockHidden } = require('./dockPolicy')
+
+// macOS: apply the Dock policy BEFORE the first frame so the Dock icon never
+// flashes in at launch when Hide from Dock / Stealth is enabled. Later calls
+// to setDockVisibility are no-ops thanks to the state-change guard.
+if (process.platform === 'darwin') {
+  try {
+    if (store.get('hideFromTaskbarEnabled') === true || store.get('stealth_mode') === true) {
+      setDockVisibility(false)
+    }
+  } catch (_) {}
+}
 setupApplicationMenu()
 const { isPointInBounds, resolveOverlayMouseCapture } = require('../lib/overlayMousePolicy')
 const { resolveSystemPrompt } = require('../lib/defaultSystemPrompt')
@@ -1318,14 +1330,16 @@ function applyTaskbarVisibility() {
       } catch (_) {}
     }
   }
-  // macOS has no taskbar — hide/show the Dock icon to honor hide-from-taskbar / stealth.
+  // macOS has no taskbar — Dock presence is governed by the activation policy.
+  // NEVER call app.dock.hide() alone: a "regular" app is re-shown by macOS on
+  // the next activation. dockPolicy switches to "accessory" (permanent).
   if (process.platform === 'darwin') {
     try {
-      if (show) app.dock.show()
-      else app.dock.hide()
+      setDockVisibility(show)
     } catch (_) {}
-    // app.dock.hide() deactivates the app (documented). If the overlay is
-    // still on screen, re-focus it so it doesn't stay dimmed/unfocused.
+    // Hiding deactivates the app (documented). If the overlay is still on
+    // screen, re-focus it so it doesn't stay dimmed/unfocused. Safe now:
+    // under "accessory" policy, activation NEVER brings the Dock icon back.
     if (!show && overlayVisible && overlayWindow && !overlayWindow.isDestroyed()) {
       setImmediate(() => focusAppWindowForInput(overlayWindow))
     }
