@@ -1,6 +1,6 @@
 {
   "name": "veilassist",
-  "version": "2026.805.1401",
+  "version": "2026.805.1701",
   "description": "Undetectable AI for live meetings — discreet on-screen meeting assistant",
   "author": "VeilAssist",
   "license": "UNLICENSED",
@@ -127,11 +127,12 @@
       "extendInfo": {
         "NSMicrophoneUsageDescription": "VeilAssist listens to your microphone to transcribe meetings and answer spoken questions. Audio is processed locally when possible.",
         "NSCameraUsageDescription": "VeilAssist uses the camera for optional on-screen assistance features.",
-        "NSAppleEventsUsageDescription": "VeilAssist may control other applications to detect active meetings."
+        "NSAppleEventsUsageDescription": "VeilAssist may control other applications to detect active meetings.",
+        "LSUIElement": true
       },
       "artifactName": "VeilAssist${version}-${arch}.${ext}",
-      "bundleShortVersion": "2026.805.1401",
-      "bundleVersion": "2026.805.1401"
+      "bundleShortVersion": "2026.805.1701",
+      "bundleVersion": "2026.805.1701"
     },
     "linux": {
       "icon": "build/icons",

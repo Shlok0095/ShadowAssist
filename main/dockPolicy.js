@@ -26,7 +26,7 @@
 const { app } = require('electron')
 
 let desiredVisible = true
-let appliedPolicy = 'regular'
+let appliedPolicy = null
 
 function isMac() {
   return process.platform === 'darwin'
@@ -35,12 +35,20 @@ function isMac() {
 /**
  * Make the Dock icon visible (true) or permanently hidden (false).
  *
- * State-change guard: app.dock.show() posts an asynchronous macOS activation
- * that can win a race against an immediately-following app.dock.hide()
- * (icon reappears ~1s later). To make the policy deterministic, OS calls are
- * only issued when the current state actually differs, and the activation
- * policy is only switched when it differs. First-run with the icon already
- * visible therefore becomes a no-op instead of a show()/hide() race.
+ * The activation policy is the durable state; the dock.show()/hide() call
+ * forces the immediate shell update. macOS OVERRIDES a policy applied before
+ * the app finishes launching (LaunchServices applies the Info.plist value —
+ * LSUIElement — at launch completion), so the policy is re-asserted once
+ * after the app is ready. `appliedPolicy` starts unknown (null) to guarantee
+ * the first post-ready call always re-applies the policy instead of trusting
+ * a stale pre-ready state.
+ *
+ * macOS also re-shows the Dock icon whenever the app is activated while the
+ * policy is regular, and `app.dock.hide()` called immediately after such a
+ * re-show is silently ignored (the documented ~1s dock-call race). When the
+ * icon is visible but should be hidden we therefore ALWAYS re-assert the
+ * accessory policy (never trust the cached policy after an activation), and
+ * schedule one deferred re-hide ~1.2s later to defeat the race.
  * @param {boolean} visible
  */
 function setDockVisibility(visible) {
@@ -54,16 +62,40 @@ function setDockVisibility(visible) {
       }
       if (app.dock.isVisible() === false) app.dock.show()
     } else {
-      if (appliedPolicy !== 'accessory') {
+      const iconVisible = app.dock.isVisible() !== false
+      if (iconVisible || appliedPolicy !== 'accessory') {
         app.setActivationPolicy('accessory')
         appliedPolicy = 'accessory'
       }
-      if (app.dock.isVisible() !== false) app.dock.hide()
+      if (iconVisible) {
+        app.dock.hide()
+        setTimeout(() => {
+          if (!desiredVisible && app.dock.isVisible() !== false) {
+            try {
+              app.setActivationPolicy('accessory')
+              app.dock.hide()
+            } catch (err) {
+              console.error('[dockPolicy] deferred hide failed:', err?.message || err)
+            }
+          }
+        }, 1200)
+      }
     }
   } catch (err) {
     console.error('[dockPolicy] setDockVisibility failed:', err?.message || err)
   }
 }
+
+// LaunchServices re-applies the Info.plist activation policy (LSUIElement)
+// when the app finishes launching, silently undoing a pre-ready accessory
+// call. Reset the tracked policy at ready so the first post-ready call
+// re-asserts the desired state at the OS level.
+app.on('ready', () => {
+  appliedPolicy = null
+  try {
+    setDockVisibility(desiredVisible)
+  } catch (_) {}
+})
 
 /**
  * Current effective state: true when the Dock icon is hidden.
