@@ -70,7 +70,7 @@ jobs:
         shell: pwsh
         run: |
           $pkg = Get-Content package.json -Raw | ConvertFrom-Json
-          $ver = $pkg.version
+          $ver = (& node -p "require('./build/version-state.json').last").Trim()
           $cleaned = (& node -p "`"require('semver').clean(require('./package.json').version, true)`"").Trim()
           Get-ChildItem dist -Filter "*.exe" | Where-Object { $_.Name -like "*$cleaned*" } | ForEach-Object {
             $nf = $_.Name.Replace($cleaned, $ver)

@@ -1,6 +1,6 @@
 {
   "name": "veilassist",
-  "version": "2026.08.05.13.03",
+  "version": "2026.805.1401",
   "description": "Undetectable AI for live meetings — discreet on-screen meeting assistant",
   "author": "VeilAssist",
   "license": "UNLICENSED",
@@ -130,8 +130,8 @@
         "NSAppleEventsUsageDescription": "VeilAssist may control other applications to detect active meetings."
       },
       "artifactName": "VeilAssist${version}-${arch}.${ext}",
-      "bundleShortVersion": "2026.08.05.13.03",
-      "bundleVersion": "2026.08.05.13.03"
+      "bundleShortVersion": "2026.805.1401",
+      "bundleVersion": "2026.805.1401"
     },
     "linux": {
       "icon": "build/icons",

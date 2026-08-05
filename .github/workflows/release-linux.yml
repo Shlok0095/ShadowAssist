@@ -71,7 +71,7 @@ jobs:
       - name: Use exact build version in artifact names
         shell: bash
         run: |
-          VER=$(node -p "require('./package.json').version")
+          VER=$(node -p "require('./build/version-state.json').last")
           CLEANED=$(node -p "require('semver').clean(require('./package.json').version, true)")
           for f in dist/VeilAssist*.AppImage dist/VeilAssist*.deb; do
             [ -f "$f" ] || continue
