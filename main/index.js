@@ -58,6 +58,7 @@ const screenCapture = require('../lib/screenCapture')
 const screenshotQueue = require('../lib/screenshotQueue')
 const providers = require('../lib/providers')
 const { isMultimodalChatModel } = require('../lib/chatMultimodalModels')
+const { nvidiaFallbackModelsFor } = require('../lib/nvidiaChatModels.cjs')
 const {
   getTranscriptionRequestConfig,
   NATIVE_STT_PROVIDER_IDS,
@@ -2060,11 +2061,7 @@ async function handleAskAI(userQuestion, audioTranscript, _askMeta = {}) {
         ? qwenOutputTokens
         : 8192
     // Same-provider NVIDIA multimodal chain (bench-ranked). Chat no longer depends on Groq.
-    const NVIDIA_FALLBACK_MODELS = [
-      'mistralai/mistral-small-4-119b-2603',
-      'nvidia/nemotron-nano-12b-v2-vl',
-      'meta/llama-3.2-11b-vision-instruct',
-    ]
+    const NVIDIA_FALLBACK_MODELS = nvidiaFallbackModelsFor(model)
     const nvidiaKey = String(store.get(providers.getApiKeyField('nvidia')) || '').trim()
     const fallbacks =
       provider === 'nvidia' && nvidiaKey

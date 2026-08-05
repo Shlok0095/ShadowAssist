@@ -1,63 +1,128 @@
 {
+
   "groq": [
+
     "qwen/qwen3.6-27b"
+
   ],
+
   "nvidia": [
+
     "nvidia/llama-3.1-nemotron-nano-vl-8b-v1",
-    "mistralai/mistral-small-4-119b-2603",
+
     "nvidia/nemotron-nano-12b-v2-vl",
-    "meta/llama-3.2-11b-vision-instruct"
+
+    "meta/llama-3.2-11b-vision-instruct",
+
+    "nvidia/nemotron-3-nano-omni-30b-a3b-reasoning",
+
+    "meta/llama-4-scout-17b-16e-instruct"
+
   ],
+
   "openai": [
+
     "gpt-4o",
+
     "gpt-4o-mini",
+
     "gpt-4.1",
+
     "gpt-4.1-mini",
+
     "gpt-4.1-nano",
+
     "gpt-5.4",
+
     "gpt-5.4-mini",
+
     "gpt-5.4-nano",
+
     "gpt-5.5",
+
     "o4-mini",
+
     "o3",
+
     "o3-mini",
+
     "o1",
+
     "chatgpt-4o-latest",
+
     "gpt-4-turbo",
+
     "gpt-3.5-turbo"
+
   ],
+
   "anthropic": [
+
     "claude-sonnet-4-6",
+
     "claude-opus-4-8",
+
     "claude-opus-4-7",
+
     "claude-opus-4-6",
+
     "claude-haiku-4-5-20251001",
+
     "claude-sonnet-4-5-20250929",
+
     "claude-opus-4-5-20251101",
+
     "claude-3-5-sonnet-20241022",
+
     "claude-3-5-haiku-20241022",
+
     "claude-3-opus-20240229"
+
   ],
+
   "google": [
+
     "gemini-2.0-flash",
+
     "gemini-2.0-flash-lite",
+
     "gemini-2.5-pro-preview",
+
     "gemini-2.5-flash-preview-04-17",
+
     "gemini-1.5-flash",
+
     "gemini-1.5-flash-8b",
+
     "gemini-1.5-pro"
+
   ],
+
   "deepseek": [
+
     "deepseek-chat",
+
     "deepseek-reasoner",
+
     "deepseek-reasoner-v3.2-exp-thinking"
+
   ],
+
   "custom": [
+
     "gpt-4o",
+
     "gpt-4o-mini",
+
     "gpt-4.1",
+
     "gpt-3.5-turbo",
+
     "meta-llama/llama-4-scout-17b-16e-instruct",
+
     "mistral-small-latest"
+
   ]
+
 }
+

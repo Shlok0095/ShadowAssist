@@ -28,6 +28,7 @@ const nodeTestFiles = [
   'scripts/test-chat-stream-fallback.cjs',
   'scripts/test-conversation-memory.cjs',
   'scripts/test-nvidia-streaming-stt.cjs',
+  'scripts/test-nvidia-chat-models.cjs',
   'scripts/test-rolling-transcript.cjs',
   'scripts/test-transcript-consume.cjs',
   'scripts/test-transcript-lifecycle.cjs',

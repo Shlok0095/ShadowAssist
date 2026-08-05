@@ -564,6 +564,7 @@ const MessageBubble = memo(function MessageBubble({
   answerStyle = 'brief',
   teleprompter = false,
   allowCode = false,
+  duplicateRepeat = false,
   onRetry,
   animateIn = false,
 }) {
@@ -589,13 +590,23 @@ const MessageBubble = memo(function MessageBubble({
         {role === 'error' ? (
           <ErrorBubble text={text} onRetry={onRetry} />
         ) : role === 'ai' ? (
-          isBriefAi ? (
-            <BriefAnswer text={text} teleprompter={teleprompter} allowCode={allowCode} />
-          ) : fallback ? (
-            <p className="leading-[1.65]" dangerouslySetInnerHTML={{ __html: renderInline(text) }} />
-          ) : (
-            <MarkdownNodes nodes={allowCode ? nodes : nodes.filter((n) => n.type !== 'code')} />
-          )
+          <>
+            {duplicateRepeat ? (
+              <p
+                className="mb-2 text-[10px] font-semibold uppercase tracking-wider"
+                style={{ color: 'rgba(180, 215, 235, 0.72)' }}
+              >
+                Same as previous answer
+              </p>
+            ) : null}
+            {isBriefAi ? (
+              <BriefAnswer text={text} teleprompter={teleprompter} allowCode={allowCode} />
+            ) : fallback ? (
+              <p className="leading-[1.65]" dangerouslySetInnerHTML={{ __html: renderInline(text) }} />
+            ) : (
+              <MarkdownNodes nodes={allowCode ? nodes : nodes.filter((n) => n.type !== 'code')} />
+            )}
+          </>
         ) : (
           <span className="whitespace-pre-wrap text-[13px] leading-relaxed">{text}</span>
         )}
@@ -933,6 +944,7 @@ const ResponsePanelInner = React.forwardRef(function ResponsePanel(
                             answerStyle={answerStyle}
                             teleprompter={overlayTeleprompter}
                             allowCode={allowCode}
+                            duplicateRepeat={m.duplicateRepeat === true}
                             onRetry={m.role === 'error' ? onRetry : undefined}
                             animateIn={m.role === 'ai' && isLatestTurn}
                           />

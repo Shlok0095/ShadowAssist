@@ -186,6 +186,15 @@ test('recent eligible primary failure opens a short circuit', async () => {
   assert.equal(fallbackCalls, 2)
 })
 
+test('403 and 404 are fallback eligible (deprecated or entitlement-blocked NIM models)', () => {
+  const forbidden = new Error('Authorization failed')
+  forbidden.status = 403
+  assert.equal(isEligibleFallbackError(forbidden), true)
+  const missing = new Error('Not found')
+  missing.status = 404
+  assert.equal(isEligibleFallbackError(missing), true)
+})
+
 test('ordered same-provider fallbacks try the next multimodal model', async () => {
   const calls = []
   const primary = attempt('nvidia', async function* () {
@@ -199,7 +208,7 @@ test('ordered same-provider fallbacks try the next multimodal model', async () =
     const error = new Error('unavailable')
     error.status = 503
     throw error
-  }, 'mistralai/mistral-small-4-119b-2603')
+  }, 'meta/llama-4-scout-17b-16e-instruct')
   const fb2 = attempt('nvidia', async function* () {
     calls.push('fb2')
     yield 'screen-ok'

@@ -1033,11 +1033,13 @@ export default function App() {
         streamAccumRef.current = ''
         const turnMeta = activeTurnMetaRef.current
         if (full) {
-          if (full === lastResponseRef.current) {
-            console.log('SKIP: duplicate response')
-            return
+          const isDuplicateRepeat =
+            lastResponseRef.current !== '' && full === lastResponseRef.current
+          if (!isDuplicateRepeat) {
+            lastResponseRef.current = full
+          } else {
+            console.log('duplicate response — showing with repeat note')
           }
-          lastResponseRef.current = full
           setMessages((m) => [
             ...m,
             {
@@ -1046,6 +1048,7 @@ export default function App() {
               id: ++msgId.current,
               askSource: turnMeta?.askSource,
               screenContext: turnMeta?.screenContext || null,
+              ...(isDuplicateRepeat ? { duplicateRepeat: true } : {}),
             },
           ])
         }
