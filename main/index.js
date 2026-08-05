@@ -1344,6 +1344,15 @@ function applyTaskbarVisibility() {
   if (process.platform === 'darwin') applyDockPolicy()
 }
 
+// Mirrors the Dock state applied at module load (early setDockVisibility
+// call for Hide-from-Dock / Stealth): an already-hidden launch must NOT count
+// as a shown->hidden transition on the first applyDockPolicy, so startup
+// focus flow stays exactly as-is.
+let dockPolicyPrevState = 'show'
+try {
+  if (process.platform === 'darwin' && !shouldShowAppInTaskbar()) dockPolicyPrevState = 'hide'
+} catch (_) {}
+
 /**
  * macOS Dock presence ONLY. The Dock icon state (activation policy +
  * app.dock.show()/hide()) is fully independent of window visibility: the
@@ -1351,18 +1360,25 @@ function applyTaskbarVisibility() {
  * Dock presence is removed. NEVER hide/minimize/close a window here.
  * NEVER call app.dock.hide() alone: a "regular" app is re-shown by macOS on
  * the next activation. dockPolicy switches to "accessory" (permanent).
+ *
+ * Focus: app.dock.hide() deactivates the app (documented macOS behavior).
+ * We compensate ONLY on an actual shown->hidden transition (user just
+ * enabled the setting, or hid the overlay), and only by re-focusing the
+ * window the user is currently using — never the overlay unconditionally,
+ * which would steal focus from Settings on every window event.
  */
 function applyDockPolicy() {
   const show = shouldShowAppInTaskbar()
+  const wasHidden = dockPolicyPrevState !== 'show'
   try {
     setDockVisibility(show)
   } catch (_) {}
-  // app.dock.hide() deactivates the app (documented) — the overlay stays on
-  // screen but loses focus, which feels like "the window hid". Re-focus it so
-  // it remains fully visible AND interactive. Safe under "accessory" policy:
-  // activation NEVER brings the Dock icon back.
-  if (!show && overlayVisible && overlayWindow && !overlayWindow.isDestroyed()) {
-    setImmediate(() => focusAppWindowForInput(overlayWindow))
+  dockPolicyPrevState = show ? 'show' : 'hide'
+  if (!show && !wasHidden) {
+    setImmediate(() => {
+      const w = BrowserWindow.getFocusedWindow()
+      if (w && !w.isDestroyed() && w.isVisible()) focusAppWindowForInput(w)
+    })
   }
 }
 
