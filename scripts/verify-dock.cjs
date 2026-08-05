@@ -11,6 +11,13 @@ const path = require('path')
 
 const { setDockVisibility, isDockHidden } = require('../main/dockPolicy.js')
 
+// macOS-only: the Dock API does not exist on Windows/Linux — skip cleanly
+// instead of failing the pipeline with misleading results.
+if (process.platform !== 'darwin') {
+  console.log('verify-dock: SKIPPED (Dock APIs are macOS-only)')
+  app.exit(0)
+}
+
 const results = []
 let failures = 0
 
