@@ -2,6 +2,59 @@
 
 Status: FIXED + OS-VERIFIED · Scope: Windows 10/11, macOS, Linux (X11)
 
+## 0a. macOS Follow-up: "Dock icon visible the entire time in the real app" — RESOLVED (2026-08-05, v2026.805.1701)
+
+### Root cause (real app only — harness passed because it never reproduced this sequence)
+
+The runtime `accessory` policy was being applied **before the app finished
+launching**. macOS's LaunchServices overrides a pre-ready activation policy
+with the value from the app's Info.plist (`LSBackgroundOnly`/`LSUIElement`
+absent → `regular`) once launch completes. After that:
+
+1. The cached `appliedPolicy` guard in `dockPolicy.js` considered the state
+   "already applied" and **never re-asserted** the accessory policy, so the
+   app stayed `regular` forever (verified: `lsappinfo type="Foreground"` the
+   entire session; harness showed the same, hidden correctly, because the
+   harness applied the policy after `ready`).
+2. The overlay window `show()` at startup re-shows the Dock icon for a
+   `regular` app, and any follow-up `app.dock.hide()` within ~1 second of a
+   `dock.show()` is a **documented no-op** (AppKit race; reproduced
+   empirically: hide at T+150ms fails, hide at T+1.2s succeeds).
+
+### Fix (officially supported API — user-approved)
+
+- `package.json` `build.mac.extendInfo.LSUIElement = true`: the packaged app
+  launches as a `UIElement` accessory app, so **no** Dock icon ever appears
+  (no launch flash; info from Info.plist cannot be overridden at launch).
+- `main/dockPolicy.js`:
+  - `appliedPolicy` starts `null` (unknown) instead of being pre-set, so the
+    first call always issues the OS call — no stale-cache skipping.
+  - `app.on('ready')` resets the cache and **re-asserts** the desired policy,
+    defeating the LaunchServices override at launch completion.
+  - Hide path: when the icon is visible but should be hidden, the accessory
+    policy is **always** re-applied (never trust the cache after an
+    activation re-show), plus a deferred re-hide at 1200ms to defeat the
+    ~1s dock-call race.
+  - Show path unchanged (`regular` + `app.dock.show()`).
+
+### Verified on the current Electron (34.3.0) — real app + packaged build
+
+| # | Scenario | Result |
+|---|---|---|
+| 1 | ON at launch (store `hideFromTaskbarEnabled=true`, `stealth_mode=true`) → `lsappinfo type="UIElement"` (no Dock icon), version 2026.805.1701 | PASS |
+| 2 | OFF (both flags false) → `type="Foreground"` (normal app, Dock icon present) | PASS |
+| 3 | Toggle round-trip HIDDEN→SHOW→RE-HIDE (harness) | PASS |
+| 4 | `npm run verify:dock` (16 assertions incl. activation storm, minimize/restore, tray, setIcon, notification, clipboard paste, OFF→icon reappears, stays hidden >1.5s, window stays visible) | ALL PASS |
+| 5 | Packaged `.app` Info.plist contains `LSUIElement = true` | PASS |
+
+`lsappinfo type` is the ground truth: `Foreground` = Dock icon shown,
+`UIElement` = accessory policy active (icon hidden). The installed
+`/Applications/VeilAssist.app` (2026.805.1701) ships this fix; the previous
+published build (2026.805.1601) is byte-identical to source but lacked the
+ready re-assert + LSUIElement and exhibited `Foreground` the whole time.
+
+---
+
 ## 0. macOS Follow-up: "Dock icon reappears after ~1 second" — RESOLVED
 
 ### Root cause (macOS)
@@ -176,9 +229,12 @@ the same.
 ## Validation
 
 - `scripts/verify-taskbar-config.cjs` — PASS (7 windows covered).
-- `npm run verify:dock` (Electron 34.3.0, macOS) — ALL 9 PASS (see §0).
+- `npm run verify:dock` (Electron 34.3.0, macOS) — ALL 9 PASS (see §0); 16
+  assertions incl. the §0a regression suite.
 - `npm run test:ci` — 26 test files passed.
 - `npm run build` — all renderers build.
+- Packaged-app OS verification (§0a): ON → `type="UIElement"`, OFF →
+  `type="Foreground"` on v2026.805.1701.
 - Runtime GUI validation on Windows 10/11 and Ubuntu/GNOME (X11 + Wayland)
   must be done on physical machines; the static guard and the
   constructor-first design remove the known failure modes above.
