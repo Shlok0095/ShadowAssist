@@ -1285,7 +1285,13 @@ function isSettingsWindowActive() {
   )
 }
 
-/** One taskbar icon (overlay only). Visible mode: show when overlay or settings is open. Invisible: always hidden. */
+/**
+ * Whether the app should have a shell entry (Windows/Linux taskbar button or
+ * macOS Dock icon). This is a PRESENCE decision only — it never affects
+ * whether windows are shown/hidden; the floating assistant window is
+ * independent of it. One entry (overlay only). Visible mode: show when the
+ * overlay or settings is open. Invisible: always hidden.
+ */
 function shouldShowAppInTaskbar() {
   if (isStealthModeEnabled()) return false
   if (store.get('hideFromTaskbarEnabled') === true) return false
@@ -1303,6 +1309,11 @@ function restoreAppWindow(win) {
   return true
 }
 
+/**
+ * Windows/Linux taskbar presence ONLY — never touches window visibility.
+ * A taskbar entry and a visible window are independent; hiding the entry
+ * must never hide, minimize, close, or destroy any window.
+ */
 function applyTaskbarVisibility() {
   const show = shouldShowAppInTaskbar()
   if (overlayWindow && !overlayWindow.isDestroyed()) {
@@ -1330,19 +1341,28 @@ function applyTaskbarVisibility() {
       } catch (_) {}
     }
   }
-  // macOS has no taskbar — Dock presence is governed by the activation policy.
-  // NEVER call app.dock.hide() alone: a "regular" app is re-shown by macOS on
-  // the next activation. dockPolicy switches to "accessory" (permanent).
-  if (process.platform === 'darwin') {
-    try {
-      setDockVisibility(show)
-    } catch (_) {}
-    // Hiding deactivates the app (documented). If the overlay is still on
-    // screen, re-focus it so it doesn't stay dimmed/unfocused. Safe now:
-    // under "accessory" policy, activation NEVER brings the Dock icon back.
-    if (!show && overlayVisible && overlayWindow && !overlayWindow.isDestroyed()) {
-      setImmediate(() => focusAppWindowForInput(overlayWindow))
-    }
+  if (process.platform === 'darwin') applyDockPolicy()
+}
+
+/**
+ * macOS Dock presence ONLY. The Dock icon state (activation policy +
+ * app.dock.show()/hide()) is fully independent of window visibility: the
+ * floating assistant window stays visible and interactive — only the app's
+ * Dock presence is removed. NEVER hide/minimize/close a window here.
+ * NEVER call app.dock.hide() alone: a "regular" app is re-shown by macOS on
+ * the next activation. dockPolicy switches to "accessory" (permanent).
+ */
+function applyDockPolicy() {
+  const show = shouldShowAppInTaskbar()
+  try {
+    setDockVisibility(show)
+  } catch (_) {}
+  // app.dock.hide() deactivates the app (documented) — the overlay stays on
+  // screen but loses focus, which feels like "the window hid". Re-focus it so
+  // it remains fully visible AND interactive. Safe under "accessory" policy:
+  // activation NEVER brings the Dock icon back.
+  if (!show && overlayVisible && overlayWindow && !overlayWindow.isDestroyed()) {
+    setImmediate(() => focusAppWindowForInput(overlayWindow))
   }
 }
 

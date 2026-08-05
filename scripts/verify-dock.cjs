@@ -70,24 +70,53 @@ async function main() {
 
   // ---- 2. THE REGRESSION: activation storm (old code failed here) ---------
   // app.dock.hide() + regular policy -> icon returns on first activation.
+  // ALSO asserts the window stays VISIBLE and not minimized the whole time:
+  // hiding the Dock must never hide the floating assistant window.
+  let stormWindowKeptVisible = true
+  let stormWindowNotMinimized = true
   for (let i = 0; i < 3; i++) {
     app.focus({ steal: true })
     win.show()
     win.focus()
     win.moveTop()
     await sleep(450)
+    if (!win.isVisible()) stormWindowKeptVisible = false
+    if (win.isMinimized()) stormWindowNotMinimized = false
   }
-  record('2. activation storm (app.focus/win.show/focus) keeps icon hidden',
-    await assertHiddenEventually('storm', 3000))
+  const stormDockHidden = await assertHiddenEventually('storm', 3000)
+  record('2. activation storm (app.focus/win.show/focus) keeps icon hidden', stormDockHidden)
+  record('2b. window stays VISIBLE during activation storm (never hidden)', stormWindowKeptVisible)
+  record('2c. window is NOT minimized during activation storm', stormWindowNotMinimized)
+  record('2d. window is not destroyed while dock hidden', !win.isDestroyed())
+
+  // ---- 2e. Window keeps keyboard focus while dock hidden --------------------
+  const hadFocusAfterStorm = win.isFocused() || win.webContents.isFocused()
+  record('2e. window keeps focus while dock hidden (interactive)', hadFocusAfterStorm)
+
+  // ---- 2f. Window can be hidden/shown by the USER while dock stays hidden ---
+  // (user "Hide" from tray must not interact with the Dock state)
+  win.hide()
+  await sleep(300)
+  const stillHiddenAfterUserHide = isDockHidden() && app.dock.isVisible() === false
+  win.show()
+  win.focus()
+  await sleep(300)
+  const visibleAfterShow = win.isVisible()
+  const dockStillHiddenAfterShow = isDockHidden() && app.dock.isVisible() === false
+  record('2f. user hide/show cycle does not change Dock state; window restores',
+    stillHiddenAfterUserHide && visibleAfterShow && dockStillHiddenAfterShow)
 
   // ---- 3. Minimize / restore ----------------------------------------------
   win.minimize()
   await sleep(400)
   const h1 = await assertHiddenEventually('minimize', 3000)
+  const minimizedByUser = win.isMinimized()
   win.restore()
   win.focus()
   await sleep(400)
+  const restoredVisible = win.isVisible() && !win.isMinimized()
   record('3. minimize + restore keeps icon hidden', h1 && (await assertHiddenEventually('restore', 3000)))
+  record('3b. minimize was USER-initiated; restore brings window back visible', minimizedByUser && restoredVisible)
 
   // ---- 4. Tray creation + tooltip -----------------------------------------
   const tray = new Tray(trayIcon)
@@ -137,8 +166,10 @@ async function main() {
   setDockVisibility(false)
   await assertHiddenEventually('hide again', 5000)
   await sleep(1500) // > the ~1s window where the icon used to come back
-  record('9. stays hidden >1.5s after re-hide (no delayed reappear)',
-    isDockHidden() && app.dock.isVisible() === false)
+  const stableHidden = isDockHidden() && app.dock.isVisible() === false
+  record('9. stays hidden >1.5s after re-hide (no delayed reappear)', stableHidden)
+  record('9b. window still visible after prolonged hidden period',
+    win.isVisible() && !win.isMinimized() && !win.isDestroyed())
 
   tray.destroy()
   win.destroy()
