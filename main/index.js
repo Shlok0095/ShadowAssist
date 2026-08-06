@@ -9,6 +9,14 @@ const fsPromises = require('fs').promises
 app.setPath('userData', path.join(app.getPath('appData'), 'VeilAssist-v2'))
 app.commandLine.appendSwitch('disable-gpu-shader-disk-cache')
 
+// Stable identity used by safeStorage's Keychain service on macOS.
+// MUST be set before the safeStorage backend initializes: Electron derives
+// the Keychain service name from app.getName() at startup, so branding
+// (productName / user brandName) must never change it or every stored API
+// key becomes undecryptable.
+const APP_RUNTIME_NAME = 'veilassist'
+app.setName(APP_RUNTIME_NAME)
+
 /** Windows: taskbar / Task Manager identity for the packaged app (not the generic Electron entry). */
 if (process.platform === 'win32') {
   app.setAppUserModelId('com.local.veilassist.v2')
@@ -394,7 +402,7 @@ function setupApplicationMenu() {
 function applyRuntimeBranding() {
   const name = getBrandName()
   try {
-    app.setName(name)
+    app.setName(APP_RUNTIME_NAME)
   } catch (_) {}
   if (process.platform === 'darwin') {
     try {

@@ -1,7 +1,5 @@
 # Dependencies & build output
 node_modules/
-dist/
-dist-v100/
 out/
 build/*
 !build/update-channel.txt
