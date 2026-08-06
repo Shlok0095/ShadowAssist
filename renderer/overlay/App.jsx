@@ -1028,7 +1028,6 @@ export default function App() {
       try {
         cancelStreamScroll()
         streamDomAcceptingRef.current = false
-        ipc?.send('shadowassist-stream-ended')
         const full = streamAccumRef.current
         streamAccumRef.current = ''
         const turnMeta = activeTurnMetaRef.current
@@ -1085,7 +1084,6 @@ export default function App() {
     const onError = (_, msg) => {
       cancelStreamScroll()
       streamDomAcceptingRef.current = false
-      ipc?.send('shadowassist-stream-ended')
       streamAccumRef.current = ''
       clearStreamDom()
       setIsThinking(false)
@@ -1098,7 +1096,6 @@ export default function App() {
     const onClear = () => {
       cancelStreamScroll()
       streamDomAcceptingRef.current = false
-      ipc?.send('shadowassist-stream-ended')
       streamAccumRef.current = ''
       clearStreamDom()
       activeTurnMetaRef.current = null
@@ -1305,7 +1302,6 @@ export default function App() {
     const onPurge = () => {
       cancelStreamScroll()
       streamDomAcceptingRef.current = false
-      ipc?.send('shadowassist-stream-ended')
       streamAccumRef.current = ''
       clearStreamDom()
       activeTurnMetaRef.current = null

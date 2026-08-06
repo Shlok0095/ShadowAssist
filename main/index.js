@@ -53,6 +53,7 @@ if (!gotLock) {
   })
 } else {
 const store = require('../lib/store')
+const { ENCRYPTED_KEYS } = store
 const branding = require('../lib/branding')
 const { setDockVisibility, isDockHidden } = require('./dockPolicy')
 
@@ -1062,6 +1063,9 @@ function runMeetingForegroundTick() {
   if (process.platform !== 'win32') return
   if (store.get('meetingForegroundDetectionEnabled') === false) return
   if (meetingForegroundTickInFlight) return
+  // Only pay the PowerShell cost while a session/overlay is actually visible:
+  // a hidden, inactive app does not need to know what the foreground window is.
+  if (!sessionActive && !overlayVisible) return
   meetingForegroundTickInFlight = true
   detectMeetingForegroundOrScan((err, hit) => {
     meetingForegroundTickInFlight = false
@@ -1084,6 +1088,16 @@ function runMeetingForegroundTick() {
       existing.lastSeenAt = now
     } else {
       meetingActiveByPlatform.set(platformKey, { eventId, lastSeenAt: now })
+    }
+    if (meetingToastSuppressedEventIds.size > 500) {
+      // Bound the toast dedupe set: keep the newest entries and drop the
+      // oldest so recently seen meetings stay suppressed. This tick runs
+      // every ~10 s on Windows, so the loop is cheap.
+      const toDrop = Math.max(0, meetingToastSuppressedEventIds.size - 300)
+      if (toDrop > 0) {
+        const iter = meetingToastSuppressedEventIds.values()
+        for (let i = 0; i < toDrop; i++) meetingToastSuppressedEventIds.delete(iter.next().value)
+      }
     }
     if (meetingToastSuppressedEventIds.has(eventId)) return
     console.log('[meeting-detect] hit', hit)
@@ -1109,8 +1123,8 @@ function stopCalendarReminderPoll() {
   }
 }
 
-function makeCalendarReminderKey(eventId, reminderMinutes) {
-  return `${String(eventId || '')}::${Number(reminderMinutes || 0)}`
+function makeCalendarReminderKey(eventId, reminderMinutes, ts) {
+  return `${String(eventId || '')}::${Number(reminderMinutes || 0)}::${Number(ts || 0)}`
 }
 
 function shouldNotifyForMeetingStart({ startIso, reminderMinutes }) {
@@ -1126,6 +1140,15 @@ async function runCalendarReminderTick() {
   if (store.get('calendarRemindersEnabled') === false) return
   const status = googleCalendar.getConnectionStatus((k) => store.get(k))
   if (!status.connected) return
+  // Bound the reminder dedupe set: only remember reminders fired within the
+  // last 36 hours, so one-off keys don't accumulate forever.
+  if (calendarReminderSentKeys.size > 500) {
+    const cutoff = Date.now() - 36 * 60 * 60 * 1000
+    for (const k of calendarReminderSentKeys) {
+      const ts = Number(String(k).split('::')[2] || 0)
+      if (ts && ts < cutoff) calendarReminderSentKeys.delete(k)
+    }
+  }
   const reminderMinutes = Math.max(0, Number(store.get('calendarReminderMinutes') || 0))
   try {
     const out = await googleCalendar.listUpcomingAcceptedMeetings(
@@ -1135,7 +1158,7 @@ async function runCalendarReminderTick() {
     const meetings = Array.isArray(out?.meetings) ? out.meetings : []
     for (const m of meetings) {
       if (!shouldNotifyForMeetingStart({ startIso: m.start, reminderMinutes })) continue
-      const dedupeKey = makeCalendarReminderKey(m.id, reminderMinutes)
+      const dedupeKey = makeCalendarReminderKey(m.id, reminderMinutes, Date.now())
       if (calendarReminderSentKeys.has(dedupeKey)) continue
       calendarReminderSentKeys.add(dedupeKey)
       const title = reminderMinutes > 0
@@ -2691,15 +2714,6 @@ function getLegalDocumentPath(which) {
 }
 
 function setupIPC() {
-  ipcMain.on('shadowassist-stream-flush', (e) => {
-    if (!overlayWindow || overlayWindow.isDestroyed()) return
-    if (e.sender !== overlayWindow.webContents) return
-  })
-  ipcMain.on('shadowassist-stream-ended', (e) => {
-    if (!overlayWindow || overlayWindow.isDestroyed()) return
-    if (e.sender !== overlayWindow.webContents) return
-  })
-
   ipcMain.handle('legal:open', async (_, which) => {
     const p = getLegalDocumentPath(which)
     if (!p) return { ok: false, error: 'File not found' }
@@ -3013,31 +3027,42 @@ function setupIPC() {
     return true
   })
   ipcMain.handle('export-user-data', async () => {
-    const { canceled, filePath } = await dialog.showSaveDialog({
-      defaultPath: 'veilassist_data_export.json',
-      filters: [{ name: 'JSON', extensions: ['json'] }],
-    })
-    if (canceled || !filePath) return { ok: false, canceled: true }
-    const payload = {
-      exportedAt: new Date().toISOString(),
-      systemPrompt: store.get('systemPrompt'),
-      knowledgeBase: store.get('knowledgeBase'),
-      contextPrompts: store.get('contextPrompts'),
-      activeContextPromptId: store.get('activeContextPromptId'),
-      contextPromptHistory: store.get('contextPromptHistory'),
-      contextIndexMeta: store.get('contextIndexMeta'),
-      resumeContext: store.get('resumeContext'),
-      jdContext: store.get('jdContext'),
-      resumeSourceName: store.get('resumeSourceName'),
-      meetingSessions: store.get('meetingSessions'),
-      consentRecord: store.get('consentRecord'),
-      consent_v1: store.get('consent_v1'),
+    try {
+      const { canceled, filePath } = await dialog.showSaveDialog({
+        defaultPath: 'veilassist_data_export.json',
+        filters: [{ name: 'JSON', extensions: ['json'] }],
+      })
+      if (canceled || !filePath) return { ok: false, canceled: true }
+      const payload = {
+        exportedAt: new Date().toISOString(),
+        systemPrompt: store.get('systemPrompt'),
+        knowledgeBase: store.get('knowledgeBase'),
+        contextPrompts: store.get('contextPrompts'),
+        activeContextPromptId: store.get('activeContextPromptId'),
+        contextPromptHistory: store.get('contextPromptHistory'),
+        contextIndexMeta: store.get('contextIndexMeta'),
+        resumeContext: store.get('resumeContext'),
+        jdContext: store.get('jdContext'),
+        resumeSourceName: store.get('resumeSourceName'),
+        meetingSessions: store.get('meetingSessions'),
+        consentRecord: store.get('consentRecord'),
+        consent_v1: store.get('consent_v1'),
+      }
+      await fsPromises.writeFile(filePath, JSON.stringify(payload, null, 2), 'utf8')
+      return { ok: true, path: filePath }
+    } catch (e) {
+      console.error('[export-user-data]', e?.message || e)
+      return { ok: false, error: e?.message || String(e) }
     }
-    await fsPromises.writeFile(filePath, JSON.stringify(payload, null, 2), 'utf8')
-    return { ok: true, path: filePath }
   })
 
-  ipcMain.handle('get-store', (_, key) => store.get(key))
+  // Do not hand encrypted API keys to the renderer: it only needs presence
+  // (the settings keySetMap checks `!!storeValue`). The plaintext key is
+  // resolved main-side inside 'test-api' below.
+  ipcMain.handle('get-store', (_, key) => {
+    if (ENCRYPTED_KEYS.includes(String(key || ''))) return ''
+    return store.get(key)
+  })
   ipcMain.handle('set-store', (_, key, value) => {
     let stored = value
     if (key === 'assistAutoTrigger') {
@@ -3213,10 +3238,21 @@ function setupIPC() {
     for (const k of store.ENCRYPTED_KEYS) {
       if (all[k]) all[k] = '••••configured'
     }
+    // Transcripts are heavy and served on demand via meeting-sessions:list —
+    // never ship them with every settings snapshot.
+    if (all.meetingSessions) delete all.meetingSessions
     return all
   })
   ipcMain.handle('test-api', async (_, provider, key) => {
-    return getAiClient().testConnection(provider, key, (k) => store.get(k))
+    // The renderer never holds the stored API key (get-store redacts it).
+    // Resolve the key here: prefer the one passed in (freshly typed this
+    // session), fall back to the persisted encrypted value.
+    let resolved = String(key || '').trim()
+    if (!resolved) {
+      const meta = (require('../lib/providers').getProviderMetadataForUI() || []).find((m) => m.id === provider)
+      if (meta?.keyField) resolved = String(store.get(meta.keyField) || '')
+    }
+    return getAiClient().testConnection(provider, resolved, (k) => store.get(k))
   })
   ipcMain.handle('get-provider-metadata', () => require('../lib/providers').getProviderMetadataForUI())
   ipcMain.handle('get-intelligence-flags', () => {
@@ -3512,10 +3548,32 @@ function setupIPC() {
   })
   // ─────────────────────────────────────────────────────────────────────────
 
-  ipcMain.handle('show-open-dialog', (_, opts) => dialog.showOpenDialog(opts))
+  // Paths returned by the file-open dialog, bookmarked so parse-playbook only
+  // reads files the user explicitly picked (a renderer compromise cannot use
+  // parse-playbook to exfiltrate arbitrary files).
+  const dialogPickedPaths = new Set()
+  const dialogPickTimestamps = new Map()
+
+  ipcMain.handle('show-open-dialog', async (_, opts) => {
+    const res = await dialog.showOpenDialog(opts)
+    if (!res.canceled && res.filePaths?.length) {
+      for (const p of res.filePaths) {
+        const abs = path.resolve(String(p || ''))
+        dialogPickedPaths.add(abs)
+        dialogPickTimestamps.set(abs, Date.now())
+      }
+    }
+    return res
+  })
   ipcMain.handle('parse-playbook', async (_, filePath) => {
     try {
-      const text = await parsePlaybookFile(filePath)
+      const abs = path.resolve(String(filePath || ''))
+      const pickedAt = dialogPickTimestamps.get(abs)
+      // Only allow files the user just selected via the open dialog.
+      if (!dialogPickedPaths.has(abs) || !pickedAt || Date.now() - pickedAt > 5 * 60 * 1000) {
+        throw new Error('File not selected via the picker')
+      }
+      const text = await parsePlaybookFile(abs)
       return String(text || '')
     } catch (e) {
       console.warn('[parse-playbook]', e?.message || e)
