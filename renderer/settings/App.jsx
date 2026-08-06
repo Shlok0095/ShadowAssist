@@ -397,7 +397,8 @@ export default function Settings() {
     if (!ipc) return
     const onStealth = (_, v) => setStealthModeUi(!!v)
     const unsubStealth = ipc.on('stealth-mode-update', onStealth)
-    const unsubToast = ipc.on('settings-toast', (payload) => {
+    // ipcShim listeners receive (event, ...args) — payload is the second argument.
+    const unsubToast = ipc.on('settings-toast', (_, payload) => {
       if (!payload || typeof payload !== 'object') return
       setSettingsToast(payload)
       const ms = Number(payload.durationMs) || 8000

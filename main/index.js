@@ -387,6 +387,15 @@ function seedOverlayPositionIfNeeded() {
   }
 }
 
+/** Last minimum size applied to the overlay window (setMinimumSize is not idempotent-cheap on Windows). */
+let overlayMinimumSize = null
+function applyOverlayMinimumSize(minW, minH) {
+  if (!overlayWindow || overlayWindow.isDestroyed()) return
+  if (overlayMinimumSize && overlayMinimumSize.w === minW && overlayMinimumSize.h === minH) return
+  overlayMinimumSize = { w: minW, h: minH }
+  overlayWindow.setMinimumSize(minW, minH)
+}
+
 function createOverlayWindow() {
   if (overlayWindow) return overlayWindow
   const savedBounds = store.get('overlayBounds') || {}
@@ -461,6 +470,7 @@ function createOverlayWindow() {
     clearOverlayOpacityShield()
     overlayContentProtectionApplied = null
     overlayWindow = null
+    overlayMinimumSize = null
     overlayMouseCaptureApplied = null
     stopMousePassthroughPoll()
     conversationMemory.clearSession('overlay')
@@ -1027,18 +1037,62 @@ function syncOverlayMouseCapture() {
 }
 
 let appQuitting = false
-/** Full exit: hotkeys, timers, capture workers, all windows, tray — then `app.quit()`. */
-async function quitApplication() {
+
+let updateCheckInterval = null
+let updateCheckKickoffTimer = null
+function stopUpdateChecks() {
+  if (updateCheckInterval) clearInterval(updateCheckInterval)
+  if (updateCheckKickoffTimer) clearTimeout(updateCheckKickoffTimer)
+  updateCheckInterval = null
+  updateCheckKickoffTimer = null
+}
+
+/** Async vector-index writes in flight — awaited (bounded) during shutdown so they are not lost. */
+const pendingVectorWrites = new Set()
+function trackVectorWrite(promise) {
+  pendingVectorWrites.add(promise)
+  promise.finally(() => pendingVectorWrites.delete(promise)).catch(() => {})
+}
+async function drainVectorWrites() {
+  if (!pendingVectorWrites.size) return
+  await Promise.allSettled([...pendingVectorWrites])
+}
+
+/** Hard caps so a wedged worker can never hang the quit path. */
+const QUIT_SESSION_TEARDOWN_TIMEOUT_MS = 8000
+const QUIT_VECTOR_DRAIN_TIMEOUT_MS = 5000
+
+function withTimeout(promise, ms, label) {
+  return Promise.race([
+    promise,
+    new Promise((resolve) =>
+      setTimeout(() => {
+        console.warn(`[quit] ${label} timed out after ${ms}ms`)
+        resolve(undefined)
+      }, ms)
+    ),
+  ])
+}
+
+/**
+ * Shared teardown for every exit path (Quit button, tray, Ctrl+Q/Alt+F4 via
+ * before-quit, updater restart). Idempotent; never throws; never hangs.
+ */
+async function shutdownApplication() {
   if (appQuitting) return
   appQuitting = true
   stopMousePassthroughPoll()
+  stopUpdateChecks()
   if (sessionActive) {
     try {
-      await stopSession()
+      await withTimeout(stopSession(), QUIT_SESSION_TEARDOWN_TIMEOUT_MS, 'stopSession')
     } catch (e) {
       console.warn('[quit] stopSession failed:', e?.message || e)
     }
   }
+  try {
+    await withTimeout(drainVectorWrites(), QUIT_VECTOR_DRAIN_TIMEOUT_MS, 'vector drain')
+  } catch (_) {}
   try {
     hotkeys.unregisterAll()
   } catch (_) {}
@@ -1050,16 +1104,23 @@ async function quitApplication() {
   } catch (_) {}
   try {
     localStt.shutdown()
+    streamingStt.stopListening()
     cloudRestStt.stopListening()
     hindsightLocalServer.stop()
     phoneLink.stop()
     phoneLinkMic.stop()
     phoneMirror.stop()
   } catch (_) {}
+  try {
+    embeddingClient.shutdown()
+  } catch (_) {}
+  try {
+    vectorMemory.close()
+  } catch (_) {}
   stopMeetingForegroundPoll()
   closeMeetingToastWindow()
   stopCalendarReminderPoll()
-  for (const w of [overlayWindow, settingsWindow, consentWindow, onboardingWindow, globalChatWindow]) {
+  for (const w of [overlayWindow, settingsWindow, consentWindow, onboardingWindow, globalChatWindow, launcherWindow]) {
     try {
       if (w && !w.isDestroyed()) w.destroy()
     } catch (_) {}
@@ -1069,10 +1130,17 @@ async function quitApplication() {
   consentWindow = null
   onboardingWindow = null
   globalChatWindow = null
+  launcherWindow = null
   try {
     if (tray) tray.destroy()
   } catch (_) {}
   tray = null
+}
+
+/** Full exit: shared teardown, then `app.quit()`. */
+async function quitApplication() {
+  if (appQuitting) return
+  await shutdownApplication()
   app.quit()
 }
 
@@ -1515,11 +1583,11 @@ async function finalizeMeetingSession(snapshot) {
     } catch (ltmErr) {
       console.warn('[ltm] retain failed:', ltmErr?.message || ltmErr)
     }
-    setImmediate(() => {
+    trackVectorWrite(
       vectorMemory.indexSession(record).catch((err) => {
         console.warn('[vector-memory] index session failed:', err?.message || err)
       })
-    })
+    )
     broadcastMeetingSummaryStatus({
       state: 'ready',
       session: {
@@ -1544,6 +1612,13 @@ async function stopSession() {
     await localStt.stopListeningAndDrain()
   } catch (e) {
     console.warn('[local-stt] drain on stop:', e?.message || e)
+  }
+  // Close streaming STT sockets from main directly: the overlay renderer also asks for this
+  // over IPC, but on quit the window may already be destroyed. Idempotent, safe to double-call.
+  try {
+    streamingStt.stopListening()
+  } catch (e) {
+    console.warn('[streaming-stt] stop on session end:', e?.message || e)
   }
 
   sendToOverlay('session-status', false)
@@ -1640,7 +1715,7 @@ async function buildProfileContextBlock({
       out += referenceBlock
     }
 
-    if (routingOn && routeDecision.useResume) {
+    if (useAll || routeDecision.useResume) {
       const resume = String(store.get('resumeContext') || '').trim()
       if (resume) {
         const tree = store.get('resumeTree')
@@ -1649,7 +1724,7 @@ async function buildProfileContextBlock({
       }
     }
 
-    if (routingOn && routeDecision.useJd) {
+    if (useAll || routeDecision.useJd) {
       const jd = String(store.get('jdContext') || '').trim()
       if (jd) {
         const tree = store.get('jdTree')
@@ -1757,7 +1832,7 @@ async function handleAskAI(userQuestion, audioTranscript, _askMeta = {}) {
   if (!apiKey) {
     sendToAiEventTarget('ai-error', 'No API key. Settings → paste your key.')
     currentAbortController = null
-    return
+    return { ok: false }
   }
 
   sendToAiEventTarget('ai-thinking', true)
@@ -1817,7 +1892,8 @@ async function handleAskAI(userQuestion, audioTranscript, _askMeta = {}) {
     lastResponse = clarification
     currentAbortController = null
     sendToAiEventTarget('ai-thinking', false)
-    return
+    // Clarification turn: main kept its transcript, so the overlay must too.
+    return { ok: false }
   }
 
   const routingQuery = followUp?.turn
@@ -1948,7 +2024,7 @@ async function handleAskAI(userQuestion, audioTranscript, _askMeta = {}) {
       'Screen analysis is unavailable because no screenshot was captured or the selected provider/model does not support vision.',
     )
     sendToAiEventTarget('ai-thinking', false)
-    return
+    return { ok: false }
   }
   // Block if there's truly nothing to respond to (no speech, typed question, or structured context).
   // Vision screenshots are handled separately via visionB64 — they don't need text input.
@@ -1956,7 +2032,7 @@ async function handleAskAI(userQuestion, audioTranscript, _askMeta = {}) {
     currentAbortController = null
     sendToAiEventTarget('ai-no-output')
     sendToAiEventTarget('ai-thinking', false)
-    return
+    return { ok: false }
   }
 
   const pf = _askMeta?.promptSummary && typeof _askMeta.promptSummary === 'object' ? _askMeta.promptSummary : {}
@@ -2034,6 +2110,9 @@ async function handleAskAI(userQuestion, audioTranscript, _askMeta = {}) {
   })
   llmResponseInFlight = true
 
+  // Mirrors main's own transcript-clear decision so the overlay consumes its
+  // rolling speech only when main also cleared its copy (keeps both sides in sync).
+  let askCompleted = false
   try {
     const messages = [{ role: 'system', content: fullSystem }, { role: 'user', content: content.length === 1 ? content[0].text : content }]
     const userContent = messages[1].content
@@ -2119,6 +2198,7 @@ async function handleAskAI(userQuestion, audioTranscript, _askMeta = {}) {
       )
     }
     if (!abortController.signal.aborted) {
+      askCompleted = true
       lastResponse = fullText
       if (_askMeta?.preserveTranscript === true) {
         // This turn did not include transcript context (for example, a
@@ -2160,6 +2240,7 @@ async function handleAskAI(userQuestion, audioTranscript, _askMeta = {}) {
     if (currentAbortController === abortController) currentAbortController = null
     sendToAiEventTarget('ai-thinking', false)
   }
+  return { ok: askCompleted }
 }
 
 function sendToOverlay(channel, ...args) {
@@ -2644,7 +2725,15 @@ function setupIPC() {
     }
     if (key === 'referenceVectorIndexEnabled') {
       store.set('referenceVectorIndexEnabled', !!value)
+      // Cached profile blocks may embed retrieval results from the old setting.
+      profileContextCache.clear()
       if (!!value) scheduleReferenceVectorEnrichment()
+      return true
+    }
+    if (key === 'vectorMemoryEnabled') {
+      store.set('vectorMemoryEnabled', !!value)
+      // Turning it on mid-session: run migration/maintenance now instead of next launch.
+      if (!!value) scheduleVectorMemoryMaintenance()
       return true
     }
     if (key === 'openAtLogin') {
@@ -3066,7 +3155,7 @@ function setupIPC() {
     const useX = typeof xOpt === 'number' && !Number.isNaN(xOpt)
     /** Collapsed notch-only mode (~42px pill incl. borders) */
     if (h <= 44) {
-      overlayWindow.setMinimumSize(safeW, 1)
+      applyOverlayMinimumSize(safeW, 1)
       const safeH = Math.max(43, Math.min(940, Math.round(h)))
       const nextX = useX ? Math.round(xOpt) : b.x
       if (
@@ -3082,7 +3171,7 @@ function setupIPC() {
         overlayWindow.setSize(safeW, safeH)
       }
     } else {
-      overlayWindow.setMinimumSize(280, 180)
+      applyOverlayMinimumSize(280, 180)
       const safeH = Math.max(180, Math.min(940, Math.round(h)))
       const nextX = useX ? Math.round(xOpt) : b.x
       if (
@@ -3239,8 +3328,14 @@ async function initApp() {
   setupTray()
   setupHotkeys()
   sessionMemory.startInactivityWatcher(() => {
-    sendToOverlay('session-purge')
-    phoneLink.handleDesktopEvent('session-purge')
+    // End the whole session, not just the UI: leaving sessionActive true kept the
+    // mic and STT sockets running invisibly after the inactivity purge.
+    if (sessionActive) {
+      stopSession().catch((e) => console.warn('[inactivity] stopSession failed:', e?.message || e))
+    } else {
+      sendToOverlay('session-purge')
+      phoneLink.handleDesktopEvent('session-purge')
+    }
     lastResponse = ''
   })
   createOverlayWindow()
@@ -3309,8 +3404,8 @@ function setupAutoUpdater() {
     })
   }
 
-  setInterval(check, 4 * 60 * 60 * 1000)
-  setTimeout(check, 10000)
+  updateCheckInterval = setInterval(check, 4 * 60 * 60 * 1000)
+  updateCheckKickoffTimer = setTimeout(check, 10000)
 
   autoUpdater.on('update-available', (info) => {
     try {
@@ -3334,7 +3429,11 @@ function setupAutoUpdater() {
         defaultId: 0,
       })
       .then(({ response }) => {
-        if (response === 0) autoUpdater.quitAndInstall(false, true)
+        if (response !== 0) return
+        // Tear down sessions/workers first so quitAndInstall's forced quit cannot skip them.
+        shutdownApplication()
+          .catch(() => {})
+          .finally(() => autoUpdater.quitAndInstall(false, true))
       })
       .catch((err) => console.error('[autoUpdater] dialog failed:', err?.message || err))
   })
@@ -3369,13 +3468,26 @@ app.whenReady().then(() => {
 app.on('window-all-closed', () => {
   hotkeys.unregisterAll()
 })
+app.on('before-quit', (event) => {
+  // OS-level quits (Ctrl+Q, Alt+F4, logoff) bypass quitApplication(); run the same
+  // teardown once, then let quit proceed. appQuitting guards against re-entry when
+  // shutdownApplication itself triggers app.quit().
+  if (appQuitting) return
+  event.preventDefault()
+  shutdownApplication()
+    .catch((e) => console.warn('[quit] shutdown failed:', e?.message || e))
+    .finally(() => app.quit())
+})
 app.on('will-quit', () => {
+  // Synchronous backstop — everything here is idempotent after shutdownApplication().
   hotkeys.unregisterAll()
   localStt.shutdown()
+  streamingStt.stopListening()
   cloudRestStt.stopListening()
   phoneLink.stop()
   phoneLinkMic.stop()
   phoneMirror.stop()
+  embeddingClient.shutdown()
   vectorMemory.close()
 })
 app.on('second-instance', () => {

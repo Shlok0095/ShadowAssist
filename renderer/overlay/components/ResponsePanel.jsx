@@ -343,11 +343,11 @@ function CodeBlock({ lang, content, suppressHighlight }) {
   )
 }
 
-function MarkdownNodes({ nodes, proseClass = '' }) {
+function MarkdownNodes({ nodes, proseClass = '', suppressHighlight = false }) {
   return (
     <div className={`space-y-1.5 text-left crystal-answer-text [&_p]:leading-[1.65] [&_li]:leading-relaxed ${proseClass}`}>
       {nodes.map((n, i) => {
-                if (n.type === 'code') return <CodeBlock key={i} lang={n.lang} content={n.content} />
+                if (n.type === 'code') return <CodeBlock key={i} lang={n.lang} content={n.content} suppressHighlight={suppressHighlight} />
                 if (n.type === 'hr') return <hr key={i} className="crystal-divider my-3 border-t" />
                 if (n.type === 'h1')
                   return (
@@ -443,7 +443,7 @@ function copyText(text) {
   else void navigator.clipboard?.writeText(t)
 }
 
-const BriefAnswer = memo(function BriefAnswer({ text, teleprompter = false, allowCode = false }) {
+const BriefAnswer = memo(function BriefAnswer({ text, teleprompter = false, allowCode = false, streaming = false }) {
   const [detailsOpen, setDetailsOpen] = useState(false)
   const [copied, setCopied] = useState('')
   const nodes = useMemo(() => parseMarkdown(text), [text])
@@ -497,6 +497,7 @@ const BriefAnswer = memo(function BriefAnswer({ text, teleprompter = false, allo
         <div className={`space-y-3 crystal-answer-text ${tp ? 'text-[16px] leading-[1.85]' : 'text-[15px] leading-[1.8]'}`}>
           <MarkdownNodes
             nodes={prose}
+            suppressHighlight={streaming}
             proseClass={
               tp
                 ? '[&_p]:text-[16px] [&_p]:leading-[1.85]'
@@ -517,7 +518,7 @@ const BriefAnswer = memo(function BriefAnswer({ text, teleprompter = false, allo
               {copied === 'code' ? 'Copied' : 'Copy code'}
             </button>
           </div>
-          <MarkdownNodes nodes={code} />
+          <MarkdownNodes nodes={code} suppressHighlight={streaming} />
         </div>
       ) : null}
       {details.length > 0 ? (
@@ -532,7 +533,7 @@ const BriefAnswer = memo(function BriefAnswer({ text, teleprompter = false, allo
           </button>
           {detailsOpen ? (
             <div className="crystal-divider mt-2 border-t pt-2">
-              <MarkdownNodes nodes={details} />
+              <MarkdownNodes nodes={details} suppressHighlight={streaming} />
             </div>
           ) : null}
         </div>
@@ -627,9 +628,18 @@ function HeardQuestionBubble({ text }) {
   )
 }
 
-/** Brief mode: progressively formats the throttled stream instead of showing raw text first. */
+/**
+ * Brief mode while generating. Two layers:
+ * - Raw mirror (`streamTextRef`): a plain <p> that App.jsx appends tokens into
+ *   imperatively — every token paints without a React render or markdown parse.
+ * - Formatted preview (`streamPreview`): throttled low-priority state that
+ *   replaces the raw mirror once the first flush lands.
+ * `streamPlaceholderRef` is hidden imperatively on the first token for the same reason.
+ */
 function BriefStreamPreview({
   streamPreview,
+  streamTextRef,
+  streamPlaceholderRef,
   onAbort,
   teleprompter = false,
   heardText = '',
@@ -666,9 +676,19 @@ function BriefStreamPreview({
       </div>
       <div className="crystal-answer-shell rounded-xl px-3.5 py-3.5">
         {streamPreview ? (
-          <BriefAnswer text={streamPreview} teleprompter={teleprompter} allowCode />
+          <BriefAnswer text={streamPreview} teleprompter={teleprompter} allowCode streaming />
         ) : (
-          <p className="crystal-muted text-[12px]">Composing answer…</p>
+          <>
+            <p
+              ref={streamTextRef}
+              className={`crystal-answer-text whitespace-pre-wrap ${
+                teleprompter ? 'text-[17px] leading-[1.85]' : 'text-[15px] leading-[1.8]'
+              }`}
+            />
+            <p ref={streamPlaceholderRef} className="crystal-muted text-[12px]">
+              Composing answer…
+            </p>
+          </>
         )}
       </div>
     </div>
@@ -760,7 +780,7 @@ function DetailedStreamPreview({
         ) : null}
       </div>
       <div className="crystal-panel-inset rounded-xl px-3.5 py-3 opacity-90">
-        <MarkdownNodes nodes={nodes} />
+        <MarkdownNodes nodes={nodes} suppressHighlight />
       </div>
     </div>
   )
@@ -772,6 +792,7 @@ const ResponsePanelInner = React.forwardRef(function ResponsePanel(
     isThinking,
     streamTextRef,
     streamPulseRef,
+    streamPlaceholderRef,
     fontSize,
     answerStyle = 'brief',
     overlayTeleprompter = false,
@@ -879,6 +900,8 @@ const ResponsePanelInner = React.forwardRef(function ResponsePanel(
             ) : answerStyle === 'brief' ? (
               <BriefStreamPreview
                 streamPreview={streamPreview}
+                streamTextRef={streamTextRef}
+                streamPlaceholderRef={streamPlaceholderRef}
                 onAbort={onAbort}
                 teleprompter={overlayTeleprompter}
                 heardText={activeHeard?.text}

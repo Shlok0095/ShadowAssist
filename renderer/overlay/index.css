@@ -917,7 +917,8 @@ html, body {
 .response-scroll {
   scrollbar-width: thin;
   scrollbar-color: rgba(255, 255, 255, 0.18) transparent;
-  overflow-anchor: none;
+  /* Keep the reader's viewport pinned while streamed content grows above/below. */
+  overflow-anchor: auto;
   overscroll-behavior: contain;
   -webkit-overflow-scrolling: touch;
 }
