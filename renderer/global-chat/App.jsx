@@ -1,7 +1,7 @@
 // Copyright (c) 2026 VeilAssist. All rights reserved.
 // Phase 8 — standalone chat window (long threads without the floating overlay).
 
-import React, { useEffect, useRef, useState } from 'react'
+import React, { useEffect, useRef, useState, useCallback } from 'react'
 import { createIpcShim } from '../shared/ipcShim'
 import brandLogo from '../shared/brandLogo'
 import SimpleMarkdown from '../shared/SimpleMarkdown'
@@ -13,8 +13,36 @@ export default function App() {
   const [messages, setMessages] = useState([])
   const [input, setInput] = useState('')
   const [thinking, setThinking] = useState(false)
-  const streamRef = useRef('')
   const listRef = useRef(null)
+  /** Imperative stream mirror — tokens append here without React re-renders. */
+  const streamTextRef = useRef(null)
+  const streamAccumRef = useRef('')
+  const streamDomAcceptingRef = useRef(false)
+  const streamingMessageIdRef = useRef(null)
+
+  const resetStreamDom = useCallback(() => {
+    streamAccumRef.current = ''
+    streamDomAcceptingRef.current = false
+    streamingMessageIdRef.current = null
+    if (streamTextRef.current) streamTextRef.current.textContent = ''
+  }, [])
+
+  const appendStreamToken = useCallback((token) => {
+    if (!streamDomAcceptingRef.current) return
+    const t = token == null ? '' : String(token)
+    if (!t) return
+    streamAccumRef.current += t
+    if (streamTextRef.current) streamTextRef.current.textContent = streamAccumRef.current
+  }, [])
+
+  const commitStreamToMessages = useCallback(() => {
+    const text = streamAccumRef.current
+    streamDomAcceptingRef.current = false
+    setMessages((prev) =>
+      prev.map((m) => (m.streaming ? { ...m, text, streaming: false } : m)),
+    )
+    resetStreamDom()
+  }, [resetStreamDom])
 
   useEffect(() => {
     ipc?.invoke('get-store', 'uiAccentTheme').then((id) => {
@@ -25,37 +53,36 @@ export default function App() {
   useEffect(() => {
     if (!ipc) return
     const onStart = () => {
-      streamRef.current = ''
+      streamAccumRef.current = ''
+      streamDomAcceptingRef.current = true
       setMessages((prev) => {
-        if (prev.some((m) => m.streaming)) return prev
-        return [...prev, { role: 'assistant', text: '', id: `a-${Date.now()}`, streaming: true }]
+        const existing = prev.find((m) => m.streaming)
+        if (existing) {
+          streamingMessageIdRef.current = existing.id
+          return prev
+        }
+        const id = `a-${Date.now()}`
+        streamingMessageIdRef.current = id
+        return [...prev, { role: 'assistant', text: '', id, streaming: true }]
+      })
+      requestAnimationFrame(() => {
+        if (streamTextRef.current) streamTextRef.current.textContent = ''
       })
     }
     const onToken = (_, token) => {
-      streamRef.current += token || ''
-      const chunk = streamRef.current
-      setMessages((prev) => {
-        const next = [...prev]
-        for (let i = next.length - 1; i >= 0; i--) {
-          if (next[i].role === 'assistant' && next[i].streaming) {
-            next[i] = { ...next[i], text: chunk }
-            break
-          }
-        }
-        return next
-      })
+      appendStreamToken(token)
     }
     const onThinking = (_, v) => {
       setThinking(!!v)
-      if (!v) onDone()
+      if (!v) commitStreamToMessages()
     }
     const onDone = () => {
-      streamRef.current = ''
-      setMessages((prev) =>
-        prev.map((m) => (m.streaming ? { ...m, streaming: false } : m)),
-      )
+      commitStreamToMessages()
+      setThinking(false)
     }
     const onError = (_, msg) => {
+      streamDomAcceptingRef.current = false
+      resetStreamDom()
       setMessages((prev) => [
         ...prev.filter((m) => !m.streaming),
         { role: 'assistant', text: String(msg || 'Request failed'), id: `err-${Date.now()}`, error: true },
@@ -77,7 +104,7 @@ export default function App() {
         (ch) => ipc.removeAllListeners(ch),
       )
     }
-  }, [])
+  }, [appendStreamToken, commitStreamToMessages, resetStreamDom])
 
   useEffect(() => {
     listRef.current?.scrollTo({ top: listRef.current.scrollHeight, behavior: 'smooth' })
@@ -89,11 +116,18 @@ export default function App() {
     if (!q || thinking) return
     setInput('')
     setThinking(true)
+    streamAccumRef.current = ''
+    streamDomAcceptingRef.current = true
+    const assistantId = `a-${Date.now()}`
+    streamingMessageIdRef.current = assistantId
     setMessages((prev) => [
       ...prev,
       { role: 'user', text: q, id: `u-${Date.now()}` },
-      { role: 'assistant', text: '', id: `a-${Date.now()}`, streaming: true },
+      { role: 'assistant', text: '', id: assistantId, streaming: true },
     ])
+    requestAnimationFrame(() => {
+      if (streamTextRef.current) streamTextRef.current.textContent = ''
+    })
     await ipc?.invoke('ask-ai-with-transcript', q, '', {
       source: 'global_chat',
       noScreen: true,
@@ -116,7 +150,7 @@ export default function App() {
           className="gc-clear"
           onClick={() => {
             setMessages([])
-            streamRef.current = ''
+            resetStreamDom()
           }}
         >
           Clear
@@ -131,7 +165,18 @@ export default function App() {
             <div key={m.id} className={`gc-msg gc-msg-${m.role}${m.error ? ' gc-msg-error' : ''}`}>
               <div className="gc-msg-label">{m.role === 'user' ? 'You' : 'Assistant'}</div>
               {m.role === 'assistant' ? (
-                <SimpleMarkdown text={m.text || (m.streaming ? '…' : '')} />
+                m.streaming ? (
+                  <p
+                    ref={(node) => {
+                      if (m.streaming) streamTextRef.current = node
+                    }}
+                    className="gc-msg-text whitespace-pre-wrap"
+                  >
+                    …
+                  </p>
+                ) : (
+                  <SimpleMarkdown text={m.text || ''} />
+                )
               ) : (
                 <p className="gc-msg-text">{m.text}</p>
               )}

@@ -2124,6 +2124,7 @@ async function handleAskAI(userQuestion, audioTranscript, _askMeta = {}) {
           : ''
     let fullText = ''
     let firstTokenAt = 0
+    const tokenBatcher = createAiTokenBatcher((chunk) => sendToAiEventTarget('ai-token', chunk))
     // The Groq on-demand tier allows 8K TPM for Qwen 3.6. Screenshot and
     // prompt input commonly consume 3–4K tokens. A bounded output also avoids
     // reserving unnecessary TPM and keeps the overlay answer useful quickly.
@@ -2190,8 +2191,9 @@ async function handleAskAI(userQuestion, audioTranscript, _askMeta = {}) {
         )
       }
       fullText += token
-      sendToAiEventTarget('ai-token', token)
+      tokenBatcher.push(token)
     }
+    tokenBatcher.flush()
     if (firstTokenAt) {
       console.log(
         `[ai-perf] complete=${Date.now() - askStartedAt}ms generation=${Date.now() - firstTokenAt}ms provider=${streamFinishMeta?.provider || activeStreamProvider} fallback=${streamFinishMeta?.fallbackUsed === true}`,
@@ -2255,6 +2257,51 @@ function sendToAiEventTarget(channel, ...args) {
   if (aiEventTarget === 'global_chat') sendToGlobalChat(channel, ...args)
   else sendToOverlay(channel, ...args)
   phoneLink.handleDesktopEvent(channel, ...args)
+}
+
+/**
+ * Coalesce LLM tokens before IPC — first token flushes immediately so time-to-first-paint
+ * stays fast; subsequent tokens batch up to 16ms or 256 chars to cut main↔renderer churn.
+ */
+function createAiTokenBatcher(sendToken, { maxDelayMs = 16, maxChars = 256 } = {}) {
+  let buf = ''
+  let timer = null
+  let firstToken = true
+
+  const flush = () => {
+    if (timer != null) {
+      clearTimeout(timer)
+      timer = null
+    }
+    if (!buf) return
+    sendToken(buf)
+    buf = ''
+    firstToken = false
+  }
+
+  return {
+    push(token) {
+      const t = token == null ? '' : String(token)
+      if (!t) return
+      buf += t
+      if (firstToken) {
+        flush()
+        return
+      }
+      if (buf.length >= maxChars) {
+        flush()
+        return
+      }
+      if (timer == null) {
+        timer = setTimeout(flush, maxDelayMs)
+      }
+    },
+    flush,
+    reset() {
+      flush()
+      firstToken = true
+    },
+  }
 }
 
 const UI_ACCENT_THEME_IDS = new Set([

@@ -2,7 +2,6 @@
 // Unauthorized copying or distribution is prohibited.
 
 import React, { useState, useEffect, useRef, useCallback, startTransition } from 'react'
-import { flushSync } from 'react-dom'
 import { Eye, Glasses } from 'lucide-react'
 import StatusBar from './components/StatusBar'
 import ResponsePanel from './components/ResponsePanel'
@@ -117,6 +116,9 @@ const MAX_RETAINED_MESSAGES = 60
 function capMessages(list) {
   return list.length > MAX_RETAINED_MESSAGES ? list.slice(list.length - MAX_RETAINED_MESSAGES) : list
 }
+
+/** Debounce live-caption React updates — refs stay synchronous for Ask snapshots. */
+const LIVE_TRANSCRIPT_UI_MS = 80
 
 const MAX_LIVE_SEGMENTS = 30
 /** Max utterance segments sent to the LLM (Cluely-style window). */
@@ -588,7 +590,6 @@ async function acquireMicMeetingStream() {
 export default function App() {
   const [messages, setMessages] = useState([])
   const [isThinking, setIsThinking] = useState(false)
-  const [status, setStatus] = useState('idle')
   const [opacity, setOpacity] = useState(0.92)
   const [fontSize, setFontSize] = useState('medium')
   const [answerStyle, setAnswerStyle] = useState('brief')
@@ -604,7 +605,11 @@ export default function App() {
   const answerStyleRef = useRef('brief')
   const lastAskRef = useRef({ q: null, opts: {} })
   const streamPreviewFlushRef = useRef(null)
-  const [micTranscript, setMicTranscript] = useState('')
+  const liveTranscriptUiFlushRef = useRef(null)
+  const rollingBarUiFlushRef = useRef(null)
+  const rollingBarDisplayRef = useRef({ text: '', label: '', speaker: 'other' })
+  const pendingWindowResizeRef = useRef(null)
+  const windowResizeRafRef = useRef(null)
   const [liveTranscriptSegments, setLiveTranscriptSegments] = useState([])
   const [rollingBar, setRollingBar] = useState({ text: '', label: '', speaker: 'other' })
   const [sysCaptureActive, setSysCaptureActive] = useState(false)
@@ -748,8 +753,56 @@ export default function App() {
     lastSpeakerRef.current = 'me'
     speechSegmentsRef.current = []
     rollingByChannelRef.current = { mic: '', sys: '' }
+    rollingBarDisplayRef.current = { text: '', label: '', speaker: 'other' }
+    if (liveTranscriptUiFlushRef.current != null) {
+      clearTimeout(liveTranscriptUiFlushRef.current)
+      liveTranscriptUiFlushRef.current = null
+    }
+    if (rollingBarUiFlushRef.current != null) {
+      clearTimeout(rollingBarUiFlushRef.current)
+      rollingBarUiFlushRef.current = null
+    }
     setRollingBar({ text: '', label: '', speaker: 'other' })
     setLiveTranscriptSegments([])
+  }, [])
+
+  const flushLiveTranscriptUi = useCallback(() => {
+    if (liveTranscriptUiFlushRef.current != null) {
+      clearTimeout(liveTranscriptUiFlushRef.current)
+      liveTranscriptUiFlushRef.current = null
+    }
+    setLiveTranscriptSegments([...speechSegmentsRef.current])
+  }, [])
+
+  /** Partials only — finals call flushLiveTranscriptUi immediately so Ask timing is unchanged. */
+  const scheduleLiveTranscriptUi = useCallback(() => {
+    if (liveTranscriptUiFlushRef.current != null) return
+    liveTranscriptUiFlushRef.current = window.setTimeout(() => {
+      liveTranscriptUiFlushRef.current = null
+      setLiveTranscriptSegments([...speechSegmentsRef.current])
+    }, LIVE_TRANSCRIPT_UI_MS)
+  }, [])
+
+  const flushRollingBarUi = useCallback(() => {
+    if (rollingBarUiFlushRef.current != null) {
+      clearTimeout(rollingBarUiFlushRef.current)
+      rollingBarUiFlushRef.current = null
+    }
+    setRollingBar({ ...rollingBarDisplayRef.current })
+  }, [])
+
+  const scheduleRollingBarUi = useCallback(() => {
+    if (rollingBarUiFlushRef.current != null) return
+    rollingBarUiFlushRef.current = window.setTimeout(() => {
+      rollingBarUiFlushRef.current = null
+      setRollingBar({ ...rollingBarDisplayRef.current })
+    }, LIVE_TRANSCRIPT_UI_MS)
+  }, [])
+
+  const syncMicTranscriptRefs = useCallback((value) => {
+    const v = String(value || '')
+    micTranscriptRef.current = v
+    latestTranscriptRef.current = v
   }, [])
 
   const updateRollingBarForPath = useCallback((pathKey, textChunk, { isFinal = false, speaker = 'other' } = {}) => {
@@ -760,8 +813,10 @@ export default function App() {
       : mergeRollingTranscriptPartial(prev, textChunk)
     rollingByChannelRef.current[key] = merged
     const label = speaker === 'me' ? 'Me' : 'Them'
-    setRollingBar({ text: merged, label, speaker })
-  }, [])
+    rollingBarDisplayRef.current = { text: merged, label, speaker }
+    if (isFinal) flushRollingBarUi()
+    else scheduleRollingBarUi()
+  }, [flushRollingBarUi, scheduleRollingBarUi])
 
   const refreshContextModes = useCallback(async () => {
     if (!ipc) return
@@ -818,41 +873,48 @@ export default function App() {
     }
     const { remaining } = consumeSegmentsThrough(speechSegmentsRef.current, watermarkId)
     speechSegmentsRef.current = remaining
-    setLiveTranscriptSegments(remaining)
     rollingByChannelRef.current = { mic: '', sys: '' }
     const bounded = trimBufferSmart(rebuildSpeechBufferFromSegments(remaining))
     speechBufferRef.current = bounded
-    micTranscriptRef.current = bounded
-    latestTranscriptRef.current = bounded
-    setMicTranscript(bounded)
+    syncMicTranscriptRefs(bounded)
     lastSpeechTimeRef.current = lastSpeechTimestampFromSegments(remaining)
     lastChunkRef.current = remaining[remaining.length - 1]?.text || ''
     lastSentSpeechRef.current = ''
     const lastSeg = remaining[remaining.length - 1]
     if (lastSeg?.text) {
       const sp = lastSeg.speaker === 'me' ? 'me' : 'other'
-      setRollingBar({
+      rollingBarDisplayRef.current = {
         text: String(lastSeg.text),
         label: sp === 'me' ? 'Me' : 'Them',
         speaker: sp,
-      })
+      }
+      flushRollingBarUi()
     } else {
-      setRollingBar({ text: '', label: '', speaker: 'other' })
+      rollingBarDisplayRef.current = { text: '', label: '', speaker: 'other' }
+      flushRollingBarUi()
     }
-  }, [])
+    flushLiveTranscriptUi()
+  }, [flushLiveTranscriptUi, flushRollingBarUi, syncMicTranscriptRefs])
 
-  const syncOverlayWindowSize = useCallback(async (w, h) => {
-    if (!ipc) return
-    const b = await ipc.invoke('get-window-bounds')
-    const safeW = Math.max(280, Math.min(860, Math.round(w)))
-    const safeH = Math.round(h)
-    if (b?.width != null && b?.x != null) {
-      const centerX = b.x + b.width / 2
-      const newX = Math.round(centerX - safeW / 2)
-      await ipc.invoke('resize-window', safeW, safeH, newX)
-      return
-    }
-    await ipc.invoke('resize-window', safeW, safeH)
+  const syncOverlayWindowSize = useCallback((w, h) => {
+    pendingWindowResizeRef.current = { w, h }
+    if (windowResizeRafRef.current != null) return
+    windowResizeRafRef.current = requestAnimationFrame(async () => {
+      windowResizeRafRef.current = null
+      const next = pendingWindowResizeRef.current
+      pendingWindowResizeRef.current = null
+      if (!next || !ipc) return
+      const b = await ipc.invoke('get-window-bounds')
+      const safeW = Math.max(280, Math.min(860, Math.round(next.w)))
+      const safeH = Math.round(next.h)
+      if (b?.width != null && b?.x != null) {
+        const centerX = b.x + b.width / 2
+        const newX = Math.round(centerX - safeW / 2)
+        await ipc.invoke('resize-window', safeW, safeH, newX)
+        return
+      }
+      await ipc.invoke('resize-window', safeW, safeH)
+    })
   }, [])
 
   const applySpeechSilenceWindow = useCallback(() => {
@@ -879,8 +941,8 @@ export default function App() {
     }].sort((a, b) => (a.capturedAt - b.capturedAt) || (a.id - b.id))
     const capped = next.slice(-MAX_LIVE_SEGMENTS)
     speechSegmentsRef.current = capped
-    setLiveTranscriptSegments(capped)
-  }, [])
+    flushLiveTranscriptUi()
+  }, [flushLiveTranscriptUi])
 
   const setLiveSegmentInterim = useCallback((speaker, textChunk, meta = {}) => {
     const t = String(textChunk || '').trim()
@@ -910,8 +972,8 @@ export default function App() {
       .sort((a, b) => (a.capturedAt - b.capturedAt) || (a.id - b.id))
       .slice(-MAX_LIVE_SEGMENTS)
     speechSegmentsRef.current = capped
-    setLiveTranscriptSegments(capped)
-  }, [])
+    scheduleLiveTranscriptUi()
+  }, [scheduleLiveTranscriptUi])
 
   const commitLiveSegmentFinal = useCallback((speaker, textChunk, meta = {}) => {
     const t = String(textChunk || '').trim()
@@ -942,13 +1004,8 @@ export default function App() {
       .sort((a, b) => (a.capturedAt - b.capturedAt) || (a.id - b.id))
       .slice(-MAX_LIVE_SEGMENTS)
     speechSegmentsRef.current = capped
-    setLiveTranscriptSegments(capped)
-  }, [])
-
-  useEffect(() => {
-    micTranscriptRef.current = micTranscript
-    latestTranscriptRef.current = micTranscript
-  }, [micTranscript])
+    flushLiveTranscriptUi()
+  }, [flushLiveTranscriptUi])
 
   useEffect(() => {
     isThinkingRef.current = isThinking
@@ -1064,19 +1121,17 @@ export default function App() {
       if (typeof echoCtxRaw === 'string' && echoCtxRaw.trim()) {
         heardContext = echoCtxRaw.trim()
       }
-      flushSync(() => {
-        setIsThinking(true)
-        setExpanded(true)
-        setActiveAskSource(askSource)
-        if (heardQuestion) {
-          setMessages((m) =>
-            capMessages([
-              ...m,
-              { role: 'heard', text: heardQuestion, context: heardContext, id: ++msgId.current },
-            ]),
-          )
-        }
-      })
+      setIsThinking(true)
+      setExpanded(true)
+      setActiveAskSource(askSource)
+      if (heardQuestion) {
+        setMessages((m) =>
+          capMessages([
+            ...m,
+            { role: 'heard', text: heardQuestion, context: heardContext, id: ++msgId.current },
+          ]),
+        )
+      }
       clearStreamDom()
       if (perfAskT0Ref.current) {
         console.log('UI_AI_START_MS', Date.now() - perfAskT0Ref.current)
@@ -1129,7 +1184,6 @@ export default function App() {
       setIsThinking(v)
       if (v) {
         streamDomAcceptingRef.current = true
-        setStatus('thinking')
         return
       }
       if (streamPreviewFlushRef.current != null) {
@@ -1140,7 +1194,6 @@ export default function App() {
       setStreamPreview('')
       // Resume mic chunk processing after AI finishes speaking
       setTimeout(() => { micPausedForAskRef.current = false }, 400)
-      ipc.invoke('session-active').then((a) => setStatus(a ? 'active' : 'idle'))
     }
     const onAborted = () => {
       setIsThinking(false)
@@ -1177,9 +1230,7 @@ export default function App() {
       activeTurnMetaRef.current = null
       setActiveAskSource(null)
       setMessages([])
-      setMicTranscript('')
-      micTranscriptRef.current = ''
-      latestTranscriptRef.current = ''
+      syncMicTranscriptRefs('')
       clearRollingSpeech()
       lastAudioUpdateRef.current = 0
 
@@ -1325,7 +1376,6 @@ export default function App() {
     const onStatus = (_, active) => {
       sessionOnRef.current = active
       setSessionOn(active)
-      setStatus(active ? 'active' : 'idle')
       if (active) {
         startMicRef.current()
         bypassCaptureOnceRef.current = true
@@ -1338,7 +1388,6 @@ export default function App() {
     ipc.invoke('session-active').then((a) => {
       sessionOnRef.current = a
       setSessionOn(a)
-      setStatus(a ? 'active' : 'idle')
       // Main may have sent session-status before this listener mounted (auto-start race).
       if (a && !isListening.current) startMicRef.current()
     })
@@ -1388,9 +1437,7 @@ export default function App() {
       setActiveAskSource(null)
       setMessages([])
       setIsThinking(false)
-      setMicTranscript('')
-      micTranscriptRef.current = ''
-      latestTranscriptRef.current = ''
+      syncMicTranscriptRefs('')
       clearRollingSpeech()
       setModeSuggestion(null)
       lastAudioUpdateRef.current = 0
@@ -1602,6 +1649,9 @@ export default function App() {
       const localStt = sttModeStore !== 'cloud'
       sttModeRef.current = localStt ? 'local' : 'cloud'
       sttMainProcessRef.current = false
+      if (localStt) {
+        void ipc?.invoke('local-stt:prepare').catch(() => {})
+      }
       micCaptureProfileRef.current = resolveMicCaptureProfile(sensRaw)
       const micProfile = micCaptureProfileRef.current
       const sysProfile = resolveSysCaptureProfile(sensRaw)
@@ -1922,9 +1972,7 @@ export default function App() {
     closeMicAudioCtx()
     emit('mic-status', { active: false })
     clearRollingSpeech()
-    setMicTranscript('')
-    micTranscriptRef.current = ''
-    latestTranscriptRef.current = ''
+    syncMicTranscriptRefs('')
   }
 
   /** Post-processing after STT: speaker tagging, rolling buffer, live segments, AI trigger. */
@@ -1975,13 +2023,9 @@ export default function App() {
     commitLiveSegmentFinal(speaker, trimmedChunk, segmentMeta)
     updateRollingBarForPath(audioPathKey, trimmedChunk, { isFinal: true, speaker })
 
-    setMicTranscript((prev) => {
-      const combined = (prev + ' ' + trimmedChunk).trim().split(/\s+/).slice(-600).join(' ')
-      micTranscriptRef.current = combined
-      latestTranscriptRef.current = combined
-      emit('transcript-updated', { latest: labeled, full: combined })
-      return combined
-    })
+    const combined = (micTranscriptRef.current + ' ' + trimmedChunk).trim().split(/\s+/).slice(-600).join(' ')
+    syncMicTranscriptRefs(combined)
+    emit('transcript-updated', { latest: labeled, full: combined })
 
     maybeTriggerAIRef.current?.()
   }

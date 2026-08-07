@@ -186,6 +186,31 @@ test('recent eligible primary failure opens a short circuit', async () => {
   assert.equal(fallbackCalls, 2)
 })
 
+test('ResourceExhausted retries primary before fallback', async () => {
+  let primaryCalls = 0
+  let fallbackCalls = 0
+  const primary = attempt('nvidia', async function* () {
+    primaryCalls += 1
+    if (primaryCalls < 3) {
+      throw new Error('ResourceExhausted: Worker local total request limit reached (16/16)')
+    }
+    yield 'recovered'
+  }, 'nvidia/test-model')
+  const fallback = attempt('nvidia', async function* () {
+    fallbackCalls += 1
+    yield 'fallback'
+  }, 'nvidia/fallback-model')
+  const result = await collect(runStreamingFallback({ primary, fallback, firstTokenTimeoutMs: 5000 }))
+  assert.deepEqual(result.tokens, ['recovered'])
+  assert.equal(primaryCalls, 3)
+  assert.equal(fallbackCalls, 0)
+})
+
+test('ResourceExhausted is fallback eligible without HTTP status', () => {
+  const error = new Error('ResourceExhausted: Worker local total request limit reached (16/16)')
+  assert.equal(isEligibleFallbackError(error), true)
+})
+
 test('403 and 404 are fallback eligible (deprecated or entitlement-blocked NIM models)', () => {
   const forbidden = new Error('Authorization failed')
   forbidden.status = 403

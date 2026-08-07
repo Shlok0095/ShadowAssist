@@ -194,6 +194,24 @@ function parseMarkdown(text) {
   return out
 }
 
+/** Parsed markdown cache — avoids re-parsing all history when a new answer commits. */
+const parsedMarkdownCache = new Map()
+const PARSED_MARKDOWN_CACHE_MAX = 240
+
+function getCachedParsedMarkdown(cacheKey, text) {
+  const t = String(text || '')
+  if (!cacheKey || !t) return parseMarkdown(t)
+  const hit = parsedMarkdownCache.get(cacheKey)
+  if (hit && hit.text === t) return hit.nodes
+  const nodes = parseMarkdown(t)
+  parsedMarkdownCache.set(cacheKey, { text: t, nodes })
+  if (parsedMarkdownCache.size > PARSED_MARKDOWN_CACHE_MAX) {
+    const oldest = parsedMarkdownCache.keys().next().value
+    parsedMarkdownCache.delete(oldest)
+  }
+  return nodes
+}
+
 /** Takeaway block: 2–3 sentences or a short paragraph (not a single clipped line). */
 function takeawayFromText(text) {
   const t = String(text || '')
@@ -560,6 +578,7 @@ const ErrorBubble = memo(function ErrorBubble({ text, onRetry }) {
 })
 
 const MessageBubble = memo(function MessageBubble({
+  messageId,
   role,
   text,
   answerStyle = 'brief',
@@ -571,7 +590,10 @@ const MessageBubble = memo(function MessageBubble({
 }) {
   const isUser = role === 'user'
   const isError = role === 'error'
-  const nodes = useMemo(() => (role === 'ai' ? parseMarkdown(text) : []), [role, text])
+  const nodes = useMemo(
+    () => (role === 'ai' ? getCachedParsedMarkdown(messageId, text) : []),
+    [role, messageId, text],
+  )
   const fallback = role === 'ai' && nodes.length === 0 ? text : null
   const isBriefAi = role === 'ai' && answerStyle === 'brief'
 
@@ -743,9 +765,11 @@ function ComposingShell({ onAbort, teleprompter = false, heardText = '', heardCo
   )
 }
 
-/** Detailed mode: throttled markdown preview while generating. */
+/** Detailed mode: raw mirror until throttled markdown preview is ready. */
 function DetailedStreamPreview({
   streamPreview,
+  streamTextRef,
+  streamPlaceholderRef,
   onAbort,
   teleprompter = false,
   heardText = '',
@@ -753,15 +777,44 @@ function DetailedStreamPreview({
 }) {
   const nodes = useMemo(() => parseMarkdown(streamPreview || ''), [streamPreview])
   const hasPreview = nodes.length > 0
+  const heard = String(heardText || '').trim()
 
   if (!hasPreview) {
     return (
-      <ComposingShell
-        onAbort={onAbort}
-        teleprompter={teleprompter}
-        heardText={heardText}
-        heardContext={heardContext}
-      />
+      <div className={`mx-auto w-full ${teleprompter ? 'max-w-[46rem]' : 'max-w-[44rem]'}`}>
+        {heard && !teleprompter ? (
+          <div className="mb-4">
+            <HeardQuestionBubble text={heard} />
+          </div>
+        ) : null}
+        <div className="mb-2 flex items-center justify-between gap-2">
+          <div className="flex items-center gap-2" style={{ color: 'rgba(200,235,255,0.88)' }}>
+            <span
+              className="h-2 w-2 animate-pulse rounded-full"
+              style={{ background: 'rgba(180,225,255,0.65)', boxShadow: '0 0 8px rgba(160,215,245,0.45)' }}
+            />
+            <span className="crystal-sublabel text-[10px] normal-case">Generating</span>
+          </div>
+          {onAbort ? (
+            <button
+              type="button"
+              onClick={onAbort}
+              className="crystal-panel-inset rounded-lg px-2 py-0.5 text-[10px] crystal-muted hover:text-white/90"
+            >
+              Stop
+            </button>
+          ) : null}
+        </div>
+        <div className="crystal-panel-inset rounded-xl px-3.5 py-3 opacity-90">
+          <p
+            ref={streamTextRef}
+            className={`crystal-answer-text whitespace-pre-wrap text-[13px] leading-[1.65]`}
+          />
+          <p ref={streamPlaceholderRef} className="crystal-muted text-[12px]">
+            Composing answer…
+          </p>
+        </div>
+      </div>
     )
   }
 
@@ -892,6 +945,8 @@ const ResponsePanelInner = React.forwardRef(function ResponsePanel(
             {answerStyle === 'detailed' ? (
               <DetailedStreamPreview
                 streamPreview={streamPreview}
+                streamTextRef={streamTextRef}
+                streamPlaceholderRef={streamPlaceholderRef}
                 onAbort={onAbort}
                 teleprompter={overlayTeleprompter}
                 heardText={activeHeard?.text}
@@ -962,6 +1017,7 @@ const ResponsePanelInner = React.forwardRef(function ResponsePanel(
                         {turn.replies.map((m) => (
                           <MessageBubble
                             key={m.id}
+                            messageId={m.id}
                             role={m.role}
                             text={m.text}
                             answerStyle={answerStyle}
