@@ -7,9 +7,9 @@ import { LiveYAxis } from '@/components/charts/live-y-axis'
 import { chartCssVars } from '@/components/charts/chart-context'
 
 const STAT_TILES = [
-  { v: '12+', l: 'Languages' },
-  { v: '95%', l: 'STT accuracy' },
-  { v: '0', l: 'Bots in your call' },
+  { v: '12+', l: 'Supported languages' },
+  { v: '95%', l: 'Speech-to-text accuracy' },
+  { v: '0', l: 'Meeting bots required' },
 ] as const
 
 function seedLatency(): LiveLinePoint[] {
@@ -52,7 +52,7 @@ export function VaStatsLive() {
   return (
     <div className="va-stats-live">
       <div className="va-stats-live__chart">
-        <p className="va-stats-live__label">Stream latency (live)</p>
+        <p className="va-stats-live__label">Response latency (live)</p>
         <LiveLineChart
           className="va-stats-live__bklit"
           data={data}

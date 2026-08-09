@@ -1,7 +1,7 @@
 import { useEffect, useRef } from 'react'
 import { animate, stagger } from 'animejs'
 
-/** Hero headline with anime.js word stagger + gradient shimmer loops. */
+/** Hero headline — line stagger with subtle 3D depth. */
 export function VaAnimeHero() {
   const rootRef = useRef<HTMLHeadingElement>(null)
 
@@ -9,31 +9,31 @@ export function VaAnimeHero() {
     const root = rootRef.current
     if (!root) return
 
-    const words = root.querySelectorAll('.va-word')
-    const gradients = root.querySelectorAll('.va-gradient')
+    const lines = root.querySelectorAll('.va-line')
+    const accents = root.querySelectorAll('.va-gradient')
     const reduceMotion = window.matchMedia('(prefers-reduced-motion: reduce)').matches
 
     if (reduceMotion) {
-      root.querySelectorAll('.va-word, .va-gradient').forEach((el) => {
+      root.querySelectorAll('.va-line, .va-gradient').forEach((el) => {
         ;(el as HTMLElement).style.opacity = '1'
         ;(el as HTMLElement).style.transform = 'none'
       })
       return
     }
 
-    animate(words, {
+    animate(lines, {
       opacity: [0, 1],
-      translateY: [48, 0],
-      rotateX: [-28, 0],
-      delay: stagger(70, { start: 120 }),
-      duration: 900,
-      ease: 'outExpo',
+      translateY: [28, 0],
+      rotateX: [-12, 0],
+      delay: stagger(120, { start: 80 }),
+      duration: 800,
+      ease: 'outCubic',
     })
 
-    animate(gradients, {
+    animate(accents, {
       backgroundPosition: ['0% 50%', '100% 50%', '0% 50%'],
-      delay: stagger(200, { start: 520 }),
-      duration: 5200,
+      delay: 400,
+      duration: 7000,
       ease: 'inOutSine',
       loop: true,
     })
@@ -42,9 +42,9 @@ export function VaAnimeHero() {
     if (sub) {
       animate(sub, {
         opacity: [0, 1],
-        translateY: [20, 0],
-        delay: 680,
-        duration: 700,
+        translateY: [16, 0],
+        delay: 520,
+        duration: 650,
         ease: 'outCubic',
       })
     }
@@ -52,18 +52,11 @@ export function VaAnimeHero() {
 
   return (
     <h1 ref={rootRef} className="va-hero-title va-hero-title--animated">
-      <span className="va-word">Your</span>{' '}
-      <span className="va-word">AI</span>{' '}
-      <span className="va-word">copilot,</span>
-      <br />
-      <span className="va-word va-gradient">invisible</span>{' '}
-      <span className="va-word">on</span>{' '}
-      <span className="va-word">screen,</span>
-      <br />
-      <span className="va-word va-gradient va-gradient--cyan">instant</span>{' '}
-      <span className="va-word">in</span>{' '}
-      <span className="va-word">the</span>{' '}
-      <span className="va-word">call.</span>
+      <span className="va-line">Real-time AI assistance</span>
+      <span className="va-line">
+        for <span className="va-gradient">live meetings</span>
+      </span>
+      <span className="va-line va-line--muted">on your desktop.</span>
     </h1>
   )
 }

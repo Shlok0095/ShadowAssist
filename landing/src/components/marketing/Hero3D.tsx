@@ -12,8 +12,8 @@ export function Hero3D({ children }: Props) {
   const my = useMotionValue(0)
   const sx = useSpring(mx, { stiffness: 120, damping: 18 })
   const sy = useSpring(my, { stiffness: 120, damping: 18 })
-  const rotateY = useTransform(sx, [-0.5, 0.5], [-14, 14])
-  const rotateX = useTransform(sy, [-0.5, 0.5], [10, -10])
+  const rotateY = useTransform(sx, [-0.5, 0.5], [-10, 10])
+  const rotateX = useTransform(sy, [-0.5, 0.5], [7, -7])
 
   const onMove = (e: MouseEvent<HTMLDivElement>) => {
     const el = stageRef.current
@@ -64,7 +64,7 @@ export function Hero3D({ children }: Props) {
                 <span className="va-dot va-dot--r" />
                 <span className="va-dot va-dot--y" />
                 <span className="va-dot va-dot--g" />
-                <span className="va-hero__chrome-title">VeilAssist — overlay</span>
+                <span className="va-hero__chrome-title">VeilAssist overlay</span>
               </div>
               <div className="va-hero__screen">
                 {MEDIA.heroOverlayScreenshot ? (
