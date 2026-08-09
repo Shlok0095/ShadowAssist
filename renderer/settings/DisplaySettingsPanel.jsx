@@ -14,6 +14,7 @@ import {
   SettingsSection,
   ToggleSwitch,
 } from './SettingsComponents'
+import { useBrand } from '../shared/branding'
 
 export default function DisplaySettingsPanel({
   overlayOpacityUi,
@@ -53,6 +54,7 @@ export default function DisplaySettingsPanel({
   onApplyOverlaySize,
   onSnapOverlayPreset,
 }) {
+  const { name } = useBrand()
   return (
     <SettingsPage
       title="General"
@@ -61,7 +63,7 @@ export default function DisplaySettingsPanel({
       <SettingsSection title="Startup">
         <SettingsRow
           label="Open at login"
-          hint="Start VeilAssist in the tray when you sign in to Windows (same as disabling “auto launch” off in Natively)."
+          hint={`Start ${name} in the tray when you sign in to Windows (same as disabling “auto launch” off in Natively).`}
         >
           <ToggleSwitch checked={openAtLoginUi} onChange={onOpenAtLoginChange} />
         </SettingsRow>

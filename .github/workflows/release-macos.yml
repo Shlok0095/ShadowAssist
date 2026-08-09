@@ -13,6 +13,7 @@ on:
   workflow_dispatch:
   push:
     branches:
+      - FINAL
       - stag
       - main
       - master
@@ -83,6 +84,10 @@ jobs:
             nf=$(basename "$f" | sed "s/$CLEANED/$VER/")
             if [ "$nf" != "$(basename "$f")" ]; then mv "$f" "dist/$nf"; fi
           done
+          DMG=$(ls dist/VeilAssist*.dmg 2>/dev/null | head -1)
+          ZIP=$(ls dist/VeilAssist*.zip 2>/dev/null | head -1)
+          if [ -n "$DMG" ]; then cp "$DMG" dist/VeilAssist-mac.dmg; fi
+          if [ -n "$ZIP" ]; then cp "$ZIP" dist/VeilAssist-mac.zip; fi
           ls dist
 
       - name: Record build version state
@@ -110,6 +115,8 @@ jobs:
           path: |
             dist/VeilAssist-*.dmg
             dist/VeilAssist-*.zip
+            dist/VeilAssist-mac.dmg
+            dist/VeilAssist-mac.zip
             dist/latest-mac.yml
             dist/SHA256SUMS.txt
 
@@ -138,6 +145,8 @@ jobs:
           artifacts: |
             dist/VeilAssist-*.dmg
             dist/VeilAssist-*.zip
+            dist/VeilAssist-mac.dmg
+            dist/VeilAssist-mac.zip
             dist/latest-mac.yml
             dist/SHA256SUMS.txt
 

@@ -33,6 +33,26 @@
       "source": "/download/checksums",
       "destination": "https://github.com/Shlok0095/VeilAssist/releases/download/latest/SHA256SUMS.txt",
       "permanent": false
+    },
+    {
+      "source": "/download/macos",
+      "destination": "https://github.com/Shlok0095/VeilAssist/releases/download/latest-stag/VeilAssist-mac.dmg",
+      "permanent": false
+    },
+    {
+      "source": "/download/macos/zip",
+      "destination": "https://github.com/Shlok0095/VeilAssist/releases/download/latest-stag/VeilAssist-mac.zip",
+      "permanent": false
+    },
+    {
+      "source": "/download/linux",
+      "destination": "https://github.com/Shlok0095/VeilAssist/releases/download/latest-stag/VeilAssist-linux.AppImage",
+      "permanent": false
+    },
+    {
+      "source": "/download/linux/deb",
+      "destination": "https://github.com/Shlok0095/VeilAssist/releases/download/latest-stag/VeilAssist-linux.deb",
+      "permanent": false
     }
   ]
 }

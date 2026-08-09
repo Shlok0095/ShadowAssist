@@ -2,8 +2,10 @@ import { useState, type CSSProperties } from 'react'
 import { LightFaq } from '@/components/marketing/LightFaq'
 import { LightFooter } from '@/components/marketing/LightFooter'
 import { CompatLogos, DockIcons, MacosCard } from '@/components/marketing/MacosCard'
+import { PlatformDownloads } from '@/components/marketing/PlatformDownloads'
 import { StarfieldBg } from '@/components/marketing/StarfieldBg'
 import { MEDIA } from '@/config/mediaManifest'
+import { SITE } from '@/config/site'
 import { useRevealObserver } from '@/hooks/useReveal'
 
 const STEPS = [
@@ -123,7 +125,7 @@ export function MarketingHome() {
               </a>
             </div>
 
-            <p className="lm-hero__platform">Windows 10+ · Download from the header</p>
+            <p className="lm-hero__platform">Windows · macOS · Linux — download below or from the header</p>
           </div>
 
           <div className="lm-hero-product reveal">
@@ -266,8 +268,10 @@ export function MarketingHome() {
           </div>
           <h2 className="lm-final-cta__title">Meeting AI that helps during the call, not after.</h2>
           <p className="lm-final-cta__sub">Try VeilAssist on your next meeting today.</p>
-          <p className="lm-final-cta__hint">
-            Use <strong>Download</strong> in the navigation bar to get the Windows installer.
+          <PlatformDownloads />
+          <p className="download-meta-line download-meta-line__muted">
+            macOS builds are unsigned — use right-click → Open the first time.{' '}
+            <a href={SITE.checksumsTxtUrl}>SHA256 checksums</a>
           </p>
         </div>
       </section>

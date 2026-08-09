@@ -3,6 +3,7 @@ name: CI
 on:
   push:
     branches:
+      - FINAL
       - stag
       - main
       - master
@@ -28,6 +29,9 @@ jobs:
 
       - name: Test desktop core
         run: npm run test:ci
+
+      - name: Verify Hide From Taskbar window config
+        run: node scripts/verify-taskbar-config.cjs
 
       - name: Build desktop renderers
         run: npm run build

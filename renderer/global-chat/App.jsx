@@ -6,10 +6,12 @@ import { createIpcShim } from '../shared/ipcShim'
 import brandLogo from '../shared/brandLogo'
 import SimpleMarkdown from '../shared/SimpleMarkdown'
 import { applyUiAccentTheme, normalizeUiAccentId } from '../shared/uiAccentThemes'
+import { useBrand } from '../shared/branding'
 
 const ipc = createIpcShim()
 
 export default function App() {
+  const { name, hasCustomLogo, logoDataUrl } = useBrand()
   const [messages, setMessages] = useState([])
   const [input, setInput] = useState('')
   const [thinking, setThinking] = useState(false)
@@ -139,7 +141,12 @@ export default function App() {
     <div className="gc-shell">
       <header className="gc-head">
         <div className="gc-head-title">
-          <img src={brandLogo} alt="" className="gc-brand-logo" draggable={false} />
+          <img
+            src={hasCustomLogo && logoDataUrl ? logoDataUrl : brandLogo}
+            alt=""
+            className="gc-brand-logo"
+            draggable={false}
+          />
           <div>
             <h1 className="gc-title">Global Chat</h1>
             <p className="gc-sub">Text-only threads — no screen capture from this window.</p>

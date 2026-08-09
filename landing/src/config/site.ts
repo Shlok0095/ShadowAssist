@@ -14,6 +14,10 @@ export const DOWNLOAD_ROUTES = {
   windowsSetup: '/download',
   windowsSetupBeta: '/download/beta',
   windowsPortable: '/download/portable',
+  macDmg: '/download/macos',
+  macZip: '/download/macos/zip',
+  linuxAppImage: '/download/linux',
+  linuxDeb: '/download/linux/deb',
 } as const
 
 /** App marketing version — keep in sync with electron package.json. */
@@ -58,12 +62,32 @@ export const SITE = {
   get downloadPortablePageUrl() {
     return vanityDownloadPath(DOWNLOAD_ROUTES.windowsPortable)
   },
+  /** macOS DMG — stable alias from CI (VeilAssist-mac.dmg). */
+  get downloadMacDmgUrl() {
+    return vanityDownloadPath(DOWNLOAD_ROUTES.macDmg)
+  },
+  get downloadMacZipUrl() {
+    return vanityDownloadPath(DOWNLOAD_ROUTES.macZip)
+  },
+  /** Linux AppImage / deb — stable aliases from CI. */
+  get downloadLinuxAppImageUrl() {
+    return vanityDownloadPath(DOWNLOAD_ROUTES.linuxAppImage)
+  },
+  get downloadLinuxDebUrl() {
+    return vanityDownloadPath(DOWNLOAD_ROUTES.linuxDeb)
+  },
   /** Direct GitHub fallback (stable stag rolling release). */
   get downloadSetupExeDirectUrl() {
     return releaseAssetUrl('VeilAssist-Setup.exe')
   },
   get downloadPortableExeUrl() {
     return releaseAssetUrl('VeilAssist.exe')
+  },
+  get downloadMacDmgDirectUrl() {
+    return releaseAssetUrl('VeilAssist-mac.dmg')
+  },
+  get downloadLinuxAppImageDirectUrl() {
+    return releaseAssetUrl('VeilAssist-linux.AppImage')
   },
   get checksumsTxtUrl() {
     return releaseAssetUrl('SHA256SUMS.txt')

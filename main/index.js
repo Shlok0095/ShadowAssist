@@ -1,15 +1,21 @@
 // Copyright (c) 2026 VeilAssist. All rights reserved.
 // Unauthorized copying or distribution is prohibited.
 
-const { app, BrowserWindow, ipcMain, globalShortcut, Tray, nativeImage, screen, dialog, Menu, clipboard, shell, Notification } = require('electron')
+const { app, BrowserWindow, ipcMain, globalShortcut, Tray, nativeImage, screen, dialog, Menu, clipboard, shell, Notification, powerMonitor } = require('electron')
 const path = require('path')
 const fs = require('fs')
 const fsPromises = require('fs').promises
 
 app.setPath('userData', path.join(app.getPath('appData'), 'VeilAssist-v2'))
 app.commandLine.appendSwitch('disable-gpu-shader-disk-cache')
-/** Skip default menu work when using frameless windows (Electron performance checklist). */
-Menu.setApplicationMenu(null)
+
+// Stable identity used by safeStorage's Keychain service on macOS.
+// MUST be set before the safeStorage backend initializes: Electron derives
+// the Keychain service name from app.getName() at startup, so branding
+// (productName / user brandName) must never change it or every stored API
+// key becomes undecryptable.
+const APP_RUNTIME_NAME = 'veilassist'
+app.setName(APP_RUNTIME_NAME)
 
 /** Windows: taskbar / Task Manager identity for the packaged app (not the generic Electron entry). */
 if (process.platform === 'win32') {
@@ -25,13 +31,19 @@ if (!gotLock) {
   // Second launch: first instance still holds the lock (tray / background)
   app.whenReady().then(() => {
     try {
+      let brandName = 'VeilAssist'
+      try {
+        const { resolveBrandName } = require('../lib/branding')
+        const st = require('../lib/store')
+        brandName = resolveBrandName(st.get('brandName'))
+      } catch (_) {}
       dialog.showMessageBoxSync({
         type: 'info',
-        title: 'VeilAssist',
-        message: 'VeilAssist is already running.',
+        title: brandName,
+        message: `${brandName} is already running.`,
         detail:
           'Hiding the overlay does not quit the app — it stays in the system tray.\n\n' +
-          '• Tray (near the clock): right-click the VeilAssist icon → Open or Quit\n' +
+          `• Tray (near the clock): right-click the ${brandName} icon → Open or Quit\n` +
           '• In the overlay: use Quit (fully exit) next to Hide\n' +
           '• Or press Ctrl+\\ to show the overlay\n\n' +
           'To fully exit: tray → Quit, or Quit in the overlay title bar.',
@@ -41,6 +53,21 @@ if (!gotLock) {
   })
 } else {
 const store = require('../lib/store')
+const { ENCRYPTED_KEYS } = store
+const branding = require('../lib/branding')
+const { setDockVisibility, isDockHidden } = require('./dockPolicy')
+
+// macOS: apply the Dock policy BEFORE the first frame so the Dock icon never
+// flashes in at launch when Hide from Dock / Stealth is enabled. Later calls
+// to setDockVisibility are no-ops thanks to the state-change guard.
+if (process.platform === 'darwin') {
+  try {
+    if (store.get('hideFromTaskbarEnabled') === true || store.get('stealth_mode') === true) {
+      setDockVisibility(false)
+    }
+  } catch (_) {}
+}
+setupApplicationMenu()
 const { isPointInBounds, resolveOverlayMouseCapture } = require('../lib/overlayMousePolicy')
 const { resolveSystemPrompt } = require('../lib/defaultSystemPrompt')
 const { getAnswerStyleSuffix } = require('../lib/answerStyle')
@@ -246,6 +273,180 @@ function resolveAppIconPath() {
 }
 const APP_ICON = resolveAppIconPath()
 
+// ── Dynamic branding ─────────────────────────────────────────────────────────
+// Display name + custom logos live in userData/brand and are applied at runtime
+// to menus, tray, dock, window icons, notifications, and renderer chrome.
+// OS-level names (executable, installer, app bundle) stay fixed at build time.
+
+/** Effective brand display name (store override or default). */
+function getBrandName() {
+  return branding.resolveBrandName(store.get('brandName'))
+}
+
+/** Current app/overlay logo source (custom user logo wins, else bundled). */
+function getBrandLogoSrc(kind = 'app') {
+  const custom = branding.getBrandLogoSrcPath(app.getPath('userData'), kind)
+  if (custom) return custom
+  if (kind === 'overlay') {
+    const p = path.join(app.getAppPath(), 'overlaylogo.png')
+    return fs.existsSync(p) ? p : ''
+  }
+  return APP_ICON || ''
+}
+
+/** Window / dock / tray logo — custom brand logo when set, else bundled icon. */
+function getWindowIcon() {
+  const custom = branding.getBrandLogoSrcPath(app.getPath('userData'), 'app')
+  return custom || APP_ICON
+}
+
+let brandDataUrlCache = {}
+/** Base64 data URL (max 256px) for renderer <img> usage; cached per source path. */
+function loadBrandLogoDataUrl(kind) {
+  const src = getBrandLogoSrc(kind)
+  if (!src) return ''
+  if (brandDataUrlCache[kind] && brandDataUrlCache[kind].src === src) {
+    return brandDataUrlCache[kind].url
+  }
+  try {
+    const img = nativeImage.createFromPath(src)
+    if (img.isEmpty()) return ''
+    const size = img.getSize()
+    const resized = size.width > 256 || size.height > 256 ? img.resize({ width: 256 }) : img
+    const url = resized.toDataURL()
+    brandDataUrlCache[kind] = { src, url }
+    return url
+  } catch (e) {
+    console.warn('[branding] data URL failed:', e?.message || e)
+    return ''
+  }
+}
+
+function invalidateBrandDataUrlCache() {
+  brandDataUrlCache = {}
+}
+
+/** Snapshot sent to renderers / returned by IPC. */
+function getBrandingSnapshot() {
+  return {
+    name: getBrandName(),
+    logoDataUrl: loadBrandLogoDataUrl('app'),
+    overlayLogoDataUrl: loadBrandLogoDataUrl('overlay'),
+    hasCustomLogo: branding.hasCustomBrandLogo(app.getPath('userData'), 'app'),
+    hasOverlayLogo: branding.hasCustomBrandLogo(app.getPath('userData'), 'overlay'),
+  }
+}
+
+/** Push the current brand snapshot to every live renderer. */
+function sendBrandingUpdateToWindows() {
+  const snapshot = getBrandingSnapshot()
+  for (const w of [
+    overlayWindow,
+    settingsWindow,
+    consentWindow,
+    onboardingWindow,
+    globalChatWindow,
+    launcherWindow,
+    meetingToastWindow,
+  ]) {
+    if (!w || w.isDestroyed() || w.webContents.isDestroyed()) continue
+    try {
+      w.webContents.send('branding-updated', snapshot)
+    } catch (_) {}
+  }
+}
+
+/**
+ * Application menu:
+ * - macOS needs an Edit menu so Cmd+C / Cmd+V / Cmd+A work in the frameless
+ *   settings renderer (the previous `Menu.setApplicationMenu(null)` removed it).
+ * - Windows / Linux keep a null menu (frameless windows; Global Chat is frame:true
+ *   but should stay clean).
+ */
+function setupApplicationMenu() {
+  if (process.platform !== 'darwin') {
+    Menu.setApplicationMenu(null)
+    return
+  }
+  const name = getBrandName()
+  const template = [
+    {
+      label: name,
+      submenu: [
+        { role: 'about', label: `About ${name}` },
+        { type: 'separator' },
+        { role: 'services' },
+        { type: 'separator' },
+        { role: 'hide', label: `Hide ${name}` },
+        { role: 'hideOthers', label: 'Hide Others' },
+        { role: 'unhide', label: 'Show All' },
+        { type: 'separator' },
+        { role: 'quit', label: `Quit ${name}` },
+      ],
+    },
+    {
+      label: 'Edit',
+      submenu: [
+        { role: 'undo', label: 'Undo' },
+        { role: 'redo', label: 'Redo' },
+        { type: 'separator' },
+        { role: 'cut', label: 'Cut' },
+        { role: 'copy', label: 'Copy' },
+        { role: 'paste', label: 'Paste' },
+        { role: 'selectAll', label: 'Select All' },
+      ],
+    },
+  ]
+  Menu.setApplicationMenu(Menu.buildFromTemplate(template))
+}
+
+/** Push brand settings to menus, tray, dock, and window chrome. */
+function applyRuntimeBranding() {
+  const name = getBrandName()
+  try {
+    app.setName(APP_RUNTIME_NAME)
+  } catch (_) {}
+  if (process.platform === 'darwin') {
+    try {
+      app.setAboutPanelOptions({
+        applicationName: name,
+        applicationVersion: app.getVersion(),
+        copyright: `Copyright (c) 2026 ${name}. All rights reserved.`,
+      })
+    } catch (_) {}
+    try {
+      const dockImg = nativeImage.createFromPath(getBrandLogoSrc('app'))
+      if (!dockImg.isEmpty()) app.dock.setIcon(dockImg.resize({ width: 256 }))
+    } catch (_) {}
+    try {
+      setupApplicationMenu()
+    } catch (_) {}
+  }
+  if (tray) {
+    try {
+      tray.setToolTip(`${name} — tray: Open / Hide, Quit to fully exit`)
+    } catch (_) {}
+    try {
+      tray.setImage(createTrayIcon(sessionActive))
+    } catch (_) {}
+  }
+}
+
+/**
+ * Focus a window and, when the Dock/taskbar icon is suppressed on macOS, force
+ * app activation (LSUIElement-style) so the focused window accepts keyboard input.
+ */
+function focusAppWindowForInput(win) {
+  if (!win || win.isDestroyed()) return
+  try {
+    win.focus()
+  } catch (_) {}
+  if (process.platform !== 'darwin') return
+  try {
+    if (!shouldShowAppInTaskbar()) app.focus({ steal: true })
+  } catch (_) {}
+}
+
 let overlayWindow = null
 let settingsWindow = null
 let tray = null
@@ -345,6 +546,34 @@ function maybeDetectMeetingMode() {
 }
 
 function createTrayIcon(active = false) {
+  // macOS: 16pt template image at 2x for crisp Retina rendering; monochrome
+  // so the menubar tints it correctly for light/dark mode.
+  if (process.platform === 'darwin') {
+    const size = 16
+    const scale = 2
+    const px = size * scale
+    const canvas = Buffer.alloc(px * px * 4)
+    for (let i = 0; i < px * px; i++) {
+      const offset = i * 4
+      const x = i % px
+      const y = Math.floor(i / px)
+      const r = Math.sqrt((x - px / 2) ** 2 + (y - px / 2) ** 2)
+      const a = r < px / 2 - 1 ? 255 : 0
+      canvas[offset] = 0; canvas[offset + 1] = 0; canvas[offset + 2] = 0; canvas[offset + 3] = a
+    }
+    const img = nativeImage.createFromBuffer(canvas, { width: size, height: size, scaleFactor: scale })
+    img.setTemplateImage(true)
+    return img
+  }
+  // Windows / Linux: use the user's custom app logo when branding is active,
+  // so the tray icon matches the rest of the app. Falls back to the status dot.
+  const brandPath = branding.getBrandLogoSrcPath(app.getPath('userData'), 'app')
+  if (brandPath) {
+    try {
+      const brandImg = nativeImage.createFromPath(brandPath)
+      if (!brandImg.isEmpty()) return brandImg.resize({ width: 16, height: 16 })
+    } catch (_) {}
+  }
   const size = 16
   const canvas = Buffer.alloc(size * size * 4)
   const color = active ? [34, 197, 94, 255] : [55, 65, 81, 255]
@@ -364,6 +593,45 @@ function getDisplayBounds() {
   const d = screen.getPrimaryDisplay()
   const wa = d.workArea
   return { x: wa.x, y: wa.y, width: wa.width, height: wa.height }
+}
+
+/** Work-area bounds of the display nearest a point (fallback: primary). */
+function getDisplayBoundsNear(x, y) {
+  try {
+    const point = { x: Number.isFinite(x) ? x : 0, y: Number.isFinite(y) ? y : 0 }
+    const d = screen.getDisplayNearestPoint(point)
+    const wa = d.workArea
+    return { x: wa.x, y: wa.y, width: wa.width, height: wa.height }
+  } catch {
+    return getDisplayBounds()
+  }
+}
+
+/** Display the overlay currently lives on (cursor display fallback). */
+function getOverlayDisplayBounds() {
+  if (overlayWindow && !overlayWindow.isDestroyed()) {
+    const [x, y] = overlayWindow.getPosition()
+    return getDisplayBoundsNear(x, y)
+  }
+  const p = screen.getCursorScreenPoint()
+  return getDisplayBoundsNear(p.x, p.y)
+}
+
+/** Clamp the overlay back onto a display when it was unplugged or rescaled. */
+function reseatOverlayIfOffscreen() {
+  if (!overlayWindow || overlayWindow.isDestroyed()) return
+  try {
+    const b = overlayWindow.getBounds()
+    const wa = screen.getDisplayMatching(b).workArea
+    const maxX = wa.x + wa.width - Math.min(b.width, wa.width)
+    const maxY = wa.y + wa.height - Math.min(b.height, wa.height)
+    const nx = Math.max(wa.x, Math.min(maxX, b.x))
+    const ny = Math.max(wa.y, Math.min(maxY, b.y))
+    if (nx !== b.x || ny !== b.y) {
+      overlayWindow.setPosition(nx, ny)
+      store.set('overlayBounds', overlayWindow.getBounds())
+    }
+  } catch (_) {}
 }
 
 /** Top-right of work area when x/y missing or window would be off-screen */
@@ -417,7 +685,7 @@ function createOverlayWindow() {
     focusable: true, hasShadow: false, resizable: true,
     minWidth: 280, minHeight: 180, maxWidth: 860, maxHeight: 940,
     show: false,
-    ...(APP_ICON ? { icon: APP_ICON } : {}),
+    ...(getWindowIcon() ? { icon: getWindowIcon() } : {}),
     webPreferences: {
       preload: preloadPath,
       contextIsolation: true,
@@ -439,6 +707,7 @@ function createOverlayWindow() {
     }
   }
   overlayWindow.setMenuBarVisibility(false)
+  hardenWindow(overlayWindow)
   overlayWindow.loadFile(useBuilt
     ? path.join(__dirname, '..', 'out', 'overlay', 'index.html')
     : path.join(__dirname, '..', 'renderer', 'overlay', 'index.html'))
@@ -454,6 +723,13 @@ function createOverlayWindow() {
       overlayWindow.setOpacity(0)
     }
     syncOverlayVisibilityToRenderer()
+  })
+  // Re-assert taskbar skip right after native show/restore so Windows never
+  // flashes a stray taskbar entry when the overlay changes visibility.
+  overlayWindow.on('show', () => setImmediate(applyTaskbarVisibility))
+  overlayWindow.on('restore', () => {
+    applyContentProtectionAllWindows()
+    setImmediate(applyTaskbarVisibility)
   })
   overlayWindow.webContents.on('dom-ready', () => applyContentProtectionAllWindows())
   overlayWindow.webContents.on('did-finish-load', () => {
@@ -535,6 +811,7 @@ function presentOverlayWindow({ inactive = false } = {}) {
       if (inactive) overlayWindow.showInactive()
       else overlayWindow.show()
     }
+    setImmediate(applyTaskbarVisibility)
     try {
       overlayWindow.setContentProtection(true)
       overlayContentProtectionApplied = true
@@ -548,7 +825,7 @@ function presentOverlayWindow({ inactive = false } = {}) {
         overlayWindow.setVisibleOnAllWorkspaces(true)
       } catch (_) {}
       if (!inactive) {
-        try { overlayWindow.focus() } catch (_) {}
+        focusAppWindowForInput(overlayWindow)
       }
       syncOverlayMouseCapture()
     }, STEALTH_OPACITY_SHIELD_MS)
@@ -563,10 +840,11 @@ function presentOverlayWindow({ inactive = false } = {}) {
     if (inactive) overlayWindow.showInactive()
     else overlayWindow.show()
   }
+  setImmediate(applyTaskbarVisibility)
   overlayWindow.setOpacity(targetOpacity)
   applyOverlayContentProtection()
   if (!inactive && overlayVisible) {
-    try { overlayWindow.focus() } catch (_) {}
+    focusAppWindowForInput(overlayWindow)
   }
   syncOverlayMouseCapture()
 }
@@ -592,6 +870,48 @@ function getStealthManagedWindows() {
   return [overlayWindow, settingsWindow, consentWindow, onboardingWindow, globalChatWindow].filter(
     (w) => w && !w.isDestroyed(),
   )
+}
+
+/**
+ * Renderer hardening applied to every window:
+ * - popups/new tabs → open in the OS browser (never a new Electron window)
+ * - in-window navigation away from the loaded page → blocked
+ */
+function hardenWindow(win) {
+  if (!win || win.isDestroyed()) return
+  win.webContents.setWindowOpenHandler(({ url }) => {
+    if (/^https?:\/\//i.test(String(url || ''))) shell.openExternal(url).catch(() => {})
+    return { action: 'deny' }
+  })
+  win.webContents.on('will-navigate', (event, url) => {
+    try {
+      if (url !== win.webContents.getURL()) event.preventDefault()
+    } catch (_) {}
+  })
+  // Native paste path for frameless windows: right-click context menu with the
+  // standard clipboard roles (fixes paste on macOS/Windows where the renderer
+  // has no menu bar and the default Electron menu is disabled).
+  win.webContents.on('context-menu', (_event, params) => {
+    const template = []
+    if (params.isEditable) {
+      template.push(
+        { role: 'undo', label: 'Undo' },
+        { role: 'redo', label: 'Redo' },
+        { type: 'separator' },
+        { role: 'cut', label: 'Cut' },
+        { role: 'copy', label: 'Copy' },
+        { role: 'paste', label: 'Paste' },
+        { role: 'selectAll', label: 'Select All' },
+      )
+    } else if (params.selectionText) {
+      template.push({ role: 'copy', label: 'Copy' })
+    } else {
+      template.push({ role: 'paste', label: 'Paste' })
+    }
+    try {
+      Menu.buildFromTemplate(template).popup({ window: win })
+    } catch (_) {}
+  })
 }
 
 function applyContentProtectionAllWindows() {
@@ -683,16 +1003,17 @@ function showMeetingToastFromMain(payload) {
     focusable: false,
     alwaysOnTop: true,
     roundedCorners: true,
-    ...(APP_ICON ? { icon: APP_ICON } : {}),
+    ...(getWindowIcon() ? { icon: getWindowIcon() } : {}),
     webPreferences: {
       preload: toastPreload,
       contextIsolation: true,
       nodeIntegration: false,
       sandbox: false,
-      backgroundThrottling: false,
+      backgroundThrottling: true,
     },
   })
   meetingToastWindow.setMenuBarVisibility(false)
+  hardenWindow(meetingToastWindow)
   try {
     meetingToastWindow.setAlwaysOnTop(true, 'screen-saver')
     meetingToastWindow.setVisibleOnAllWorkspaces(true)
@@ -731,7 +1052,7 @@ function showMeetingToastFromMain(payload) {
     if (visible) return
     try {
       new Notification({
-        title: 'VeilAssist',
+        title: getBrandName(),
         body: headline.slice(0, 80),
       }).show()
     } catch (e) {
@@ -753,6 +1074,9 @@ function runMeetingForegroundTick() {
   if (process.platform !== 'win32') return
   if (store.get('meetingForegroundDetectionEnabled') === false) return
   if (meetingForegroundTickInFlight) return
+  // Only pay the PowerShell cost while a session/overlay is actually visible:
+  // a hidden, inactive app does not need to know what the foreground window is.
+  if (!sessionActive && !overlayVisible) return
   meetingForegroundTickInFlight = true
   detectMeetingForegroundOrScan((err, hit) => {
     meetingForegroundTickInFlight = false
@@ -775,6 +1099,16 @@ function runMeetingForegroundTick() {
       existing.lastSeenAt = now
     } else {
       meetingActiveByPlatform.set(platformKey, { eventId, lastSeenAt: now })
+    }
+    if (meetingToastSuppressedEventIds.size > 500) {
+      // Bound the toast dedupe set: keep the newest entries and drop the
+      // oldest so recently seen meetings stay suppressed. This tick runs
+      // every ~10 s on Windows, so the loop is cheap.
+      const toDrop = Math.max(0, meetingToastSuppressedEventIds.size - 300)
+      if (toDrop > 0) {
+        const iter = meetingToastSuppressedEventIds.values()
+        for (let i = 0; i < toDrop; i++) meetingToastSuppressedEventIds.delete(iter.next().value)
+      }
     }
     if (meetingToastSuppressedEventIds.has(eventId)) return
     console.log('[meeting-detect] hit', hit)
@@ -800,8 +1134,8 @@ function stopCalendarReminderPoll() {
   }
 }
 
-function makeCalendarReminderKey(eventId, reminderMinutes) {
-  return `${String(eventId || '')}::${Number(reminderMinutes || 0)}`
+function makeCalendarReminderKey(eventId, reminderMinutes, ts) {
+  return `${String(eventId || '')}::${Number(reminderMinutes || 0)}::${Number(ts || 0)}`
 }
 
 function shouldNotifyForMeetingStart({ startIso, reminderMinutes }) {
@@ -817,6 +1151,15 @@ async function runCalendarReminderTick() {
   if (store.get('calendarRemindersEnabled') === false) return
   const status = googleCalendar.getConnectionStatus((k) => store.get(k))
   if (!status.connected) return
+  // Bound the reminder dedupe set: only remember reminders fired within the
+  // last 36 hours, so one-off keys don't accumulate forever.
+  if (calendarReminderSentKeys.size > 500) {
+    const cutoff = Date.now() - 36 * 60 * 60 * 1000
+    for (const k of calendarReminderSentKeys) {
+      const ts = Number(String(k).split('::')[2] || 0)
+      if (ts && ts < cutoff) calendarReminderSentKeys.delete(k)
+    }
+  }
   const reminderMinutes = Math.max(0, Number(store.get('calendarReminderMinutes') || 0))
   try {
     const out = await googleCalendar.listUpcomingAcceptedMeetings(
@@ -826,16 +1169,15 @@ async function runCalendarReminderTick() {
     const meetings = Array.isArray(out?.meetings) ? out.meetings : []
     for (const m of meetings) {
       if (!shouldNotifyForMeetingStart({ startIso: m.start, reminderMinutes })) continue
-      const dedupeKey = makeCalendarReminderKey(m.id, reminderMinutes)
+      const dedupeKey = makeCalendarReminderKey(m.id, reminderMinutes, Date.now())
       if (calendarReminderSentKeys.has(dedupeKey)) continue
       calendarReminderSentKeys.add(dedupeKey)
       const title = reminderMinutes > 0
         ? `Meeting starts in ${reminderMinutes} min`
         : 'Meeting is starting now'
       const body = `${String(m.title || 'Upcoming meeting').slice(0, 120)}`
-      sendToOverlay('notify', { message: `📅 ${title}: ${body}` })
       try {
-        new Notification({ title: 'VeilAssist', body: `${title}: ${body}` }).show()
+        new Notification({ title: getBrandName(), body: `${title}: ${body}` }).show()
       } catch (_) {}
     }
   } catch (e) {
@@ -985,7 +1327,13 @@ function isSettingsWindowActive() {
   )
 }
 
-/** One taskbar icon (overlay only). Visible mode: show when overlay or settings is open. Invisible: always hidden. */
+/**
+ * Whether the app should have a shell entry (Windows/Linux taskbar button or
+ * macOS Dock icon). This is a PRESENCE decision only — it never affects
+ * whether windows are shown/hidden; the floating assistant window is
+ * independent of it. One entry (overlay only). Visible mode: show when the
+ * overlay or settings is open. Invisible: always hidden.
+ */
 function shouldShowAppInTaskbar() {
   if (isStealthModeEnabled()) return false
   if (store.get('hideFromTaskbarEnabled') === true) return false
@@ -996,13 +1344,18 @@ function restoreAppWindow(win) {
   if (!win || win.isDestroyed()) return false
   if (win.isMinimized()) win.restore()
   if (!win.isVisible()) win.show()
-  win.focus()
+  focusAppWindowForInput(win)
   try {
     win.moveTop()
   } catch (_) {}
   return true
 }
 
+/**
+ * Windows/Linux taskbar presence ONLY — never touches window visibility.
+ * A taskbar entry and a visible window are independent; hiding the entry
+ * must never hide, minimize, close, or destroy any window.
+ */
 function applyTaskbarVisibility() {
   const show = shouldShowAppInTaskbar()
   if (overlayWindow && !overlayWindow.isDestroyed()) {
@@ -1010,13 +1363,64 @@ function applyTaskbarVisibility() {
       overlayWindow.setSkipTaskbar(!show)
     } catch (_) {}
   }
-  // Settings / Global Chat never get their own taskbar entry (avoids duplicate icons and flash on restore).
-  for (const w of [settingsWindow, globalChatWindow, launcherWindow]) {
+  // Every other window never gets its own taskbar/dock entry. This list must
+  // stay in sync with the windows created in create*Window() — a window
+  // created without `skipTaskbar: true` in its options shows a taskbar
+  // button on its FIRST show on Windows (ITaskbarList only removes buttons
+  // from already-visible windows), so constructor flags + this loop + the
+  // show/restore re-asserts below are all required.
+  for (const w of [
+    settingsWindow,
+    globalChatWindow,
+    launcherWindow,
+    consentWindow,
+    onboardingWindow,
+    meetingToastWindow,
+  ]) {
     if (w && !w.isDestroyed()) {
       try {
         w.setSkipTaskbar(true)
       } catch (_) {}
     }
+  }
+  if (process.platform === 'darwin') applyDockPolicy()
+}
+
+// Mirrors the Dock state applied at module load (early setDockVisibility
+// call for Hide-from-Dock / Stealth): an already-hidden launch must NOT count
+// as a shown->hidden transition on the first applyDockPolicy, so startup
+// focus flow stays exactly as-is.
+let dockPolicyPrevState = 'show'
+try {
+  if (process.platform === 'darwin' && !shouldShowAppInTaskbar()) dockPolicyPrevState = 'hide'
+} catch (_) {}
+
+/**
+ * macOS Dock presence ONLY. The Dock icon state (activation policy +
+ * app.dock.show()/hide()) is fully independent of window visibility: the
+ * floating assistant window stays visible and interactive — only the app's
+ * Dock presence is removed. NEVER hide/minimize/close a window here.
+ * NEVER call app.dock.hide() alone: a "regular" app is re-shown by macOS on
+ * the next activation. dockPolicy switches to "accessory" (permanent).
+ *
+ * Focus: app.dock.hide() deactivates the app (documented macOS behavior).
+ * We compensate ONLY on an actual shown->hidden transition (user just
+ * enabled the setting, or hid the overlay), and only by re-focusing the
+ * window the user is currently using — never the overlay unconditionally,
+ * which would steal focus from Settings on every window event.
+ */
+function applyDockPolicy() {
+  const show = shouldShowAppInTaskbar()
+  const wasHidden = dockPolicyPrevState !== 'show'
+  try {
+    setDockVisibility(show)
+  } catch (_) {}
+  dockPolicyPrevState = show ? 'show' : 'hide'
+  if (!show && !wasHidden) {
+    setImmediate(() => {
+      const w = BrowserWindow.getFocusedWindow()
+      if (w && !w.isDestroyed() && w.isVisible()) focusAppWindowForInput(w)
+    })
   }
 }
 
@@ -1186,16 +1590,18 @@ function createConsentWindow() {
     transparent: true,
     backgroundColor: '#00000000',
     roundedCorners: true,
-    ...(APP_ICON ? { icon: APP_ICON } : {}),
+    skipTaskbar: true,
+    ...(getWindowIcon() ? { icon: getWindowIcon() } : {}),
     webPreferences: {
       preload: preloadPath,
       contextIsolation: true,
       nodeIntegration: false,
       sandbox: false,
-      backgroundThrottling: false,
+      backgroundThrottling: true,
     },
   })
   consentWindow.setMenuBarVisibility(false)
+  hardenWindow(consentWindow)
   consentWindow.loadFile(useBuilt
     ? path.join(__dirname, '..', 'out', 'consent', 'index.html')
     : path.join(__dirname, '..', 'renderer', 'consent', 'index.html'))
@@ -1203,6 +1609,8 @@ function createConsentWindow() {
     consentWindow = null
     if (!appCoreStarted && !hasValidConsent()) app.quit()
   })
+  consentWindow.on('show', () => setImmediate(applyTaskbarVisibility))
+  consentWindow.once('ready-to-show', () => setImmediate(applyTaskbarVisibility))
 }
 
 function createOnboardingWindow() {
@@ -1223,16 +1631,18 @@ function createOnboardingWindow() {
     transparent: true,
     backgroundColor: '#00000000',
     roundedCorners: true,
-    ...(APP_ICON ? { icon: APP_ICON } : {}),
+    skipTaskbar: true,
+    ...(getWindowIcon() ? { icon: getWindowIcon() } : {}),
     webPreferences: {
       preload: preloadPath,
       contextIsolation: true,
       nodeIntegration: false,
       sandbox: false,
-      backgroundThrottling: false,
+      backgroundThrottling: true,
     },
   })
   onboardingWindow.setMenuBarVisibility(false)
+  hardenWindow(onboardingWindow)
   onboardingWindow.loadFile(useBuilt
     ? path.join(__dirname, '..', 'out', 'onboarding', 'index.html')
     : path.join(__dirname, '..', 'renderer', 'onboarding', 'index.html'))
@@ -1240,7 +1650,11 @@ function createOnboardingWindow() {
     onboardingWindow = null
     if (!appCoreStarted && !hasCompletedOnboardingFlag()) app.quit()
   })
-  onboardingWindow.once('ready-to-show', () => applyContentProtectionAllWindows())
+  onboardingWindow.on('show', () => setImmediate(applyTaskbarVisibility))
+  onboardingWindow.once('ready-to-show', () => {
+    applyContentProtectionAllWindows()
+    setImmediate(applyTaskbarVisibility)
+  })
 }
 
 function requestSessionStart() {
@@ -1253,7 +1667,7 @@ function moveOverlay(dx, dy) {
   if (!overlayWindow) return
   const [x, y] = overlayWindow.getPosition()
   const [w, h] = overlayWindow.getSize()
-  const d = getDisplayBounds()
+  const d = getDisplayBoundsNear(x, y)
   overlayWindow.setPosition(
     Math.max(d.x, Math.min(d.x + d.width - w, x + dx)),
     Math.max(d.y, Math.min(d.y + d.height - h, y + dy))
@@ -1281,13 +1695,13 @@ function createSettingsWindow() {
     backgroundColor: '#00000000',
     roundedCorners: true,
     skipTaskbar: true,
-    ...(APP_ICON ? { icon: APP_ICON } : {}),
+    ...(getWindowIcon() ? { icon: getWindowIcon() } : {}),
     webPreferences: {
       preload: preloadPath,
       contextIsolation: true,
       nodeIntegration: false,
       sandbox: false,
-      backgroundThrottling: false,
+      backgroundThrottling: true,
     },
   })
   try {
@@ -1295,6 +1709,7 @@ function createSettingsWindow() {
   } catch (error) {
     console.warn('[protection] unable to initialize Settings window:', error?.message || error)
   }
+  hardenWindow(settingsWindow)
   settingsWindow.loadFile(useBuilt
     ? path.join(__dirname, '..', 'out', 'settings', 'index.html')
     : path.join(__dirname, '..', 'renderer', 'settings', 'index.html'))
@@ -1331,19 +1746,20 @@ function createGlobalChatWindow() {
     minHeight: 480,
     center: true,
     frame: true,
-    title: 'VeilAssist — Global Chat',
+    title: `${getBrandName()} — Global Chat`,
     backgroundColor: '#0a0a0b',
     skipTaskbar: true,
-    ...(APP_ICON ? { icon: APP_ICON } : {}),
+    ...(getWindowIcon() ? { icon: getWindowIcon() } : {}),
     webPreferences: {
       preload: preloadPath,
       contextIsolation: true,
       nodeIntegration: false,
       sandbox: false,
-      backgroundThrottling: false,
+      backgroundThrottling: true,
     },
   })
   globalChatWindow.setMenuBarVisibility(false)
+  hardenWindow(globalChatWindow)
   globalChatWindow.loadFile(getGlobalChatHtmlPath())
   globalChatWindow.on('closed', () => { globalChatWindow = null })
   globalChatWindow.once('ready-to-show', () => {
@@ -1407,24 +1823,32 @@ function createLauncherWindow() {
     resizable: true,
     center: true,
     frame: true,
-    title: 'VeilAssist Launcher',
+    title: `${getBrandName()} Launcher`,
     backgroundColor: '#0c0c0e',
-    ...(APP_ICON ? { icon: APP_ICON } : {}),
+    skipTaskbar: true,
+    ...(getWindowIcon() ? { icon: getWindowIcon() } : {}),
     webPreferences: {
       preload: preloadPath,
       contextIsolation: true,
       nodeIntegration: false,
       sandbox: false,
-      backgroundThrottling: false,
+      backgroundThrottling: true,
     },
   })
+  hardenWindow(launcherWindow)
   launcherWindow.loadFile(getLauncherHtmlPath())
+  // Constructor `skipTaskbar: true` plus these re-asserts keep the launcher
+  // out of the taskbar across show/restore/minimize cycles.
+  launcherWindow.on('show', () => setImmediate(applyTaskbarVisibility))
+  launcherWindow.on('restore', () => setImmediate(applyTaskbarVisibility))
+  launcherWindow.on('minimize', () => setImmediate(applyTaskbarVisibility))
+  launcherWindow.once('ready-to-show', () => setImmediate(applyTaskbarVisibility))
   launcherWindow.on('closed', () => { launcherWindow = null })
 }
 
 function setupTray() {
   tray = new Tray(createTrayIcon(false))
-  tray.setToolTip('VeilAssist — tray: Open / Hide, Quit to fully exit')
+  tray.setToolTip(`${getBrandName()} — tray: Open / Hide, Quit to fully exit`)
   const updateTrayMenu = () => {
     tray.setContextMenu(Menu.buildFromTemplate([
       { label: overlayVisible ? 'Hide' : 'Open', click: toggleOverlay },
@@ -2415,15 +2839,6 @@ function getLegalDocumentPath(which) {
 }
 
 function setupIPC() {
-  ipcMain.on('shadowassist-stream-flush', (e) => {
-    if (!overlayWindow || overlayWindow.isDestroyed()) return
-    if (e.sender !== overlayWindow.webContents) return
-  })
-  ipcMain.on('shadowassist-stream-ended', (e) => {
-    if (!overlayWindow || overlayWindow.isDestroyed()) return
-    if (e.sender !== overlayWindow.webContents) return
-  })
-
   ipcMain.handle('legal:open', async (_, which) => {
     const p = getLegalDocumentPath(which)
     if (!p) return { ok: false, error: 'File not found' }
@@ -2436,10 +2851,64 @@ function setupIPC() {
   })
   ipcMain.handle('protection:get', () => !!store.get('stealth_mode'))
   ipcMain.handle('get-app-info', () => ({
-    name: app.getName(),
+    name: getBrandName(),
     version: app.getVersion(),
-    productName: 'VeilAssist',
+    productName: getBrandName(),
   }))
+  // ── Dynamic branding ──────────────────────────────────────────────────
+  ipcMain.on('branding:get-sync', (event) => {
+    event.returnValue = getBrandingSnapshot()
+  })
+  ipcMain.handle('branding:get', () => getBrandingSnapshot())
+  ipcMain.handle('branding:set-name', (_event, raw) => {
+    store.set('brandName', branding.normalizeBrandNameForStore(raw))
+    applyRuntimeBranding()
+    sendBrandingUpdateToWindows()
+    return getBrandingSnapshot()
+  })
+  ipcMain.handle('branding:pick-logo', async (_event, kind) => {
+    const target = kind === 'overlay' ? 'overlay' : 'app'
+    const res = await dialog.showOpenDialog(settingsWindow || undefined, {
+      title: `Choose ${target === 'overlay' ? 'overlay' : 'app'} logo (PNG or JPEG)`,
+      properties: ['openFile'],
+      filters: [{ name: 'Images', extensions: ['png', 'jpg', 'jpeg'] }],
+    })
+    if (res.canceled || !res.filePaths || !res.filePaths.length) {
+      return getBrandingSnapshot()
+    }
+    try {
+      const buf = fs.readFileSync(res.filePaths[0])
+      if (!branding.isSupportedImageBytes(buf)) {
+        return {
+          ...getBrandingSnapshot(),
+          error: 'Unsupported image file — please choose a PNG or JPEG.',
+        }
+      }
+      branding.persistBrandLogo(res.filePaths[0], app.getPath('userData'), target)
+      store.set(
+        target === 'overlay' ? 'brandOverlayLogoCustomized' : 'brandLogoCustomized',
+        true,
+      )
+      invalidateBrandDataUrlCache()
+      applyRuntimeBranding()
+      sendBrandingUpdateToWindows()
+    } catch (e) {
+      console.warn('[branding] pick-logo failed:', e?.message || e)
+      return { ...getBrandingSnapshot(), error: e?.message || 'Failed to apply logo.' }
+    }
+    return getBrandingSnapshot()
+  })
+  ipcMain.handle('branding:reset', () => {
+    store.set('brandName', '')
+    store.set('brandLogoCustomized', false)
+    store.set('brandOverlayLogoCustomized', false)
+    branding.removeBrandLogo(app.getPath('userData'), 'app')
+    branding.removeBrandLogo(app.getPath('userData'), 'overlay')
+    invalidateBrandDataUrlCache()
+    applyRuntimeBranding()
+    sendBrandingUpdateToWindows()
+    return getBrandingSnapshot()
+  })
   ipcMain.handle('help:get-doc', () => {
     try {
       const { loadUserGuideMarkdown } = require('../lib/userGuideDoc')
@@ -2683,31 +3152,42 @@ function setupIPC() {
     return true
   })
   ipcMain.handle('export-user-data', async () => {
-    const { canceled, filePath } = await dialog.showSaveDialog({
-      defaultPath: 'veilassist_data_export.json',
-      filters: [{ name: 'JSON', extensions: ['json'] }],
-    })
-    if (canceled || !filePath) return { ok: false, canceled: true }
-    const payload = {
-      exportedAt: new Date().toISOString(),
-      systemPrompt: store.get('systemPrompt'),
-      knowledgeBase: store.get('knowledgeBase'),
-      contextPrompts: store.get('contextPrompts'),
-      activeContextPromptId: store.get('activeContextPromptId'),
-      contextPromptHistory: store.get('contextPromptHistory'),
-      contextIndexMeta: store.get('contextIndexMeta'),
-      resumeContext: store.get('resumeContext'),
-      jdContext: store.get('jdContext'),
-      resumeSourceName: store.get('resumeSourceName'),
-      meetingSessions: store.get('meetingSessions'),
-      consentRecord: store.get('consentRecord'),
-      consent_v1: store.get('consent_v1'),
+    try {
+      const { canceled, filePath } = await dialog.showSaveDialog({
+        defaultPath: 'veilassist_data_export.json',
+        filters: [{ name: 'JSON', extensions: ['json'] }],
+      })
+      if (canceled || !filePath) return { ok: false, canceled: true }
+      const payload = {
+        exportedAt: new Date().toISOString(),
+        systemPrompt: store.get('systemPrompt'),
+        knowledgeBase: store.get('knowledgeBase'),
+        contextPrompts: store.get('contextPrompts'),
+        activeContextPromptId: store.get('activeContextPromptId'),
+        contextPromptHistory: store.get('contextPromptHistory'),
+        contextIndexMeta: store.get('contextIndexMeta'),
+        resumeContext: store.get('resumeContext'),
+        jdContext: store.get('jdContext'),
+        resumeSourceName: store.get('resumeSourceName'),
+        meetingSessions: store.get('meetingSessions'),
+        consentRecord: store.get('consentRecord'),
+        consent_v1: store.get('consent_v1'),
+      }
+      await fsPromises.writeFile(filePath, JSON.stringify(payload, null, 2), 'utf8')
+      return { ok: true, path: filePath }
+    } catch (e) {
+      console.error('[export-user-data]', e?.message || e)
+      return { ok: false, error: e?.message || String(e) }
     }
-    await fsPromises.writeFile(filePath, JSON.stringify(payload, null, 2), 'utf8')
-    return { ok: true, path: filePath }
   })
 
-  ipcMain.handle('get-store', (_, key) => store.get(key))
+  // Do not hand encrypted API keys to the renderer: it only needs presence
+  // (the settings keySetMap checks `!!storeValue`). The plaintext key is
+  // resolved main-side inside 'test-api' below.
+  ipcMain.handle('get-store', (_, key) => {
+    if (ENCRYPTED_KEYS.includes(String(key || ''))) return ''
+    return store.get(key)
+  })
   ipcMain.handle('set-store', (_, key, value) => {
     let stored = value
     if (key === 'assistAutoTrigger') {
@@ -2884,9 +3364,28 @@ function setupIPC() {
     }
     return true
   })
-  ipcMain.handle('get-all-settings', () => store.getAll())
+  ipcMain.handle('get-all-settings', () => {
+    // Secrets never leave the main process in plaintext. The renderer only
+    // needs presence ("is a key configured"), which a non-empty marker provides.
+    const all = store.getAll()
+    for (const k of store.ENCRYPTED_KEYS) {
+      if (all[k]) all[k] = '••••configured'
+    }
+    // Transcripts are heavy and served on demand via meeting-sessions:list —
+    // never ship them with every settings snapshot.
+    if (all.meetingSessions) delete all.meetingSessions
+    return all
+  })
   ipcMain.handle('test-api', async (_, provider, key) => {
-    return getAiClient().testConnection(provider, key, (k) => store.get(k))
+    // The renderer never holds the stored API key (get-store redacts it).
+    // Resolve the key here: prefer the one passed in (freshly typed this
+    // session), fall back to the persisted encrypted value.
+    let resolved = String(key || '').trim()
+    if (!resolved) {
+      const meta = (require('../lib/providers').getProviderMetadataForUI() || []).find((m) => m.id === provider)
+      if (meta?.keyField) resolved = String(store.get(meta.keyField) || '')
+    }
+    return getAiClient().testConnection(provider, resolved, (k) => store.get(k))
   })
   ipcMain.handle('get-provider-metadata', () => require('../lib/providers').getProviderMetadataForUI())
   ipcMain.handle('get-intelligence-flags', () => {
@@ -3182,10 +3681,32 @@ function setupIPC() {
   })
   // ─────────────────────────────────────────────────────────────────────────
 
-  ipcMain.handle('show-open-dialog', (_, opts) => dialog.showOpenDialog(opts))
+  // Paths returned by the file-open dialog, bookmarked so parse-playbook only
+  // reads files the user explicitly picked (a renderer compromise cannot use
+  // parse-playbook to exfiltrate arbitrary files).
+  const dialogPickedPaths = new Set()
+  const dialogPickTimestamps = new Map()
+
+  ipcMain.handle('show-open-dialog', async (_, opts) => {
+    const res = await dialog.showOpenDialog(opts)
+    if (!res.canceled && res.filePaths?.length) {
+      for (const p of res.filePaths) {
+        const abs = path.resolve(String(p || ''))
+        dialogPickedPaths.add(abs)
+        dialogPickTimestamps.set(abs, Date.now())
+      }
+    }
+    return res
+  })
   ipcMain.handle('parse-playbook', async (_, filePath) => {
     try {
-      const text = await parsePlaybookFile(filePath)
+      const abs = path.resolve(String(filePath || ''))
+      const pickedAt = dialogPickTimestamps.get(abs)
+      // Only allow files the user just selected via the open dialog.
+      if (!dialogPickedPaths.has(abs) || !pickedAt || Date.now() - pickedAt > 5 * 60 * 1000) {
+        throw new Error('File not selected via the picker')
+      }
+      const text = await parsePlaybookFile(abs)
       return String(text || '')
     } catch (e) {
       console.warn('[parse-playbook]', e?.message || e)
@@ -3236,7 +3757,7 @@ function setupIPC() {
     }
   })
   ipcMain.handle('set-overlay-position-preset', (_, preset) => {
-    const d = getDisplayBounds()
+    const d = getOverlayDisplayBounds()
     const w = store.get('overlayBounds')?.width || 400
     const h = store.get('overlayBounds')?.height || 540
     const m = 20
@@ -3363,8 +3884,17 @@ async function initApp() {
   const { session } = require('electron')
   /** Packaged `file://` overlay: Chromium checks permissions before requesting; without this, mic/desktop capture can fail silently (dev often still works). */
   const capturePermissions = new Set(['media', 'display-capture', 'screen', 'speaker-selection'])
-  session.defaultSession.setPermissionCheckHandler((_wc, permission) => capturePermissions.has(permission))
-  session.defaultSession.setPermissionRequestHandler((_, permission, cb) => cb(capturePermissions.has(permission)))
+  const isTrustedRequestUrl = (url) => {
+    const u = String(url || '')
+    return u.startsWith('file:') || u.startsWith('http://localhost') || u.startsWith('http://127.0.0.1')
+  }
+  session.defaultSession.setPermissionCheckHandler(
+    (_wc, permission, _origin, details) =>
+      isTrustedRequestUrl(details?.requestingUrl) && capturePermissions.has(permission),
+  )
+  session.defaultSession.setPermissionRequestHandler((_wc, permission, cb, details) => {
+    cb(isTrustedRequestUrl(details?.requestingUrl) && capturePermissions.has(permission))
+  })
   session.defaultSession.setDisplayMediaRequestHandler((request, callback) => {
     screenCapture
       .getDisplayMediaLoopbackPayload()
@@ -3373,6 +3903,7 @@ async function initApp() {
   })
   seedOverlayPositionIfNeeded()
   setupTray()
+  applyRuntimeBranding()
   setupHotkeys()
   sessionMemory.startInactivityWatcher(() => {
     // End the whole session, not just the UI: leaving sessionActive true kept the
@@ -3394,6 +3925,32 @@ async function initApp() {
   startMeetingForegroundPoll()
   startCalendarReminderPoll()
   scheduleVectorMemoryMaintenance()
+
+  // Display topology changes: keep the overlay on-screen when monitors are
+  // unplugged, rescaled, or reordered (multi-monitor support).
+  screen.on('display-removed', () => {
+    reseatOverlayIfOffscreen()
+    applyTaskbarVisibility()
+  })
+  screen.on('display-metrics-changed', () => {
+    reseatOverlayIfOffscreen()
+    if (overlayWindow && !overlayWindow.isDestroyed() && overlayVisible) {
+      presentOverlayWindow({ inactive: true })
+    }
+  })
+
+  // System sleep/wake: re-assert capture protection and overlay state so the
+  // assistant is not left hidden, capturable, or stuck mid-animation.
+  powerMonitor.on('resume', () => {
+    reassertOverlayContentProtection()
+    applyContentProtectionAllWindows()
+    if (overlayWindow && !overlayWindow.isDestroyed()) {
+      if (overlayVisible) presentOverlayWindow({ inactive: true })
+      else overlayWindow.setOpacity(0)
+      syncOverlayMouseCapture()
+    }
+    applyTaskbarVisibility()
+  })
   try {
     const primary = 'CommandOrControl+Shift+Alt+M'
     const fallback = 'CommandOrControl+Shift+M'
@@ -3457,7 +4014,7 @@ function setupAutoUpdater() {
   autoUpdater.on('update-available', (info) => {
     try {
       new Notification({
-        title: 'VeilAssist Update',
+        title: `${getBrandName()} Update`,
         body: `Version ${info.version} is downloading in the background…`,
       }).show()
     } catch (e) {
@@ -3470,7 +4027,7 @@ function setupAutoUpdater() {
       .showMessageBox({
         type: 'info',
         title: 'Update Ready',
-        message: `VeilAssist ${info.version} has been downloaded.`,
+        message: `${getBrandName()} ${info.version} has been downloaded.`,
         detail: 'Restart now to apply the update, or it will be applied next time you launch.',
         buttons: ['Restart Now', 'Later'],
         defaultId: 0,
@@ -3505,6 +4062,7 @@ app.whenReady().then(() => {
   })
 
   setupIPC()
+  applyRuntimeBranding()
   if (!hasValidConsent()) createConsentWindow()
   else continueAfterConsent()
 }).catch((err) => {
@@ -3524,6 +4082,19 @@ app.on('before-quit', (event) => {
   shutdownApplication()
     .catch((e) => console.warn('[quit] shutdown failed:', e?.message || e))
     .finally(() => app.quit())
+})
+// macOS convention: clicking the Dock icon re-opens the overlay.
+app.on('activate', () => {
+  if (overlayVisible) {
+    if (overlayWindow && !overlayWindow.isDestroyed()) {
+      presentOverlayWindow({ inactive: false })
+    } else {
+      createOverlayWindow()
+      showOverlay()
+    }
+  } else {
+    showOverlay()
+  }
 })
 app.on('will-quit', () => {
   // Synchronous backstop — everything here is idempotent after shutdownApplication().

@@ -5,6 +5,7 @@ import { Keyboard } from 'lucide-react'
 import AppIcon from '../shared/AppIcon'
 import { DEFAULT_HOTKEYS_MAP, HOTKEY_DEFS } from './settingsConstants'
 import { SettingsPage, SettingsSection } from './SettingsComponents'
+import { useBrand } from '../shared/branding'
 
 export default function KeybindsSettingsPanel({
   hotkeysMap,
@@ -13,10 +14,11 @@ export default function KeybindsSettingsPanel({
   onResetOneHotkey,
   onResetAllHotkeys,
 }) {
+  const { name } = useBrand()
   return (
     <SettingsPage
       title="Keyboard shortcuts"
-      description="Global hotkeys work while VeilAssist runs in the tray. CommandOrControl = ⌘ on Mac, Ctrl on Windows."
+      description={`Global hotkeys work while ${name} runs in the tray. CommandOrControl = ⌘ on Mac, Ctrl on Windows.`}
     >
       <SettingsSection title="Shortcuts">
         <div className="mb-3 flex flex-wrap items-center justify-between gap-2">

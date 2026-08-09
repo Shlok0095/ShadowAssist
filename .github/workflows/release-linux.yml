@@ -12,6 +12,7 @@ on:
   workflow_dispatch:
   push:
     branches:
+      - FINAL
       - stag
       - main
       - master
@@ -78,6 +79,10 @@ jobs:
             nf=$(basename "$f" | sed "s/$CLEANED/$VER/")
             if [ "$nf" != "$(basename "$f")" ]; then mv "$f" "dist/$nf"; fi
           done
+          APPIMAGE=$(ls dist/VeilAssist*.AppImage 2>/dev/null | head -1)
+          DEB=$(ls dist/VeilAssist*.deb 2>/dev/null | head -1)
+          if [ -n "$APPIMAGE" ]; then cp "$APPIMAGE" dist/VeilAssist-linux.AppImage; fi
+          if [ -n "$DEB" ]; then cp "$DEB" dist/VeilAssist-linux.deb; fi
           ls dist
 
       - name: Record build version state
@@ -105,6 +110,8 @@ jobs:
           path: |
             dist/VeilAssist-*.AppImage
             dist/VeilAssist-*.deb
+            dist/VeilAssist-linux.AppImage
+            dist/VeilAssist-linux.deb
             dist/latest-linux.yml
             dist/SHA256SUMS.txt
 
@@ -133,6 +140,8 @@ jobs:
           artifacts: |
             dist/VeilAssist-*.AppImage
             dist/VeilAssist-*.deb
+            dist/VeilAssist-linux.AppImage
+            dist/VeilAssist-linux.deb
             dist/latest-linux.yml
             dist/SHA256SUMS.txt
 
