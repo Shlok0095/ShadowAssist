@@ -83,11 +83,14 @@ export function PlatformDownloadMenu({ className = '', variant = 'dark' }: Props
                     {isActive ? <span className="lm-download-menu__badge">Your device</span> : null}
                   </div>
                   <div className="lm-download-menu__links">
-                    <a href={p.primary.href} role="menuitem" target="_blank" rel="noopener noreferrer" onClick={() => setOpen(false)}>
-                      {p.primary.label}
-                    </a>
-                    <a href={p.secondary.href} role="menuitem" target="_blank" rel="noopener noreferrer" onClick={() => setOpen(false)}>
-                      {p.secondary.label}
+                    <a
+                      href={p.download.href}
+                      role="menuitem"
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      onClick={() => setOpen(false)}
+                    >
+                      Download
                     </a>
                   </div>
                 </div>
@@ -115,11 +118,14 @@ export function PlatformDownloadDrawerLinks({ onNavigate }: { onNavigate?: () =>
               <Icon />
               <span>{p.name}</span>
             </div>
-            <a href={p.primary.href} className="lm-drawer__link" target="_blank" rel="noopener noreferrer" onClick={onNavigate}>
-              {p.primary.label}
-            </a>
-            <a href={p.secondary.href} className="lm-drawer__link lm-drawer__link--muted" target="_blank" rel="noopener noreferrer" onClick={onNavigate}>
-              {p.secondary.label}
+            <a
+              href={p.download.href}
+              className="lm-drawer__link"
+              target="_blank"
+              rel="noopener noreferrer"
+              onClick={onNavigate}
+            >
+              Download for {p.name}
             </a>
           </div>
         )

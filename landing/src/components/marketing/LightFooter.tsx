@@ -76,7 +76,7 @@ export function LightFooter() {
                   <span className="lm-footer__dl-icon">
                     <Icon />
                   </span>
-                  <FooterDownloadLink href={p.primary.href} label={`${p.name} — ${p.primary.label}`} />
+                  <FooterDownloadLink href={p.download.href} label={`Download for ${p.name}`} />
                 </div>
               )
             })}

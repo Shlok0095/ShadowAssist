@@ -1476,8 +1476,15 @@ body.light-marketing .glow {
 
 .dl-hub__actions {
   display: flex;
-  flex-wrap: wrap;
-  gap: 0.65rem;
+  justify-content: stretch;
+}
+
+.dl-hub__actions .dl-hub__btn--primary {
+  flex: 1;
+  min-width: 12rem;
+  padding: 0.85rem 1.5rem;
+  font-size: 0.9375rem;
+  border-radius: 14px;
 }
 
 .dl-hub__btn {

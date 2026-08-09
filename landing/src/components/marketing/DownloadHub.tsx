@@ -5,7 +5,6 @@ import { LinuxIcon, MacIcon, WindowsIcon } from '@/components/marketing/LightBut
 import { PLATFORMS, type PlatformDownload } from '@/config/platforms'
 import type { PlatformId } from '@/config/platforms'
 import { useDetectedPlatform } from '@/hooks/useDetectedPlatform'
-import { SITE } from '@/config/site'
 
 const ICONS = { windows: WindowsIcon, macos: MacIcon, linux: LinuxIcon } as const
 
@@ -25,11 +24,8 @@ function PlatformPanel({ platform }: { platform: PlatformDownload }) {
         </div>
       </div>
       <div className="dl-hub__actions">
-        <a href={platform.primary.href} className="dl-hub__btn dl-hub__btn--primary">
-          {platform.primary.label}
-        </a>
-        <a href={platform.secondary.href} className="dl-hub__btn dl-hub__btn--ghost">
-          {platform.secondary.label}
+        <a href={platform.download.href} className="dl-hub__btn dl-hub__btn--primary">
+          {platform.download.label}
         </a>
       </div>
     </div>
@@ -81,7 +77,7 @@ export function DownloadHub() {
           animate={{ opacity: 1, y: 0 }}
           transition={{ duration: 0.35 }}
         >
-          We detected <strong>{PLATFORMS.find((p) => p.id === preferred)?.name}</strong> — pick any platform below.
+          Download for <strong>{PLATFORMS.find((p) => p.id === preferred)?.name}</strong>, or choose another platform.
         </motion.p>
       ) : null}
 
@@ -124,13 +120,6 @@ export function DownloadHub() {
           </motion.div>
         </AnimatePresence>
       </div>
-
-      <p className="dl-hub__fineprint">
-        macOS builds are unsigned — right-click → Open on first launch.{' '}
-        <a href={SITE.checksumsTxtUrl} target="_blank" rel="noopener noreferrer">
-          Verify SHA256 checksums
-        </a>
-      </p>
     </div>
   )
 }

@@ -10,8 +10,7 @@ export type PlatformDownload = {
   name: string
   icon: ComponentType
   desc: string
-  primary: { label: string; href: string }
-  secondary: { label: string; href: string }
+  download: { label: string; href: string }
 }
 
 export const PLATFORMS: PlatformDownload[] = [
@@ -19,25 +18,22 @@ export const PLATFORMS: PlatformDownload[] = [
     id: 'windows',
     name: 'Windows',
     icon: WindowsIcon,
-    desc: 'Windows 10 or later — installer or portable exe.',
-    primary: { label: 'Installer', href: SITE.downloadSetupExeUrl },
-    secondary: { label: 'Portable', href: SITE.downloadPortablePageUrl },
+    desc: 'Windows 10 or later.',
+    download: { label: 'Download', href: SITE.downloadSetupExeUrl },
   },
   {
     id: 'macos',
     name: 'macOS',
     icon: MacIcon,
-    desc: 'Apple Silicon or Intel — unsigned DMG (right-click → Open on first launch).',
-    primary: { label: 'Download DMG', href: SITE.downloadMacDmgUrl },
-    secondary: { label: 'Download ZIP', href: SITE.downloadMacZipUrl },
+    desc: 'Apple Silicon or Intel.',
+    download: { label: 'Download', href: SITE.downloadMacDmgUrl },
   },
   {
     id: 'linux',
     name: 'Linux',
     icon: LinuxIcon,
-    desc: 'AppImage (portable) or deb for Debian/Ubuntu. Tray needs AppIndicator.',
-    primary: { label: 'AppImage', href: SITE.downloadLinuxAppImageUrl },
-    secondary: { label: 'deb package', href: SITE.downloadLinuxDebUrl },
+    desc: 'Ubuntu, Debian, and most distros.',
+    download: { label: 'Download', href: SITE.downloadLinuxAppImageUrl },
   },
 ]
 
