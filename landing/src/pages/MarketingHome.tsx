@@ -1,9 +1,10 @@
 import { useState, type CSSProperties } from 'react'
+import { motion } from 'motion/react'
 import { LightFaq } from '@/components/marketing/LightFaq'
 import { LightFooter } from '@/components/marketing/LightFooter'
 import { CompatLogos, DockIcons, MacosCard } from '@/components/marketing/MacosCard'
 import { HeroMotion } from '@/components/marketing/HeroMotion'
-import { PlatformDownloads } from '@/components/marketing/PlatformDownloads'
+import { DownloadHub } from '@/components/marketing/DownloadHub'
 import { StarfieldBg } from '@/components/marketing/StarfieldBg'
 import { MEDIA } from '@/config/mediaManifest'
 import { useRevealObserver } from '@/hooks/useReveal'
@@ -123,6 +124,9 @@ export function MarketingHome() {
             <div className="lm-hero__ctas">
               <a href="#how-it-works" className="sp-btn-glow">
                 See how it works
+              </a>
+              <a href="#download" className="sp-btn-glow sp-btn-glow--secondary">
+                Download free
               </a>
             </div>
 
@@ -261,16 +265,24 @@ export function MarketingHome() {
         </div>
       </section>
 
-      <section id="download" className="lm-final-cta scroll-mt-nav">
-        <div className="lm-container reveal">
-          <div className="lm-kbd-row" aria-hidden>
-            <span className="lm-kbd">Ctrl</span>
-            <span className="lm-kbd-plus">+</span>
-            <span className="lm-kbd">↵</span>
-          </div>
-          <h2 className="lm-final-cta__title">Meeting AI that helps during the call, not after.</h2>
-          <p className="lm-final-cta__sub">Try VeilAssist on your next meeting today.</p>
-          <PlatformDownloads />
+      <section id="download" className="lm-final-cta lm-download-section scroll-mt-nav">
+        <div className="lm-container">
+          <motion.div
+            className="lm-download-section__intro"
+            initial={{ opacity: 0, y: 20 }}
+            whileInView={{ opacity: 1, y: 0 }}
+            viewport={{ once: true, margin: '-80px' }}
+            transition={{ duration: 0.55, ease: [0.22, 1, 0.36, 1] }}
+          >
+            <div className="lm-kbd-row" aria-hidden>
+              <span className="lm-kbd">Ctrl</span>
+              <span className="lm-kbd-plus">+</span>
+              <span className="lm-kbd">↵</span>
+            </div>
+            <h2 className="lm-final-cta__title">Meeting AI that helps during the call, not after.</h2>
+            <p className="lm-final-cta__sub">Free to download on Windows, macOS, and Linux.</p>
+          </motion.div>
+          <DownloadHub />
         </div>
       </section>
 

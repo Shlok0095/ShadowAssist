@@ -335,6 +335,49 @@ body.light-marketing .glow {
   font-size: 0.88rem;
 }
 
+.lm-download-menu--light .lm-download-menu__panel {
+  background: rgba(255, 255, 255, 0.98);
+  border: 1px solid var(--border-strong);
+  box-shadow: 0 20px 50px rgba(15, 23, 42, 0.14);
+}
+
+.lm-download-menu--light .lm-download-menu__hint {
+  color: var(--text-tertiary);
+}
+
+.lm-download-menu--light .lm-download-menu__row-head {
+  color: var(--text-primary);
+}
+
+.lm-download-menu--light .lm-download-menu__links a {
+  color: var(--text-primary) !important;
+  background: var(--bg-soft);
+}
+
+.lm-download-menu--light .lm-download-menu__links a:hover {
+  background: var(--accent-soft);
+}
+
+.lm-download-menu--light .lm-download-menu__all {
+  color: var(--text-secondary) !important;
+}
+
+.lm-download-menu--light .lm-download-menu__badge {
+  color: var(--accent-main);
+}
+
+.lm-download-btn__label {
+  max-width: 11rem;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+@media (max-width: 900px) {
+  .lm-download-btn__label {
+    max-width: 8rem;
+  }
+}
+
 .lm-nav__link {
   font-size: var(--text-sm);
   font-weight: 400;
@@ -419,6 +462,17 @@ body.light-marketing .glow {
 .sp-btn-glow:focus-visible {
   outline: 2px solid var(--accent-main);
   outline-offset: 3px;
+}
+
+.sp-btn-glow--secondary {
+  background: var(--bg-base);
+  border-color: var(--border-strong);
+  box-shadow: var(--shadow-sm);
+}
+
+.sp-btn-glow--secondary:hover {
+  background: var(--bg-soft);
+  box-shadow: var(--shadow-md);
 }
 
 .lm-final-cta__hint {
@@ -1271,10 +1325,212 @@ body.light-marketing .glow {
 
 /* ── Final CTA ── */
 .lm-final-cta {
-  background: var(--bg-soft);
+  background: linear-gradient(180deg, var(--bg-soft) 0%, #eef0f8 100%);
   border-top: 1px solid var(--border-divider);
   padding: var(--section-y) 0;
   text-align: center;
+}
+
+.lm-download-section__intro {
+  margin-bottom: 2rem;
+}
+
+/* ── Download hub (Manus / Kokonut-inspired glass panel) ── */
+.dl-hub {
+  position: relative;
+  max-width: 720px;
+  margin: 0 auto;
+  padding: 1.75rem;
+  border-radius: 24px;
+  background: linear-gradient(145deg, rgba(15, 18, 32, 0.96) 0%, rgba(22, 26, 48, 0.92) 100%);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  box-shadow:
+    0 0 0 1px rgba(139, 92, 246, 0.08),
+    0 32px 80px rgba(15, 23, 42, 0.35),
+    inset 0 1px 0 rgba(255, 255, 255, 0.06);
+  overflow: hidden;
+  text-align: left;
+}
+
+.dl-hub__particles {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  overflow: hidden;
+}
+
+.dl-hub__particle {
+  position: absolute;
+  width: 4px;
+  height: 4px;
+  border-radius: 50%;
+  background: rgba(167, 139, 250, 0.5);
+  box-shadow: 0 0 12px rgba(139, 92, 246, 0.6);
+}
+
+.dl-hub__detect {
+  position: relative;
+  z-index: 1;
+  margin: 0 0 1rem;
+  font-size: 0.82rem;
+  color: rgba(255, 255, 255, 0.55);
+  text-align: center;
+}
+
+.dl-hub__detect strong {
+  color: #c4b5fd;
+}
+
+.dl-hub__tabs {
+  position: relative;
+  z-index: 1;
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 0.35rem;
+  padding: 0.35rem;
+  border-radius: 14px;
+  background: rgba(0, 0, 0, 0.25);
+  margin-bottom: 1.25rem;
+}
+
+.dl-hub__tab {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 0.25rem;
+  padding: 0.75rem 0.5rem;
+  border: none;
+  border-radius: 11px;
+  background: transparent;
+  color: rgba(255, 255, 255, 0.55);
+  font-size: 0.78rem;
+  font-weight: 600;
+  cursor: pointer;
+  transition: color 200ms ease;
+  font-family: inherit;
+}
+
+.dl-hub__tab.is-active {
+  color: #fff;
+}
+
+.dl-hub__tab.is-detected:not(.is-active) {
+  color: rgba(255, 255, 255, 0.72);
+}
+
+.dl-hub__tab-indicator {
+  position: absolute;
+  inset: 0;
+  border-radius: 11px;
+  background: linear-gradient(135deg, rgba(139, 92, 246, 0.35), rgba(34, 211, 238, 0.15));
+  border: 1px solid rgba(167, 139, 250, 0.35);
+  z-index: -1;
+}
+
+.dl-hub__tab-badge {
+  font-size: 0.58rem;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  color: #a78bfa;
+}
+
+.dl-hub__stage {
+  position: relative;
+  z-index: 1;
+  min-height: 160px;
+}
+
+.dl-hub__panel-head {
+  display: flex;
+  gap: 1rem;
+  align-items: flex-start;
+  margin-bottom: 1.25rem;
+}
+
+.dl-hub__panel-icon {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 48px;
+  height: 48px;
+  border-radius: 14px;
+  background: rgba(255, 255, 255, 0.06);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  flex-shrink: 0;
+}
+
+.dl-hub__panel-head h3 {
+  margin: 0 0 0.35rem;
+  font-size: 1.15rem;
+  font-weight: 700;
+  color: #fff;
+}
+
+.dl-hub__panel-head p {
+  margin: 0;
+  font-size: 0.85rem;
+  line-height: 1.5;
+  color: rgba(255, 255, 255, 0.58);
+}
+
+.dl-hub__actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.65rem;
+}
+
+.dl-hub__btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0.65rem 1.25rem;
+  border-radius: 12px;
+  font-size: 0.875rem;
+  font-weight: 600;
+  text-decoration: none !important;
+  transition: transform 180ms ease, box-shadow 180ms ease, background 180ms ease;
+}
+
+.dl-hub__btn--primary {
+  color: #fff !important;
+  background: linear-gradient(135deg, #7c3aed 0%, #6366f1 50%, #22d3ee 100%);
+  box-shadow: 0 8px 28px rgba(124, 58, 237, 0.45);
+}
+
+.dl-hub__btn--primary:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 12px 36px rgba(124, 58, 237, 0.55);
+}
+
+.dl-hub__btn--ghost {
+  color: rgba(255, 255, 255, 0.85) !important;
+  background: rgba(255, 255, 255, 0.08);
+  border: 1px solid rgba(255, 255, 255, 0.14);
+}
+
+.dl-hub__btn--ghost:hover {
+  background: rgba(255, 255, 255, 0.14);
+  transform: translateY(-1px);
+}
+
+.dl-hub__fineprint {
+  position: relative;
+  z-index: 1;
+  margin: 1.25rem 0 0;
+  font-size: 0.75rem;
+  color: rgba(255, 255, 255, 0.4);
+  text-align: center;
+}
+
+.dl-hub__fineprint a {
+  color: rgba(167, 139, 250, 0.9);
+}
+
+.lm-drawer__link--accent {
+  margin-top: 0.5rem;
+  color: var(--accent-main) !important;
+  font-weight: 600;
 }
 
 .lm-kbd-row {
@@ -1356,6 +1612,32 @@ body.light-marketing .glow {
 .lm-footer__logo img {
   height: 2rem;
   width: auto;
+}
+
+.lm-footer__tagline {
+  margin: 0.75rem 0 0;
+  font-size: var(--text-sm);
+  color: var(--text-tertiary);
+  max-width: 16rem;
+  line-height: 1.5;
+}
+
+.lm-footer__link--accent {
+  color: var(--accent-main) !important;
+  font-weight: 600;
+}
+
+.lm-footer__dl-row {
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+  margin-bottom: 0.15rem;
+}
+
+.lm-footer__dl-icon {
+  display: inline-flex;
+  opacity: 0.55;
+  flex-shrink: 0;
 }
 
 .lm-footer__col-label {

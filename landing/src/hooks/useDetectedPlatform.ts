@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react'
 
 export type DetectedPlatform = 'windows' | 'macos' | 'linux' | 'unknown'
+export type PlatformId = Exclude<DetectedPlatform, 'unknown'>
 
 function detectPlatform(): DetectedPlatform {
   if (typeof navigator === 'undefined') return 'unknown'

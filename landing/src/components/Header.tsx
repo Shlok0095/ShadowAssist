@@ -2,11 +2,11 @@ import { useEffect, useState } from 'react'
 import { NavLink, useLocation } from 'react-router-dom'
 import { PlatformDownloadDrawerLinks, PlatformDownloadMenu } from '@/components/marketing/PlatformDownloadMenu'
 import { SITE } from '@/config/site'
+import { marketingAnchor } from '@/utils/marketingNav'
 import brandLogo from '../../../logo.png'
 
 function homeAnchor(id: string) {
-  const base = import.meta.env.BASE_URL.replace(/\/?$/, '/')
-  return `${base}#${id}`
+  return marketingAnchor(id)
 }
 
 export function Header() {

@@ -1,5 +1,9 @@
+import { type MouseEvent } from 'react'
 import { Link } from 'react-router-dom'
+import { LinuxIcon, MacIcon, WindowsIcon } from '@/components/marketing/LightButton'
+import { PLATFORMS } from '@/config/platforms'
 import { SITE } from '@/config/site'
+import { marketingAnchor, scrollToMarketingSection } from '@/utils/marketingNav'
 import brandLogo from '../../../../logo.png'
 
 function GitHubIcon() {
@@ -10,7 +14,32 @@ function GitHubIcon() {
   )
 }
 
+const FOOTER_ICONS = { windows: WindowsIcon, macos: MacIcon, linux: LinuxIcon } as const
+
+function FooterDownloadLink({
+  href,
+  label,
+  onClick,
+}: {
+  href: string
+  label: string
+  onClick?: (e: MouseEvent) => void
+}) {
+  return (
+    <a href={href} className="lm-footer__link" target="_blank" rel="noopener noreferrer" onClick={onClick}>
+      {label}
+    </a>
+  )
+}
+
 export function LightFooter() {
+  const scrollDownload = (e: MouseEvent) => {
+    e.preventDefault()
+    if (!scrollToMarketingSection('download')) {
+      window.location.href = marketingAnchor('download')
+    }
+  }
+
   return (
     <footer className="lm-footer">
       <div className="lm-container">
@@ -19,19 +48,38 @@ export function LightFooter() {
             <Link to="/" className="lm-footer__logo">
               <img src={brandLogo} alt={SITE.name} />
             </Link>
+            <p className="lm-footer__tagline">Real-time AI for live meetings — invisible on your screen.</p>
           </div>
 
           <div>
             <p className="lm-footer__col-label">Product</p>
-            <a href="#how-it-works" className="lm-footer__link">
+            <a href={marketingAnchor('how-it-works')} className="lm-footer__link">
               How it works
             </a>
-            <a href="#features" className="lm-footer__link">
+            <a href={marketingAnchor('features')} className="lm-footer__link">
               Features
             </a>
             <Link to="/docs" className="lm-footer__link">
               Docs
             </Link>
+          </div>
+
+          <div>
+            <p className="lm-footer__col-label">Download</p>
+            <a href={marketingAnchor('download')} className="lm-footer__link lm-footer__link--accent" onClick={scrollDownload}>
+              All platforms
+            </a>
+            {PLATFORMS.map((p) => {
+              const Icon = FOOTER_ICONS[p.id]
+              return (
+                <div key={p.id} className="lm-footer__dl-row">
+                  <span className="lm-footer__dl-icon">
+                    <Icon />
+                  </span>
+                  <FooterDownloadLink href={p.primary.href} label={`${p.name} — ${p.primary.label}`} />
+                </div>
+              )
+            })}
           </div>
 
           <div>
@@ -44,16 +92,6 @@ export function LightFooter() {
             </Link>
             <a href={SITE.releasesRollingUrl} className="lm-footer__link" target="_blank" rel="noopener noreferrer">
               Releases
-            </a>
-          </div>
-
-          <div>
-            <p className="lm-footer__col-label">Support</p>
-            <a href={SITE.repoUrl} className="lm-footer__link" target="_blank" rel="noopener noreferrer">
-              GitHub issues
-            </a>
-            <a href={SITE.repoUrl} className="lm-footer__link" target="_blank" rel="noopener noreferrer">
-              Contact
             </a>
           </div>
 

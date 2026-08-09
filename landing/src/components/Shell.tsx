@@ -4,11 +4,13 @@ import Lenis from 'lenis'
 import { Footer } from '@/components/Footer'
 import { Header } from '@/components/Header'
 import { cn } from '@/components/ui/cn'
+import { scrollToMarketingSection } from '@/utils/marketingNav'
 
 const MARKETING_PATHS = new Set(['/', '/how-it-works', '/built-for-live-work'])
 
 export function Shell() {
-  const { pathname } = useLocation()
+  const location = useLocation()
+  const { pathname } = location
   const isMarketingSurface = MARKETING_PATHS.has(pathname)
   const isHome = pathname === '/' || pathname === ''
 
@@ -32,6 +34,13 @@ export function Shell() {
       lenis.destroy()
     }
   }, [])
+
+  useEffect(() => {
+    const hash = location.hash.replace(/^#/, '')
+    if (!hash) return
+    const t = window.setTimeout(() => scrollToMarketingSection(hash, 'auto'), 80)
+    return () => window.clearTimeout(t)
+  }, [location.pathname, location.hash])
 
   return (
     <>
