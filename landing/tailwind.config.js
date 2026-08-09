@@ -12,6 +12,39 @@ export default {
         mono: ['JetBrains Mono', 'ui-monospace', 'monospace'],
       },
       colors: {
+        border: 'var(--border)',
+        input: 'var(--input)',
+        ring: 'var(--ring)',
+        background: 'var(--background)',
+        foreground: 'var(--foreground)',
+        primary: {
+          DEFAULT: 'var(--primary)',
+          foreground: 'var(--primary-foreground)',
+        },
+        secondary: {
+          DEFAULT: 'var(--secondary)',
+          foreground: 'var(--secondary-foreground)',
+        },
+        destructive: {
+          DEFAULT: 'var(--destructive)',
+          foreground: 'var(--destructive-foreground, var(--foreground))',
+        },
+        muted: {
+          DEFAULT: 'var(--muted)',
+          foreground: 'var(--muted-foreground)',
+        },
+        accent: {
+          DEFAULT: 'var(--accent)',
+          foreground: 'var(--accent-foreground)',
+        },
+        popover: {
+          DEFAULT: 'var(--popover)',
+          foreground: 'var(--popover-foreground)',
+        },
+        card: {
+          DEFAULT: 'var(--card)',
+          foreground: 'var(--card-foreground)',
+        },
         night: {
           950: '#030712',
           900: '#0a0f1a',
@@ -24,6 +57,11 @@ export default {
         'gradient-accent-soft':
           'linear-gradient(135deg, rgba(59,130,246,0.38) 0%, rgba(139,92,246,0.32) 45%, rgba(6,182,212,0.22) 100%)',
         'gradient-text': 'linear-gradient(135deg, #60a5fa 0%, #a78bfa 42%, #22d3ee 100%)',
+      },
+      borderRadius: {
+        lg: 'var(--radius)',
+        md: 'calc(var(--radius) - 2px)',
+        sm: 'calc(var(--radius) - 4px)',
       },
       boxShadow: {
         glass: '0 0 0 1px rgba(255,255,255,0.06), 0 24px 80px -20px rgba(0,0,0,0.65)',

@@ -9,7 +9,7 @@ const ICONS = { windows: WindowsIcon, macos: MacIcon, linux: LinuxIcon } as cons
 
 type Props = { className?: string; variant?: 'light' | 'dark' }
 
-export function PlatformDownloadMenu({ className = '', variant = 'light' }: Props) {
+export function PlatformDownloadMenu({ className = '', variant = 'dark' }: Props) {
   const { preferred, isDetected } = useDetectedPlatform()
   const reduceMotion = useReducedMotion()
   const [open, setOpen] = useState(false)

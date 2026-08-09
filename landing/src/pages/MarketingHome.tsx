@@ -1,290 +1,131 @@
-import { useState, type CSSProperties } from 'react'
-import { motion } from 'motion/react'
+import { LiveField } from '@/components/marketing/LiveField'
+import { Hero3D } from '@/components/marketing/Hero3D'
+import { VaAnimeHero } from '@/components/marketing/VaAnimeHero'
+import { VaButton } from '@/components/marketing/VaButton'
+import { VaParticleCta } from '@/components/marketing/VaParticleCta'
+import { VaReveal, VaSection } from '@/components/marketing/VaSection'
+import { VaStatsLive } from '@/components/marketing/VaStatsLive'
+import { DownloadHub } from '@/components/marketing/DownloadHub'
 import { LightFaq } from '@/components/marketing/LightFaq'
 import { LightFooter } from '@/components/marketing/LightFooter'
-import { CompatLogos, DockIcons, MacosCard } from '@/components/marketing/MacosCard'
-import { HeroMotion } from '@/components/marketing/HeroMotion'
-import { DownloadHub } from '@/components/marketing/DownloadHub'
-import { StarfieldBg } from '@/components/marketing/StarfieldBg'
+import { CompatLogos } from '@/components/marketing/MacosCard'
+import { LiquidGlassCard } from '@/components/kokonutui/liquid-glass-card'
 import { MEDIA } from '@/config/mediaManifest'
-import { useRevealObserver } from '@/hooks/useReveal'
+import { marketingAnchor } from '@/utils/marketingNav'
 
 const STEPS = [
   {
-    label: 'Step 01',
-    heading: 'Listens in to the conversation',
-    body: 'VeilAssist picks up mic and system audio in real time — so it understands context before you ask.',
-    reverse: false,
-    screenshot: MEDIA.meetingListenScreenshot,
+    n: '01',
+    title: 'Listen',
+    body: 'Dual-path mic + system audio. VeilAssist understands the meeting before you ask.',
+    img: MEDIA.meetingListenScreenshot,
   },
   {
-    label: 'Step 02',
-    heading: 'Assists you instantly',
-    body: 'Press Ctrl+Enter and get streaming answers grounded in your screen and what was just said.',
-    reverse: true,
-    screenshot: MEDIA.meetingAssistScreenshot,
+    n: '02',
+    title: 'Assist',
+    body: 'Ctrl+Enter — streaming answers grounded in your screen and live transcript.',
+    img: MEDIA.meetingAssistScreenshot,
   },
   {
-    label: 'Step 03',
-    heading: 'Recaps when you are done',
-    body: 'End Listen for a concise local summary — action items, decisions, and follow-ups without a bot in the room.',
-    reverse: false,
-    screenshot: MEDIA.notesScreenshot,
-    tall: true,
+    n: '03',
+    title: 'Recap',
+    body: 'End Listen for local summaries — action items without a bot in the room.',
+    img: MEDIA.notesScreenshot,
   },
 ] as const
 
 const BENTO = [
-  {
-    wide: true,
-    purple: false,
-    dark: false,
-    title: "Doesn't join meetings",
-    body: 'VeilAssist never joins your call — no bots on the guest list, ever.',
-  },
-  {
-    wide: false,
-    purple: true,
-    dark: false,
-    title: 'Invisible to screen share',
-    body: 'Content protection keeps the overlay off recordings and shared screens.',
-  },
-  {
-    wide: false,
-    purple: false,
-    dark: true,
-    title: 'Ctrl+Enter to assist',
-    body: 'Summon help without breaking flow.',
-    code: 'Ctrl + Enter  →  instant AI assist',
-  },
-  {
-    wide: true,
-    purple: false,
-    dark: false,
-    title: 'Compatible with every tool',
-    body: 'Works alongside the apps you already use for live calls.',
-    compat: true,
-  },
-] as const
-
-const STATS = [
-  { n: '12+', label: 'Languages', body: 'English, Hindi, Hinglish, and cloud STT languages.' },
-  { n: '300ms', label: 'Response time', body: 'Fast streaming to overlay and phone companion together.' },
-  { n: '95%', label: 'Transcription accuracy', body: 'Dual-path mic + system audio with local or cloud STT.' },
+  { icon: '◌', title: 'Never joins the call', body: 'No guest bot. No meeting link. Zero presence on the attendee list.' },
+  { icon: '⛨', title: 'Invisible to screen share', body: 'Content protection keeps the overlay off recordings and shared screens.' },
+  { icon: '⌨', title: 'Ctrl+Enter assist', body: 'Summon help mid-sentence without breaking eye contact or flow.' },
+  { icon: '◎', title: '12+ languages', body: 'English, Hindi, Hinglish, and cloud STT — local or provider keys.' },
+  { icon: '⚡', title: '~300ms streaming', body: 'Token-batched overlay updates — answers feel live, not laggy.' },
+  { icon: '⊞', title: 'Every meeting app', body: 'Zoom, Meet, Teams, Webex, Slack huddles — sits beside them all.', compat: true },
 ] as const
 
 const FAQ = [
-  {
-    q: 'Why real-time vs. a regular AI notetaker?',
-    a: 'Most tools summarize after the meeting. VeilAssist helps while the conversation is still happening.',
-  },
-  { q: 'Who is VeilAssist for?', a: 'Live interviews, sales calls, standups, and any meeting where you need help in the moment.' },
-  { q: 'Is VeilAssist free?', a: 'The app is free to download. You bring your own API keys — you pay your model provider directly.' },
-  {
-    q: 'How is it undetectable in meetings?',
-    a: 'No bot join link. The overlay uses content protection and stays off shared screens until you summon it.',
-  },
-  { q: 'What languages and apps are supported?', a: '12+ STT languages. Works alongside Zoom, Meet, Teams, Webex, and more.' },
-  { q: 'Can I talk to customer support?', a: 'Open an issue on GitHub or email from the repo — we respond on best effort.' },
+  { q: 'Why real-time vs. a regular AI notetaker?', a: 'Most tools summarize after the meeting. VeilAssist helps while the conversation is still happening.' },
+  { q: 'Who is VeilAssist for?', a: 'Live interviews, sales calls, standups — any meeting where you need help in the moment.' },
+  { q: 'Is it free?', a: 'Free to download. Bring your own API keys — you pay your model provider directly.' },
+  { q: 'How is it undetectable?', a: 'No bot join. Content protection hides the overlay from screen capture until you summon it.' },
+  { q: 'Which platforms?', a: 'Windows, macOS, and Linux — with the same real-time assist experience.' },
+  { q: 'Support?', a: 'GitHub issues on the repo — best-effort responses from the team.' },
 ] as const
 
 export function MarketingHome() {
-  const [deviceTab, setDeviceTab] = useState<'mobile' | 'tablet' | 'desktop'>('desktop')
-  useRevealObserver()
-
   return (
-    <div className="lm-page">
-      <section className="lm-hero">
-        <StarfieldBg />
-        <span className="lm-blob lm-blob--purple" aria-hidden />
-        <span className="lm-blob lm-blob--cyan" aria-hidden />
-        <span className="lm-blob lm-blob--pink" aria-hidden />
+    <div className="va-page">
+      <LiveField />
 
-        <div className="lm-container">
-          <HeroMotion>
-          <div className="lm-hero__content reveal">
-            <div className="sp-welcome-box">
-              <span className="lm-eyebrow__dot" aria-hidden />
-              <span>Undetectable AI for live meetings</span>
-            </div>
-
-            <h1 className="lm-hero__title">
-              Your AI copilot,
-              <br />
-              always <span className="sp-gradient-text">invisible</span>,
-              <br />
-              always <span className="sp-gradient-text">ready</span>.
-            </h1>
-
-            <p className="lm-hero__sub">
-              VeilAssist gives real-time answers and meeting notes — completely undetectable on your screen. No bots.
-              No waiting until after the call.
-            </p>
-
-            <div className="lm-hero__ctas">
-              <a href="#how-it-works" className="sp-btn-glow">
-                See how it works
-              </a>
-              <a href="#download" className="sp-btn-glow sp-btn-glow--secondary">
-                Download free
-              </a>
-            </div>
-
-            <p className="lm-hero__platform">Windows · macOS · Linux — download below or from the header</p>
-          </div>
-
-          <div className="lm-hero-product reveal">
-            <div className="lm-hero-product__stage">
-              <DockIcons />
-              <MacosCard src={MEDIA.heroOverlayScreenshot || undefined} />
-            </div>
-            <div className="lm-hero-shimmer" aria-hidden />
-          </div>
-          </HeroMotion>
+      <Hero3D>
+        <p className="va-eyebrow va-eyebrow--live">
+          <span className="va-eyebrow__pulse" />
+          Live · Undetectable · On-device ready
+        </p>
+        <VaAnimeHero />
+        <p className="va-hero-sub">
+          Real-time answers and meeting notes — floating on your desktop. No bots. No post-call wait.
+        </p>
+        <div className="va-hero-ctas">
+          <VaParticleCta href={marketingAnchor('download')}>Download free</VaParticleCta>
+          <VaButton href={marketingAnchor('how-it-works')} variant="ghost">
+            See how it works
+          </VaButton>
         </div>
-      </section>
+        <p className="va-hero-platform">Windows · macOS · Linux</p>
+      </Hero3D>
 
-      <section id="how-it-works" className="lm-band scroll-mt-nav">
-        <div className="lm-container reveal">
-          <h2 className="lm-band__title">How VeilAssist helps during a meeting</h2>
-          <p className="lm-band__sub">Real-time context, instant assist, and local recaps — all without joining your call.</p>
-        </div>
-      </section>
-
-      <section className="lm-steps">
-        <div className="lm-container">
-          {STEPS.map((step) => (
-            <div
-              key={step.label}
-              className={`lm-step-row reveal${step.reverse ? ' lm-step-row--reverse' : ''}`}
-            >
-              <div>
-                <p className="lm-step-label">{step.label}</p>
-                <h3 className="lm-step-heading">{step.heading}</h3>
-                <p className="lm-step-body">{step.body}</p>
+      <VaSection id="how-it-works" eyebrow="Workflow" title="Three beats. One invisible flow." subtitle="From listen to assist to recap — without joining your call.">
+        <div className="va-steps">
+          {STEPS.map((s, i) => (
+            <VaReveal key={s.n} delay={i * 0.08} className="va-step">
+              <div className="va-step__meta">
+                <span className="va-step__n">{s.n}</span>
+                <h3>{s.title}</h3>
+                <p>{s.body}</p>
               </div>
-              <div className="lm-step-row__visual">
-                <MacosCard tall={'tall' in step && step.tall} src={step.screenshot || undefined} />
+              <div className="va-step__visual">
+                {s.img ? <img src={s.img} alt="" loading="lazy" /> : <div className="va-step__placeholder" />}
               </div>
-            </div>
+            </VaReveal>
           ))}
         </div>
-      </section>
+      </VaSection>
 
-      <section className="lm-feature-wide">
-        <div className="lm-container">
-          <h2 className="lm-feature-wide__title reveal">Instant meeting notes</h2>
-          <p className="lm-feature-wide__sub reveal">
-            The easiest way to get concise, local session recaps after Listen.
-          </p>
-
-          <div className="lm-device-tabs reveal" role="tablist" aria-label="Device preview">
-            {(['mobile', 'tablet', 'desktop'] as const).map((tab) => (
-              <button
-                key={tab}
-                type="button"
-                role="tab"
-                aria-selected={deviceTab === tab}
-                className={`lm-device-tab${deviceTab === tab ? ' active' : ''}`}
-                onClick={() => setDeviceTab(tab)}
-              >
-                {tab.charAt(0).toUpperCase() + tab.slice(1)}
-              </button>
-            ))}
-          </div>
-
-          <div className="lm-wide-card reveal" aria-label="Meeting notes preview">
-            <div className="lm-wide-card__bar" aria-hidden>
-              <span className="macos-card__dot macos-card__dot--red" />
-              <span className="macos-card__dot macos-card__dot--yellow" />
-              <span className="macos-card__dot macos-card__dot--green" />
-            </div>
-            {MEDIA.wideNotesScreenshot ? (
-              <img src={MEDIA.wideNotesScreenshot} alt="" className="lm-wide-card__img" loading="lazy" />
-            ) : null}
-          </div>
+      <VaSection id="features" eyebrow="Stealth" title="Built to disappear." subtitle="Every feature designed for live meetings where you cannot afford a visible AI bot.">
+        <div className="va-bento">
+          {BENTO.map((c, i) => (
+            <VaReveal key={c.title} delay={i * 0.05}>
+              <LiquidGlassCard glassSize="sm" className="va-bento-card group">
+                <span className="va-bento-card__icon">{c.icon}</span>
+                <h3>{c.title}</h3>
+                <p>{c.body}</p>
+                {'compat' in c && c.compat ? <CompatLogos /> : null}
+              </LiquidGlassCard>
+            </VaReveal>
+          ))}
         </div>
-      </section>
+      </VaSection>
 
-      <section id="features" className="lm-bento-section scroll-mt-nav">
-        <div className="lm-container">
-          <div className="lm-bento-section__head reveal">
-            <h2 className="lm-band__title">Undetectable in every way</h2>
-            <p className="lm-band__sub">Suite of features to use VeilAssist without a trace.</p>
-          </div>
+      <VaSection eyebrow="Performance" title="Numbers that matter mid-call.">
+        <VaStatsLive />
+      </VaSection>
 
-          <div className="lm-bento-grid reveal-group">
-            {BENTO.map((card, i) => (
-              <article
-                key={card.title}
-                className={`reveal lm-bento-card${card.wide ? ' lm-bento-card--wide' : ''}${card.purple ? ' lm-bento-card--purple' : ''}${card.dark ? ' lm-bento-card--dark' : ''}`}
-                style={{ '--i': i } as CSSProperties}
-              >
-                <h3 className="lm-bento-card__title">{card.title}</h3>
-                <p className="lm-bento-card__body">{card.body}</p>
-                {'code' in card && card.code ? <p className="lm-bento-code">{card.code}</p> : null}
-                {'compat' in card && card.compat ? <CompatLogos /> : null}
-              </article>
-            ))}
-          </div>
-        </div>
-      </section>
+      {MEDIA.transcriptionScreenshot ? (
+        <VaSection eyebrow="Preview" title="Live transcript, always on.">
+          <VaReveal className="va-shot-wrap">
+            <img src={MEDIA.transcriptionScreenshot} alt="" className="va-shot" loading="lazy" />
+          </VaReveal>
+        </VaSection>
+      ) : null}
 
-      <section className="lm-stats">
-        <div className="lm-container">
-          <div className="lm-stats__head reveal">
-            <h2 className="lm-band__title">Real-time transcription</h2>
-          </div>
-          <div className="lm-stats__grid reveal">
-            {STATS.map((s) => (
-              <div key={s.label} className="lm-stats__cell">
-                <p className="lm-stats__num">{s.n}</p>
-                <p className="lm-stats__label">{s.label}</p>
-                <p className="lm-stats__body">{s.body}</p>
-              </div>
-            ))}
-          </div>
-        </div>
-      </section>
+      <VaSection id="faq" eyebrow="FAQ" title="Questions before your next call.">
+        <LightFaq items={[...FAQ]} />
+      </VaSection>
 
-      <section className="lm-screenshot-section">
-        <div className="lm-container reveal">
-          <p className="lm-screenshot-label">Live transcript</p>
-          <div className="lm-screenshot-card" aria-label="Transcript preview">
-            {MEDIA.transcriptionScreenshot ? (
-              <img src={MEDIA.transcriptionScreenshot} alt="" loading="lazy" />
-            ) : null}
-          </div>
-        </div>
-      </section>
-
-      <section id="faq" className="lm-faq-section scroll-mt-nav">
-        <div className="lm-container">
-          <h2 className="lm-faq-section__title reveal">Frequently asked questions</h2>
-          <LightFaq items={[...FAQ]} />
-        </div>
-      </section>
-
-      <section id="download" className="lm-final-cta lm-download-section scroll-mt-nav">
-        <div className="lm-container">
-          <motion.div
-            className="lm-download-section__intro"
-            initial={{ opacity: 0, y: 20 }}
-            whileInView={{ opacity: 1, y: 0 }}
-            viewport={{ once: true, margin: '-80px' }}
-            transition={{ duration: 0.55, ease: [0.22, 1, 0.36, 1] }}
-          >
-            <div className="lm-kbd-row" aria-hidden>
-              <span className="lm-kbd">Ctrl</span>
-              <span className="lm-kbd-plus">+</span>
-              <span className="lm-kbd">↵</span>
-            </div>
-            <h2 className="lm-final-cta__title">Meeting AI that helps during the call, not after.</h2>
-            <p className="lm-final-cta__sub">Free to download on Windows, macOS, and Linux.</p>
-          </motion.div>
-          <DownloadHub />
-        </div>
-      </section>
+      <VaSection id="download" className="va-download-section" eyebrow="Get VeilAssist" title="Ship the invisible copilot." subtitle="Free on Windows, macOS, and Linux.">
+        <DownloadHub />
+      </VaSection>
 
       <LightFooter />
     </div>

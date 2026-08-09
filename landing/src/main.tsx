@@ -4,6 +4,7 @@ import { BrowserRouter } from 'react-router-dom'
 import App from './App'
 import './styles/tailwind.css'
 import './styles/design-system.css'
+import './styles/va-live.css'
 import './index.css'
 
 function faviconHref(): string {
