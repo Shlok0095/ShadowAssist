@@ -1,0 +1,155 @@
+# Pushes to `stag` → rolling prerelease "latest-stag".
+# Pushes to `main` / `master` → rolling release "latest" (production channel).
+# Push tag v*.*.* → versioned release with checksums.
+# Auto-update feed: releases/download/<channel>/latest-mac.yml
+#
+# NOTE: macOS auto-update (Squirrel.Mac) requires a code-signed app. Builds
+# here are unsigned (CSC_IDENTITY_AUTO_DISCOVERY=false) and ship as manual
+# install DMGs. Signing readiness: provide CSC_LINK/CSC_KEY_PASSWORD secrets.
+
+name: Release macOS
+
+on:
+  workflow_dispatch:
+  push:
+    branches:
+      - stag
+      - main
+      - master
+    tags:
+      - 'v*.*.*'
+
+permissions:
+  contents: write
+
+concurrency:
+  group: release-macos-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  build-release:
+    runs-on: macos-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: npm
+          cache-dependency-path: package-lock.json
+
+      - name: Set release tag
+        id: tag
+        shell: bash
+        run: |
+          if [ "${{ github.ref_name }}" = "main" ] || [ "${{ github.ref_name }}" = "master" ]; then
+            echo "TAG=latest" >> "$GITHUB_OUTPUT"
+            echo "PRERELEASE=false" >> "$GITHUB_OUTPUT"
+            echo "CHANNEL=latest" >> "$GITHUB_OUTPUT"
+          else
+            echo "TAG=latest-stag" >> "$GITHUB_OUTPUT"
+            echo "PRERELEASE=true" >> "$GITHUB_OUTPUT"
+            echo "CHANNEL=latest-stag" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Install dependencies without Node-native build scripts
+        run: npm ci --ignore-scripts
+
+      - name: Rebuild native dependencies for Electron
+        run: npx electron-builder install-app-deps
+
+      - name: Write auto-update channel file
+        run: node scripts/write-update-channel.cjs ${{ steps.tag.outputs.CHANNEL }}
+
+      - name: Build DMG + zip
+        run: npm run build:mac
+        env:
+          CSC_IDENTITY_AUTO_DISCOVERY: 'false'
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          VEILASSIST_GOOGLE_CAL_CLIENT_ID: ${{ secrets.GOOGLE_CAL_CLIENT_ID }}
+          VEILASSIST_GOOGLE_CAL_CLIENT_SECRET: ${{ secrets.GOOGLE_CAL_CLIENT_SECRET }}
+
+      - name: Verify Hide from Dock policy (activation-policy harness)
+        run: npm run verify:dock
+
+      - name: Use exact build version in artifact names
+        shell: bash
+        run: |
+          VER=$(node -p "require('./build/version-state.json').last")
+          CLEANED=$(node -p "require('semver').clean(require('./package.json').version, true)")
+          for f in dist/VeilAssist*.dmg dist/VeilAssist*.zip; do
+            [ -f "$f" ] || continue
+            nf=$(basename "$f" | sed "s/$CLEANED/$VER/")
+            if [ "$nf" != "$(basename "$f")" ]; then mv "$f" "dist/$nf"; fi
+          done
+          ls dist
+
+      - name: Record build version state
+        if: "!startsWith(github.ref, 'refs/tags/v')"
+        shell: bash
+        run: |
+          git config user.name "veilassist-ci"
+          git config user.email "veilassist-ci@users.noreply.github.com"
+          git add build/version-state.json
+          if git diff --cached --quiet; then
+            echo "No version state change to record"
+          else
+            git commit -m "chore: record build version state" || true
+            git pull --rebase origin "${{ github.ref_name }}" || true
+            git push origin "HEAD:${{ github.ref_name }}" || true
+          fi
+
+      - name: SHA256 checksums
+        run: npm run dist:checksums
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: veilassist-macos-${{ github.run_id }}
+          if-no-files-found: warn
+          path: |
+            dist/VeilAssist-*.dmg
+            dist/VeilAssist-*.zip
+            dist/latest-mac.yml
+            dist/SHA256SUMS.txt
+
+      - name: Rolling GitHub Release (stag / main)
+        if: "!startsWith(github.ref, 'refs/tags/v')"
+        uses: ncipollo/release-action@v1
+        with:
+          token: ${{ secrets.GITHUB_TOKEN }}
+          tag: ${{ steps.tag.outputs.TAG }}
+          commit: ${{ github.sha }}
+          name: VeilAssist — ${{ steps.tag.outputs.TAG }}
+          body: |
+            Automated build from **${{ github.ref_name }}** @ [`${{ github.sha }}`](${{ github.server_url }}/${{ github.repository }}/commit/${{ github.sha }}).
+
+            | Asset | Use |
+            |------|-----|
+            | **VeilAssist-*.dmg** | Drag-and-drop macOS installer |
+            | **VeilAssist-*.zip** | Manual update archive |
+            | **latest-mac.yml** | Auto-update metadata (signing required) |
+
+            **Note:** macOS builds are unsigned. Gatekeeper will require right-click → Open on first launch, and in-app auto-update needs a Developer ID certificate.
+          prerelease: ${{ steps.tag.outputs.PRERELEASE }}
+          allowUpdates: true
+          replacesArtifacts: true
+          artifactErrorsFailBuild: true
+          artifacts: |
+            dist/VeilAssist-*.dmg
+            dist/VeilAssist-*.zip
+            dist/latest-mac.yml
+            dist/SHA256SUMS.txt
+
+      - name: Versioned GitHub Release (git tag v*.*.*)
+        if: startsWith(github.ref, 'refs/tags/v')
+        uses: softprops/action-gh-release@v2
+        with:
+          generate_release_notes: true
+          files: |
+            dist/VeilAssist-*.dmg
+            dist/VeilAssist-*.zip
+            dist/latest-mac.yml
+            dist/SHA256SUMS.txt
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
