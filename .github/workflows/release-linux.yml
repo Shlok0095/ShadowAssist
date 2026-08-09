@@ -110,8 +110,6 @@ jobs:
           path: |
             dist/VeilAssist-*.AppImage
             dist/VeilAssist-*.deb
-            dist/VeilAssist-linux.AppImage
-            dist/VeilAssist-linux.deb
             dist/latest-linux.yml
             dist/SHA256SUMS.txt
 
@@ -140,8 +138,6 @@ jobs:
           artifacts: |
             dist/VeilAssist-*.AppImage
             dist/VeilAssist-*.deb
-            dist/VeilAssist-linux.AppImage
-            dist/VeilAssist-linux.deb
             dist/latest-linux.yml
             dist/SHA256SUMS.txt
 

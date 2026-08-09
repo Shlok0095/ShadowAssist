@@ -1,5 +1,5 @@
 import { Link } from 'react-router-dom'
-import { motion } from 'framer-motion'
+import { motion } from 'motion/react'
 import { DOC_GROUPS, DOC_PAGES } from '@/config/docsNav'
 
 const extraCards = [

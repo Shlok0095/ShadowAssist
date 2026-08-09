@@ -2,10 +2,10 @@ import { useState, type CSSProperties } from 'react'
 import { LightFaq } from '@/components/marketing/LightFaq'
 import { LightFooter } from '@/components/marketing/LightFooter'
 import { CompatLogos, DockIcons, MacosCard } from '@/components/marketing/MacosCard'
+import { HeroMotion } from '@/components/marketing/HeroMotion'
 import { PlatformDownloads } from '@/components/marketing/PlatformDownloads'
 import { StarfieldBg } from '@/components/marketing/StarfieldBg'
 import { MEDIA } from '@/config/mediaManifest'
-import { SITE } from '@/config/site'
 import { useRevealObserver } from '@/hooks/useReveal'
 
 const STEPS = [
@@ -100,6 +100,7 @@ export function MarketingHome() {
         <span className="lm-blob lm-blob--pink" aria-hidden />
 
         <div className="lm-container">
+          <HeroMotion>
           <div className="lm-hero__content reveal">
             <div className="sp-welcome-box">
               <span className="lm-eyebrow__dot" aria-hidden />
@@ -135,6 +136,7 @@ export function MarketingHome() {
             </div>
             <div className="lm-hero-shimmer" aria-hidden />
           </div>
+          </HeroMotion>
         </div>
       </section>
 
@@ -269,10 +271,6 @@ export function MarketingHome() {
           <h2 className="lm-final-cta__title">Meeting AI that helps during the call, not after.</h2>
           <p className="lm-final-cta__sub">Try VeilAssist on your next meeting today.</p>
           <PlatformDownloads />
-          <p className="download-meta-line download-meta-line__muted">
-            macOS builds are unsigned — use right-click → Open the first time.{' '}
-            <a href={SITE.checksumsTxtUrl}>SHA256 checksums</a>
-          </p>
         </div>
       </section>
 

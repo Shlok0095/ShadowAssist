@@ -60,6 +60,9 @@ jobs:
       - name: Rebuild native dependencies for Electron
         run: npx electron-builder install-app-deps
 
+      - name: Install Electron binary (post ignore-scripts ci)
+        run: node node_modules/electron/install.js
+
       - name: Write auto-update channel file
         run: node scripts/write-update-channel.cjs ${{ steps.tag.outputs.CHANNEL }}
 
@@ -115,8 +118,6 @@ jobs:
           path: |
             dist/VeilAssist-*.dmg
             dist/VeilAssist-*.zip
-            dist/VeilAssist-mac.dmg
-            dist/VeilAssist-mac.zip
             dist/latest-mac.yml
             dist/SHA256SUMS.txt
 
@@ -145,8 +146,6 @@ jobs:
           artifacts: |
             dist/VeilAssist-*.dmg
             dist/VeilAssist-*.zip
-            dist/VeilAssist-mac.dmg
-            dist/VeilAssist-mac.zip
             dist/latest-mac.yml
             dist/SHA256SUMS.txt
 

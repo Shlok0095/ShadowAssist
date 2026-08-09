@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react'
 import { NavLink, useLocation } from 'react-router-dom'
-import { DownloadButton } from '@/components/marketing/DownloadButton'
+import { PlatformDownloadDrawerLinks, PlatformDownloadMenu } from '@/components/marketing/PlatformDownloadMenu'
 import { SITE } from '@/config/site'
 import brandLogo from '../../../logo.png'
 
@@ -38,7 +38,7 @@ export function Header() {
             <NavLink to="/docs" className="text-zinc-600 no-underline hover:text-zinc-900">
               Docs
             </NavLink>
-            <DownloadButton />
+            <PlatformDownloadMenu />
           </nav>
         </div>
       </header>
@@ -82,7 +82,7 @@ export function Header() {
           </nav>
 
           <div className="lm-nav__actions">
-            <DownloadButton className="lm-nav__download" />
+            <PlatformDownloadMenu className="lm-nav__download" />
             <button
               type="button"
               className="lm-nav__menu-btn"
@@ -112,7 +112,7 @@ export function Header() {
             <NavLink to="/docs" className="lm-drawer__link" onClick={() => setDrawerOpen(false)}>
               Docs
             </NavLink>
-            <DownloadButton className="lm-drawer__download" />
+            <PlatformDownloadDrawerLinks onNavigate={() => setDrawerOpen(false)} />
           </div>
         </>
       ) : null}

@@ -214,6 +214,127 @@ body.light-marketing .glow {
   outline-offset: 3px;
 }
 
+.lm-download-btn--menu {
+  border: none;
+  cursor: pointer;
+  font-family: inherit;
+}
+
+.lm-download-btn__chev {
+  font-size: 0.65rem;
+  opacity: 0.75;
+}
+
+.lm-download-menu {
+  position: relative;
+}
+
+.lm-download-menu__panel {
+  position: absolute;
+  top: calc(100% + 10px);
+  right: 0;
+  z-index: 60;
+  min-width: 280px;
+  padding: 0.85rem;
+  border-radius: 16px;
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  background: rgba(12, 14, 24, 0.92);
+  backdrop-filter: blur(20px);
+  box-shadow: 0 24px 60px rgba(0, 0, 0, 0.45);
+}
+
+.lm-download-menu__hint {
+  margin: 0 0 0.65rem;
+  font-size: 0.72rem;
+  color: rgba(255, 255, 255, 0.55);
+}
+
+.lm-download-menu__row {
+  padding: 0.55rem 0;
+  border-top: 1px solid rgba(255, 255, 255, 0.08);
+}
+
+.lm-download-menu__row.is-active {
+  background: rgba(139, 92, 246, 0.08);
+  margin: 0 -0.45rem;
+  padding-left: 0.45rem;
+  padding-right: 0.45rem;
+  border-radius: 10px;
+}
+
+.lm-download-menu__row-head {
+  display: flex;
+  align-items: center;
+  gap: 0.45rem;
+  font-size: 0.85rem;
+  font-weight: 600;
+  margin-bottom: 0.35rem;
+}
+
+.lm-download-menu__badge {
+  margin-left: auto;
+  font-size: 0.62rem;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: #c4b5fd;
+}
+
+.lm-download-menu__links {
+  display: flex;
+  gap: 0.65rem;
+  flex-wrap: wrap;
+}
+
+.lm-download-menu__links a {
+  font-size: 0.78rem;
+  color: #e2e8f0 !important;
+  text-decoration: none !important;
+  padding: 0.25rem 0.55rem;
+  border-radius: 8px;
+  background: rgba(255, 255, 255, 0.06);
+  transition: background 150ms ease;
+}
+
+.lm-download-menu__links a:hover {
+  background: rgba(255, 255, 255, 0.12);
+}
+
+.lm-download-menu__all {
+  display: block;
+  margin-top: 0.65rem;
+  font-size: 0.75rem;
+  color: rgba(255, 255, 255, 0.5) !important;
+  text-decoration: none !important;
+}
+
+.lm-drawer-downloads {
+  margin-top: 1rem;
+  padding-top: 1rem;
+  border-top: 1px solid rgba(255, 255, 255, 0.1);
+}
+
+.lm-drawer-downloads__block {
+  margin-bottom: 0.85rem;
+}
+
+.lm-drawer-downloads__label {
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+  font-size: 0.72rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  color: rgba(255, 255, 255, 0.45);
+  margin-bottom: 0.25rem;
+}
+
+.lm-drawer__link--muted {
+  opacity: 0.75;
+  font-size: 0.88rem;
+}
+
 .lm-nav__link {
   font-size: var(--text-sm);
   font-weight: 400;

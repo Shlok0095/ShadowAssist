@@ -1491,6 +1491,53 @@ code {
   font-weight: 600;
 }
 
+.download-card--preferred {
+  border-color: rgba(139, 92, 246, 0.45);
+  box-shadow: 0 0 0 1px rgba(139, 92, 246, 0.2), 0 20px 50px rgba(88, 28, 135, 0.15);
+  position: relative;
+  overflow: hidden;
+}
+
+.download-card__glow {
+  position: absolute;
+  inset: -40% auto auto 50%;
+  width: 120%;
+  height: 80%;
+  transform: translateX(-50%);
+  background: radial-gradient(circle, rgba(139, 92, 246, 0.25), transparent 70%);
+  pointer-events: none;
+}
+
+.download-detect-banner {
+  margin: 0 0 1rem;
+  font-size: 0.85rem;
+  color: var(--muted);
+  text-align: center;
+}
+
+.lm-hero-motion {
+  position: relative;
+}
+
+.lm-hero-mesh {
+  position: absolute;
+  inset: -20% -10% auto;
+  height: 420px;
+  background:
+    radial-gradient(ellipse 60% 50% at 20% 40%, rgba(139, 92, 246, 0.22), transparent),
+    radial-gradient(ellipse 50% 40% at 80% 30%, rgba(34, 211, 238, 0.18), transparent),
+    radial-gradient(ellipse 40% 35% at 50% 70%, rgba(236, 72, 153, 0.12), transparent);
+  filter: blur(40px);
+  pointer-events: none;
+  z-index: 0;
+  opacity: 0.9;
+}
+
+.lm-hero-motion > div {
+  position: relative;
+  z-index: 1;
+}
+
 .download-card__actions {
   display: flex;
   flex-wrap: wrap;
