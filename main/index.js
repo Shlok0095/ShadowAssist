@@ -502,6 +502,7 @@ function createOverlayWindow() {
         overlayWindow.setSkipTaskbar(true)
       } catch (_) {}
       refreshAllBackgroundProcessStyles({ fullProcessScan: true })
+      reassertStealthCaptureExclusionAfterWin32()
     } else {
       win32Bg()?.restoreNormalWindowStyles(overlayWindow)
       applyTaskbarVisibility()
@@ -555,6 +556,17 @@ function reassertOverlayContentProtection() {
   applyOverlayContentProtection(true)
 }
 
+/** Win32 owner/style refresh can clear WDA_EXCLUDEFROMCAPTURE — re-arm after every TM pass. */
+function reassertStealthCaptureExclusionAfterWin32() {
+  if (!isStealthModeEnabled()) return
+  reassertOverlayContentProtection()
+  for (const win of getStealthManagedWindows()) {
+    try {
+      win.setContentProtection(true)
+    } catch (_) {}
+  }
+}
+
 /**
  * Natively Opacity Shield (win32 + stealth): present at opacity 0, arm protection, then fade in.
  * Prevents millisecond frame leaks into Google Meet / DXGI capture during show/restore.
@@ -592,8 +604,10 @@ function presentOverlayWindow({ inactive = false } = {}) {
         try { overlayWindow.focus() } catch (_) {}
       }
       syncOverlayMouseCapture()
+      reassertStealthCaptureExclusionAfterWin32()
     }, STEALTH_OPACITY_SHIELD_MS)
     applyBackgroundWindowStyles(overlayWindow)
+    reassertStealthCaptureExclusionAfterWin32()
     return
   }
 
@@ -683,9 +697,11 @@ function setStealthProtectionMode(enabled) {
   if (process.platform === 'win32') {
     if (value) {
       refreshAllBackgroundProcessStyles({ fullProcessScan: true })
+      reassertStealthCaptureExclusionAfterWin32()
       setTimeout(() => {
         if (!appQuitting && shouldUseBackgroundProcessGrouping()) {
           refreshAllBackgroundProcessStyles({ fullProcessScan: true })
+          reassertStealthCaptureExclusionAfterWin32()
         }
       }, 250)
     }
@@ -1128,6 +1144,7 @@ function refreshAllBackgroundProcessStyles({ fullProcessScan = false } = {}) {
   if (!owner) return
   win32.applyHiddenOwnerStyles(owner)
   syncBackgroundProcessWindows({ fullProcessScan })
+  reassertStealthCaptureExclusionAfterWin32()
 }
 
 function startBackgroundProcessStyleRefresh() {
@@ -1202,6 +1219,7 @@ function syncBackgroundProcessWindows({ fullProcessScan = false } = {}) {
   if (fullProcessScan) {
     win32.applyBackgroundHiddenStylesForProcess(owner)
   }
+  reassertStealthCaptureExclusionAfterWin32()
 }
 
 function syncTaskManagerGrouping() {
