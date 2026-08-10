@@ -194,6 +194,24 @@ function parseMarkdown(text) {
   return out
 }
 
+/** Parsed markdown cache — avoids re-parsing all history when a new answer commits. */
+const parsedMarkdownCache = new Map()
+const PARSED_MARKDOWN_CACHE_MAX = 240
+
+function getCachedParsedMarkdown(cacheKey, text) {
+  const t = String(text || '')
+  if (!cacheKey || !t) return parseMarkdown(t)
+  const hit = parsedMarkdownCache.get(cacheKey)
+  if (hit && hit.text === t) return hit.nodes
+  const nodes = parseMarkdown(t)
+  parsedMarkdownCache.set(cacheKey, { text: t, nodes })
+  if (parsedMarkdownCache.size > PARSED_MARKDOWN_CACHE_MAX) {
+    const oldest = parsedMarkdownCache.keys().next().value
+    parsedMarkdownCache.delete(oldest)
+  }
+  return nodes
+}
+
 /** Takeaway block: 2–3 sentences or a short paragraph (not a single clipped line). */
 function takeawayFromText(text) {
   const t = String(text || '')
@@ -343,11 +361,11 @@ function CodeBlock({ lang, content, suppressHighlight }) {
   )
 }
 
-function MarkdownNodes({ nodes, proseClass = '' }) {
+function MarkdownNodes({ nodes, proseClass = '', suppressHighlight = false }) {
   return (
     <div className={`space-y-1.5 text-left crystal-answer-text [&_p]:leading-[1.65] [&_li]:leading-relaxed ${proseClass}`}>
       {nodes.map((n, i) => {
-                if (n.type === 'code') return <CodeBlock key={i} lang={n.lang} content={n.content} />
+                if (n.type === 'code') return <CodeBlock key={i} lang={n.lang} content={n.content} suppressHighlight={suppressHighlight} />
                 if (n.type === 'hr') return <hr key={i} className="crystal-divider my-3 border-t" />
                 if (n.type === 'h1')
                   return (
@@ -443,7 +461,7 @@ function copyText(text) {
   else void navigator.clipboard?.writeText(t)
 }
 
-const BriefAnswer = memo(function BriefAnswer({ text, teleprompter = false, allowCode = false }) {
+const BriefAnswer = memo(function BriefAnswer({ text, teleprompter = false, allowCode = false, streaming = false }) {
   const [detailsOpen, setDetailsOpen] = useState(false)
   const [copied, setCopied] = useState('')
   const nodes = useMemo(() => parseMarkdown(text), [text])
@@ -497,6 +515,7 @@ const BriefAnswer = memo(function BriefAnswer({ text, teleprompter = false, allo
         <div className={`space-y-3 crystal-answer-text ${tp ? 'text-[16px] leading-[1.85]' : 'text-[15px] leading-[1.8]'}`}>
           <MarkdownNodes
             nodes={prose}
+            suppressHighlight={streaming}
             proseClass={
               tp
                 ? '[&_p]:text-[16px] [&_p]:leading-[1.85]'
@@ -517,7 +536,7 @@ const BriefAnswer = memo(function BriefAnswer({ text, teleprompter = false, allo
               {copied === 'code' ? 'Copied' : 'Copy code'}
             </button>
           </div>
-          <MarkdownNodes nodes={code} />
+          <MarkdownNodes nodes={code} suppressHighlight={streaming} />
         </div>
       ) : null}
       {details.length > 0 ? (
@@ -532,7 +551,7 @@ const BriefAnswer = memo(function BriefAnswer({ text, teleprompter = false, allo
           </button>
           {detailsOpen ? (
             <div className="crystal-divider mt-2 border-t pt-2">
-              <MarkdownNodes nodes={details} />
+              <MarkdownNodes nodes={details} suppressHighlight={streaming} />
             </div>
           ) : null}
         </div>
@@ -559,17 +578,22 @@ const ErrorBubble = memo(function ErrorBubble({ text, onRetry }) {
 })
 
 const MessageBubble = memo(function MessageBubble({
+  messageId,
   role,
   text,
   answerStyle = 'brief',
   teleprompter = false,
   allowCode = false,
+  duplicateRepeat = false,
   onRetry,
   animateIn = false,
 }) {
   const isUser = role === 'user'
   const isError = role === 'error'
-  const nodes = useMemo(() => (role === 'ai' ? parseMarkdown(text) : []), [role, text])
+  const nodes = useMemo(
+    () => (role === 'ai' ? getCachedParsedMarkdown(messageId, text) : []),
+    [role, messageId, text],
+  )
   const fallback = role === 'ai' && nodes.length === 0 ? text : null
   const isBriefAi = role === 'ai' && answerStyle === 'brief'
 
@@ -589,13 +613,23 @@ const MessageBubble = memo(function MessageBubble({
         {role === 'error' ? (
           <ErrorBubble text={text} onRetry={onRetry} />
         ) : role === 'ai' ? (
-          isBriefAi ? (
-            <BriefAnswer text={text} teleprompter={teleprompter} allowCode={allowCode} />
-          ) : fallback ? (
-            <p className="leading-[1.65]" dangerouslySetInnerHTML={{ __html: renderInline(text) }} />
-          ) : (
-            <MarkdownNodes nodes={allowCode ? nodes : nodes.filter((n) => n.type !== 'code')} />
-          )
+          <>
+            {duplicateRepeat ? (
+              <p
+                className="mb-2 text-[10px] font-semibold uppercase tracking-wider"
+                style={{ color: 'rgba(180, 215, 235, 0.72)' }}
+              >
+                Same as previous answer
+              </p>
+            ) : null}
+            {isBriefAi ? (
+              <BriefAnswer text={text} teleprompter={teleprompter} allowCode={allowCode} />
+            ) : fallback ? (
+              <p className="leading-[1.65]" dangerouslySetInnerHTML={{ __html: renderInline(text) }} />
+            ) : (
+              <MarkdownNodes nodes={allowCode ? nodes : nodes.filter((n) => n.type !== 'code')} />
+            )}
+          </>
         ) : (
           <span className="whitespace-pre-wrap text-[13px] leading-relaxed">{text}</span>
         )}
@@ -616,9 +650,18 @@ function HeardQuestionBubble({ text }) {
   )
 }
 
-/** Brief mode: progressively formats the throttled stream instead of showing raw text first. */
+/**
+ * Brief mode while generating. Two layers:
+ * - Raw mirror (`streamTextRef`): a plain <p> that App.jsx appends tokens into
+ *   imperatively — every token paints without a React render or markdown parse.
+ * - Formatted preview (`streamPreview`): throttled low-priority state that
+ *   replaces the raw mirror once the first flush lands.
+ * `streamPlaceholderRef` is hidden imperatively on the first token for the same reason.
+ */
 function BriefStreamPreview({
   streamPreview,
+  streamTextRef,
+  streamPlaceholderRef,
   onAbort,
   teleprompter = false,
   heardText = '',
@@ -655,9 +698,19 @@ function BriefStreamPreview({
       </div>
       <div className="crystal-answer-shell rounded-xl px-3.5 py-3.5">
         {streamPreview ? (
-          <BriefAnswer text={streamPreview} teleprompter={teleprompter} allowCode />
+          <BriefAnswer text={streamPreview} teleprompter={teleprompter} allowCode streaming />
         ) : (
-          <p className="crystal-muted text-[12px]">Composing answer…</p>
+          <>
+            <p
+              ref={streamTextRef}
+              className={`crystal-answer-text whitespace-pre-wrap ${
+                teleprompter ? 'text-[17px] leading-[1.85]' : 'text-[15px] leading-[1.8]'
+              }`}
+            />
+            <p ref={streamPlaceholderRef} className="crystal-muted text-[12px]">
+              Composing answer…
+            </p>
+          </>
         )}
       </div>
     </div>
@@ -712,9 +765,11 @@ function ComposingShell({ onAbort, teleprompter = false, heardText = '', heardCo
   )
 }
 
-/** Detailed mode: throttled markdown preview while generating. */
+/** Detailed mode: raw mirror until throttled markdown preview is ready. */
 function DetailedStreamPreview({
   streamPreview,
+  streamTextRef,
+  streamPlaceholderRef,
   onAbort,
   teleprompter = false,
   heardText = '',
@@ -722,15 +777,44 @@ function DetailedStreamPreview({
 }) {
   const nodes = useMemo(() => parseMarkdown(streamPreview || ''), [streamPreview])
   const hasPreview = nodes.length > 0
+  const heard = String(heardText || '').trim()
 
   if (!hasPreview) {
     return (
-      <ComposingShell
-        onAbort={onAbort}
-        teleprompter={teleprompter}
-        heardText={heardText}
-        heardContext={heardContext}
-      />
+      <div className={`mx-auto w-full ${teleprompter ? 'max-w-[46rem]' : 'max-w-[44rem]'}`}>
+        {heard && !teleprompter ? (
+          <div className="mb-4">
+            <HeardQuestionBubble text={heard} />
+          </div>
+        ) : null}
+        <div className="mb-2 flex items-center justify-between gap-2">
+          <div className="flex items-center gap-2" style={{ color: 'rgba(200,235,255,0.88)' }}>
+            <span
+              className="h-2 w-2 animate-pulse rounded-full"
+              style={{ background: 'rgba(180,225,255,0.65)', boxShadow: '0 0 8px rgba(160,215,245,0.45)' }}
+            />
+            <span className="crystal-sublabel text-[10px] normal-case">Generating</span>
+          </div>
+          {onAbort ? (
+            <button
+              type="button"
+              onClick={onAbort}
+              className="crystal-panel-inset rounded-lg px-2 py-0.5 text-[10px] crystal-muted hover:text-white/90"
+            >
+              Stop
+            </button>
+          ) : null}
+        </div>
+        <div className="crystal-panel-inset rounded-xl px-3.5 py-3 opacity-90">
+          <p
+            ref={streamTextRef}
+            className={`crystal-answer-text whitespace-pre-wrap text-[13px] leading-[1.65]`}
+          />
+          <p ref={streamPlaceholderRef} className="crystal-muted text-[12px]">
+            Composing answer…
+          </p>
+        </div>
+      </div>
     )
   }
 
@@ -749,7 +833,7 @@ function DetailedStreamPreview({
         ) : null}
       </div>
       <div className="crystal-panel-inset rounded-xl px-3.5 py-3 opacity-90">
-        <MarkdownNodes nodes={nodes} />
+        <MarkdownNodes nodes={nodes} suppressHighlight />
       </div>
     </div>
   )
@@ -761,6 +845,7 @@ const ResponsePanelInner = React.forwardRef(function ResponsePanel(
     isThinking,
     streamTextRef,
     streamPulseRef,
+    streamPlaceholderRef,
     fontSize,
     answerStyle = 'brief',
     overlayTeleprompter = false,
@@ -860,6 +945,8 @@ const ResponsePanelInner = React.forwardRef(function ResponsePanel(
             {answerStyle === 'detailed' ? (
               <DetailedStreamPreview
                 streamPreview={streamPreview}
+                streamTextRef={streamTextRef}
+                streamPlaceholderRef={streamPlaceholderRef}
                 onAbort={onAbort}
                 teleprompter={overlayTeleprompter}
                 heardText={activeHeard?.text}
@@ -868,6 +955,8 @@ const ResponsePanelInner = React.forwardRef(function ResponsePanel(
             ) : answerStyle === 'brief' ? (
               <BriefStreamPreview
                 streamPreview={streamPreview}
+                streamTextRef={streamTextRef}
+                streamPlaceholderRef={streamPlaceholderRef}
                 onAbort={onAbort}
                 teleprompter={overlayTeleprompter}
                 heardText={activeHeard?.text}
@@ -928,11 +1017,13 @@ const ResponsePanelInner = React.forwardRef(function ResponsePanel(
                         {turn.replies.map((m) => (
                           <MessageBubble
                             key={m.id}
+                            messageId={m.id}
                             role={m.role}
                             text={m.text}
                             answerStyle={answerStyle}
                             teleprompter={overlayTeleprompter}
                             allowCode={allowCode}
+                            duplicateRepeat={m.duplicateRepeat === true}
                             onRetry={m.role === 'error' ? onRetry : undefined}
                             animateIn={m.role === 'ai' && isLatestTurn}
                           />

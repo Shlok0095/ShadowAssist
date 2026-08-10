@@ -11,8 +11,9 @@ export default function LiveTranscriptPanel({ segments = [], visible = true, cla
     if (!autoScroll) return
     const m = meColRef.current
     const p = partColRef.current
-    if (m) m.scrollTo({ top: m.scrollHeight, behavior: 'smooth' })
-    if (p) p.scrollTo({ top: p.scrollHeight, behavior: 'smooth' })
+    // Instant scroll — smooth scroll on every partial fights user input and adds compositor work.
+    if (m) m.scrollTo({ top: m.scrollHeight, behavior: 'auto' })
+    if (p) p.scrollTo({ top: p.scrollHeight, behavior: 'auto' })
   }, [segments, autoScroll])
 
   if (!visible) return null
@@ -37,7 +38,10 @@ export default function LiveTranscriptPanel({ segments = [], visible = true, cla
         {meLines.map((s) => (
           <p
             key={s.id}
-            className="break-words rounded-md bg-sky-500/10 px-2 py-1 text-[11px] leading-snug text-zinc-100"
+            className={[
+              'break-words rounded-md px-2 py-1 text-[11px] leading-snug text-zinc-100',
+              s.interim ? 'bg-sky-500/5 opacity-90' : 'bg-sky-500/10',
+            ].join(' ')}
             style={{ animation: 'overlayLiveLine 220ms ease-out' }}
           >
             {s.text}
@@ -54,7 +58,10 @@ export default function LiveTranscriptPanel({ segments = [], visible = true, cla
         {otherLines.map((s) => (
           <p
             key={s.id}
-            className="break-words rounded-md bg-zinc-800/70 px-2 py-1 text-[11px] leading-snug text-zinc-200"
+            className={[
+              'break-words rounded-md px-2 py-1 text-[11px] leading-snug text-zinc-200',
+              s.interim ? 'bg-zinc-800/40 opacity-90' : 'bg-zinc-800/70',
+            ].join(' ')}
             style={{ animation: 'overlayLiveLine 220ms ease-out' }}
           >
             {s.text}

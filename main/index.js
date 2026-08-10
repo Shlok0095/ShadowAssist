@@ -1429,19 +1429,49 @@ function syncOverlayMouseCapture() {
   applyOverlayMouseCapturePolicy(false)
 }
 
+/** Async vector-index writes in flight — awaited (bounded) during shutdown so they are not lost. */
+const pendingVectorWrites = new Set()
+function trackVectorWrite(promise) {
+  pendingVectorWrites.add(promise)
+  promise.finally(() => pendingVectorWrites.delete(promise)).catch(() => {})
+}
+async function drainVectorWrites() {
+  if (!pendingVectorWrites.size) return
+  await Promise.allSettled([...pendingVectorWrites])
+}
+
+/** Hard caps so a wedged worker can never hang the quit path. */
+const QUIT_SESSION_TEARDOWN_TIMEOUT_MS = 8000
+const QUIT_VECTOR_DRAIN_TIMEOUT_MS = 5000
+
+function withTimeout(promise, ms, label) {
+  return Promise.race([
+    promise,
+    new Promise((resolve) => setTimeout(resolve, ms)).then(() => {
+      console.warn(`[quit] ${label} timed out after ${ms}ms`)
+    }),
+  ])
+}
+
 let appQuitting = false
-/** Full exit: hotkeys, timers, capture workers, all windows, tray — then `app.quit()`. */
-async function quitApplication() {
+/**
+ * Shared teardown for every exit path (Quit button, tray, Ctrl+Q/Alt+F4 via
+ * before-quit, updater restart). Idempotent; never throws; never hangs.
+ */
+async function shutdownApplication() {
   if (appQuitting) return
   appQuitting = true
   stopMousePassthroughPoll()
   if (sessionActive) {
     try {
-      await stopSession()
+      await withTimeout(stopSession(), QUIT_SESSION_TEARDOWN_TIMEOUT_MS, 'stopSession')
     } catch (e) {
       console.warn('[quit] stopSession failed:', e?.message || e)
     }
   }
+  try {
+    await withTimeout(drainVectorWrites(), QUIT_VECTOR_DRAIN_TIMEOUT_MS, 'vector drain')
+  } catch (_) {}
   try {
     hotkeys.unregisterAll()
   } catch (_) {}
@@ -1453,16 +1483,23 @@ async function quitApplication() {
   } catch (_) {}
   try {
     localStt.shutdown()
+    streamingStt.stopListening()
     cloudRestStt.stopListening()
     hindsightLocalServer.stop()
     phoneLink.stop()
     phoneLinkMic.stop()
     phoneMirror.stop()
   } catch (_) {}
+  try {
+    embeddingClient.shutdown()
+  } catch (_) {}
+  try {
+    vectorMemory.close()
+  } catch (_) {}
   stopMeetingForegroundPoll()
   closeMeetingToastWindow()
   stopCalendarReminderPoll()
-  for (const w of [overlayWindow, settingsWindow, consentWindow, onboardingWindow, globalChatWindow]) {
+  for (const w of [overlayWindow, settingsWindow, consentWindow, onboardingWindow, globalChatWindow, launcherWindow]) {
     try {
       if (w && !w.isDestroyed()) w.destroy()
     } catch (_) {}
@@ -1472,10 +1509,17 @@ async function quitApplication() {
   consentWindow = null
   onboardingWindow = null
   globalChatWindow = null
+  launcherWindow = null
   try {
     if (tray) tray.destroy()
   } catch (_) {}
   tray = null
+}
+
+/** Full exit: shared teardown, then `app.quit()`. */
+async function quitApplication() {
+  if (appQuitting) return
+  await shutdownApplication()
   app.quit()
 }
 
@@ -1938,11 +1982,11 @@ async function finalizeMeetingSession(snapshot) {
     } catch (ltmErr) {
       console.warn('[ltm] retain failed:', ltmErr?.message || ltmErr)
     }
-    setImmediate(() => {
+    trackVectorWrite(
       vectorMemory.indexSession(record).catch((err) => {
         console.warn('[vector-memory] index session failed:', err?.message || err)
       })
-    })
+    )
     broadcastMeetingSummaryStatus({
       state: 'ready',
       session: {
@@ -1967,6 +2011,13 @@ async function stopSession() {
     await localStt.stopListeningAndDrain()
   } catch (e) {
     console.warn('[local-stt] drain on stop:', e?.message || e)
+  }
+  // Close streaming STT sockets from main directly: the overlay renderer also asks for this
+  // over IPC, but on quit the window may already be destroyed. Idempotent, safe to double-call.
+  try {
+    streamingStt.stopListening()
+  } catch (e) {
+    console.warn('[streaming-stt] stop on session end:', e?.message || e)
   }
 
   sendToOverlay('session-status', false)
@@ -2457,6 +2508,9 @@ async function handleAskAI(userQuestion, audioTranscript, _askMeta = {}) {
   })
   llmResponseInFlight = true
 
+  // Mirrors main's own transcript-clear decision so the overlay consumes its
+  // rolling speech only when main also cleared its copy (keeps both sides in sync).
+  let askCompleted = false
   try {
     const messages = [{ role: 'system', content: fullSystem }, { role: 'user', content: content.length === 1 ? content[0].text : content }]
     const userContent = messages[1].content
@@ -2468,6 +2522,7 @@ async function handleAskAI(userQuestion, audioTranscript, _askMeta = {}) {
           : ''
     let fullText = ''
     let firstTokenAt = 0
+    const tokenBatcher = createAiTokenBatcher((chunk) => sendToAiEventTarget('ai-token', chunk))
     // The Groq on-demand tier allows 8K TPM for Qwen 3.6. Screenshot and
     // prompt input commonly consume 3–4K tokens. A bounded output also avoids
     // reserving unnecessary TPM and keeps the overlay answer useful quickly.
@@ -2538,14 +2593,16 @@ async function handleAskAI(userQuestion, audioTranscript, _askMeta = {}) {
         )
       }
       fullText += token
-      sendToAiEventTarget('ai-token', token)
+      tokenBatcher.push(token)
     }
+    tokenBatcher.flush()
     if (firstTokenAt) {
       console.log(
         `[ai-perf] complete=${Date.now() - askStartedAt}ms generation=${Date.now() - firstTokenAt}ms provider=${streamFinishMeta?.provider || activeStreamProvider} fallback=${streamFinishMeta?.fallbackUsed === true}`,
       )
     }
     if (!abortController.signal.aborted) {
+      askCompleted = true
       lastResponse = fullText
       if (_askMeta?.preserveTranscript === true) {
         // This turn did not include transcript context (for example, a
@@ -2587,6 +2644,7 @@ async function handleAskAI(userQuestion, audioTranscript, _askMeta = {}) {
     if (currentAbortController === abortController) currentAbortController = null
     sendToAiEventTarget('ai-thinking', false)
   }
+  return { ok: askCompleted }
 }
 
 function sendToOverlay(channel, ...args) {
@@ -2601,6 +2659,51 @@ function sendToAiEventTarget(channel, ...args) {
   if (aiEventTarget === 'global_chat') sendToGlobalChat(channel, ...args)
   else sendToOverlay(channel, ...args)
   phoneLink.handleDesktopEvent(channel, ...args)
+}
+
+/**
+ * Coalesce LLM tokens before IPC — first token flushes immediately so time-to-first-paint
+ * stays fast; subsequent tokens batch up to 16ms or 256 chars to cut main↔renderer churn.
+ */
+function createAiTokenBatcher(sendToken, { maxDelayMs = 16, maxChars = 256 } = {}) {
+  let buf = ''
+  let timer = null
+  let firstToken = true
+
+  const flush = () => {
+    if (timer != null) {
+      clearTimeout(timer)
+      timer = null
+    }
+    if (!buf) return
+    sendToken(buf)
+    buf = ''
+    firstToken = false
+  }
+
+  return {
+    push(token) {
+      const t = token == null ? '' : String(token)
+      if (!t) return
+      buf += t
+      if (firstToken) {
+        flush()
+        return
+      }
+      if (buf.length >= maxChars) {
+        flush()
+        return
+      }
+      if (timer == null) {
+        timer = setTimeout(flush, maxDelayMs)
+      }
+    },
+    flush,
+    reset() {
+      flush()
+      firstToken = true
+    },
+  }
 }
 
 const UI_ACCENT_THEME_IDS = new Set([
@@ -2714,6 +2817,15 @@ function getLegalDocumentPath(which) {
 }
 
 function setupIPC() {
+  ipcMain.on('shadowassist-stream-flush', (e) => {
+    if (!overlayWindow || overlayWindow.isDestroyed()) return
+    if (e.sender !== overlayWindow.webContents) return
+  })
+  ipcMain.on('shadowassist-stream-ended', (e) => {
+    if (!overlayWindow || overlayWindow.isDestroyed()) return
+    if (e.sender !== overlayWindow.webContents) return
+  })
+
   ipcMain.handle('legal:open', async (_, which) => {
     const p = getLegalDocumentPath(which)
     if (!p) return { ok: false, error: 'File not found' }
@@ -3943,13 +4055,26 @@ app.on('activate', () => {
     showOverlay()
   }
 })
+app.on('before-quit', (event) => {
+  // OS-level quits (Ctrl+Q, Alt+F4, logoff) bypass quitApplication(); run the same
+  // teardown once, then let quit proceed. appQuitting guards against re-entry when
+  // shutdownApplication itself triggers app.quit().
+  if (appQuitting) return
+  event.preventDefault()
+  shutdownApplication()
+    .catch((e) => console.warn('[quit] shutdown failed:', e?.message || e))
+    .finally(() => app.quit())
+})
 app.on('will-quit', () => {
+  // Synchronous backstop — everything here is idempotent after shutdownApplication().
   hotkeys.unregisterAll()
   localStt.shutdown()
+  streamingStt.stopListening()
   cloudRestStt.stopListening()
   phoneLink.stop()
   phoneLinkMic.stop()
   phoneMirror.stop()
+  embeddingClient.shutdown()
   vectorMemory.close()
 })
 app.on('second-instance', () => {
