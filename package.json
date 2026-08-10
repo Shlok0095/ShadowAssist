@@ -73,6 +73,7 @@
       "lib/meetingScanMeet.ps1",
       "lib/localStt/inferenceWorker.mjs",
       "**/*.node",
+      "node_modules/koffi/**",
       "node_modules/sqlite-vec*/**",
       "node_modules/onnxruntime-node/**"
     ],
@@ -144,6 +145,7 @@
     "electron-store": "^8.1.0",
     "electron-updater": "^6.8.3",
     "highlight.js": "^11.11.1",
+    "koffi": "^3.1.4",
     "lucide-react": "^0.525.0",
     "openai": "^4.20.0",
     "pdf-parse": "^1.1.1",

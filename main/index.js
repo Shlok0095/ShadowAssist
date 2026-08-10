@@ -1,4 +1,4 @@
-// Copyright (c) 2026 VeilAssist. All rights reserved.
+﻿// Copyright (c) 2026 VeilAssist. All rights reserved.
 // Unauthorized copying or distribution is prohibited.
 
 const { app, BrowserWindow, ipcMain, globalShortcut, Tray, nativeImage, screen, dialog, Menu, clipboard, shell, Notification } = require('electron')
@@ -30,17 +30,31 @@ if (!gotLock) {
         title: 'VeilAssist',
         message: 'VeilAssist is already running.',
         detail:
-          'Hiding the overlay does not quit the app — it stays in the system tray.\n\n' +
-          '• Tray (near the clock): right-click the VeilAssist icon → Open or Quit\n' +
-          '• In the overlay: use Quit (fully exit) next to Hide\n' +
-          '• Or press Ctrl+\\ to show the overlay\n\n' +
-          'To fully exit: tray → Quit, or Quit in the overlay title bar.',
+          'Hiding the overlay does not quit the app ΓÇö it stays in the system tray.\n\n' +
+          'ΓÇó Tray (near the clock): right-click the VeilAssist icon ΓåÆ Open or Quit\n' +
+          'ΓÇó In the overlay: use Quit (fully exit) next to Hide\n' +
+          'ΓÇó Or press Ctrl+\\ to show the overlay\n\n' +
+          'To fully exit: tray ΓåÆ Quit, or Quit in the overlay title bar.',
       })
     } catch (_) {}
     app.quit()
   })
 } else {
 const store = require('../lib/store')
+/** Lazy ΓÇö koffi/user32 only needed on Windows when background-process mode is used. */
+let win32BackgroundWindowModule = undefined
+function win32Bg() {
+  if (process.platform !== 'win32') return null
+  if (win32BackgroundWindowModule === undefined) {
+    try {
+      win32BackgroundWindowModule = require('../lib/win32BackgroundWindow')
+    } catch (e) {
+      console.warn('[background] win32 helper unavailable:', e?.message || e)
+      win32BackgroundWindowModule = null
+    }
+  }
+  return win32BackgroundWindowModule
+}
 const { isPointInBounds, resolveOverlayMouseCapture } = require('../lib/overlayMousePolicy')
 const { resolveSystemPrompt } = require('../lib/defaultSystemPrompt')
 const { getAnswerStyleSuffix } = require('../lib/answerStyle')
@@ -253,10 +267,10 @@ let sessionActive = false
 let overlayVisible = true
 /** Polls cursor vs overlay bounds when mouse passthrough is enabled. */
 let mousePassthroughPollTimer = null
-/** Last applied capture mode — avoids spamming setIgnoreMouseEvents every poll tick. */
+/** Last applied capture mode ΓÇö avoids spamming setIgnoreMouseEvents every poll tick. */
 let overlayMouseCaptureApplied = null
 let savedOpacity = 0.92
-/** Last protection value pushed to the overlay HWND — Natively dedupes to avoid DWM churn/blinks. */
+/** Last protection value pushed to the overlay HWND ΓÇö Natively dedupes to avoid DWM churn/blinks. */
 let overlayContentProtectionApplied = null
 /** Pending win32 stealth fade-in after protection arms (Natively Opacity Shield). */
 let overlayOpacityShieldTimer = null
@@ -264,16 +278,26 @@ const STEALTH_OPACITY_SHIELD_MS = 60
 let lastResponse = ''
 let llmResponseInFlight = false
 let currentAbortController = null
-/** Screenshot captured at Ctrl+Enter hotkey instant — used by the next handleAskAI call. */
+/** Screenshot captured at Ctrl+Enter hotkey instant ΓÇö used by the next handleAskAI call. */
 let pendingAskVisionB64 = null
 let consentWindow = null
 let onboardingWindow = null
-/** Top-right meeting chip — excluded from stealth content-protection list. */
+/** Top-right meeting chip ΓÇö excluded from stealth content-protection list. */
 let meetingToastWindow = null
-/** Phase 4 — compact launcher window (tray menu). */
+/** Phase 4 ΓÇö compact launcher window (tray menu). */
 let launcherWindow = null
-/** Phase 8 — standalone global chat window. */
+/** Phase 8 ΓÇö standalone global chat window. */
 let globalChatWindow = null
+/** Windows ΓÇö hidden owner so visible windows stay out of Task Manager "Apps". */
+let backgroundOwnerWindow = null
+/** Re-assert Win32 styles ΓÇö Chromium can reset EXSTYLE after show. */
+let backgroundProcessStyleTimer = null
+/** Lightweight re-apply for known windows; full EnumWindows scan runs less often. */
+const BACKGROUND_STYLE_REFRESH_MS = 2000
+const BACKGROUND_FULL_SCAN_EVERY = 6
+let backgroundProcessRefreshTick = 0
+/** Avoid restarting the refresh interval on every applyTaskbarVisibility call. */
+let backgroundProcessPolicyActive = false
 /** Routes streaming AI events to overlay or global chat. */
 let aiEventTarget = 'overlay'
 /** Once shown or dismissed, same `eventId` is not shown again for this app launch. */
@@ -289,7 +313,7 @@ const CALENDAR_REMINDER_POLL_MS = 30 * 1000
 let appCoreStarted = false
 let lastModeDetectAt = 0
 let modeSuggestionSentThisSession = false
-/** Templates dismissed this Listen session — may re-suggest after cooldown if speech shifts. */
+/** Templates dismissed this Listen session ΓÇö may re-suggest after cooldown if speech shifts. */
 const modeSuggestionDismissedAt = new Map()
 const MODE_DETECT_MIN_MS = 22000
 const MODE_DETECT_AFTER_DISMISS_MS = 45000
@@ -410,13 +434,14 @@ function createOverlayWindow() {
   if (y < display.y || y > maxY) y = maxY
   savedOpacity = store.get('overlayOpacity') ?? 0.92
 
-  // 'toolbar' can fail or behave oddly on some Windows setups — match stable shadowassist window
+  const owner = getBackgroundOwnerParent()
   const winOpts = {
     width: w, height: h, x, y,
     transparent: true, frame: false, alwaysOnTop: true, skipTaskbar: true,
     focusable: true, hasShadow: false, resizable: true,
     minWidth: 280, minHeight: 180, maxWidth: 860, maxHeight: 940,
     show: false,
+    ...(owner ? { parent: owner } : {}),
     ...(APP_ICON ? { icon: APP_ICON } : {}),
     webPreferences: {
       preload: preloadPath,
@@ -439,6 +464,7 @@ function createOverlayWindow() {
     }
   }
   overlayWindow.setMenuBarVisibility(false)
+  applyBackgroundWindowStyles(overlayWindow)
   overlayWindow.loadFile(useBuilt
     ? path.join(__dirname, '..', 'out', 'overlay', 'index.html')
     : path.join(__dirname, '..', 'renderer', 'overlay', 'index.html'))
@@ -460,11 +486,23 @@ function createOverlayWindow() {
     applyContentProtectionAllWindows()
     syncOverlayMouseCapture()
     syncOverlayVisibilityToRenderer()
-    // Re-sync after overlay reload — session-status may have fired before React mounted.
+    // Re-sync after overlay reload ΓÇö session-status may have fired before React mounted.
     if (sessionActive) sendToOverlay('session-status', true)
   })
   overlayWindow.webContents.on('did-fail-load', (_, code, desc, url) => {
     console.error('[overlay] did-fail-load', code, desc, url)
+  })
+  overlayWindow.on('show', () => {
+    if (shouldUseBackgroundProcessGrouping()) {
+      applyBackgroundWindowStyles(overlayWindow)
+      try {
+        overlayWindow.setSkipTaskbar(true)
+      } catch (_) {}
+      refreshAllBackgroundProcessStyles({ fullProcessScan: true })
+    } else {
+      win32Bg()?.restoreNormalWindowStyles(overlayWindow)
+      applyTaskbarVisibility()
+    }
   })
   overlayWindow.on('closed', () => {
     clearOverlayOpacityShield()
@@ -478,15 +516,15 @@ function createOverlayWindow() {
   return overlayWindow
 }
 
-/** Stealth Mode ON → setContentProtection(true). On Windows this maps to WDA_EXCLUDEFROMCAPTURE. */
+/** Stealth Mode ON ΓåÆ setContentProtection(true). On Windows this maps to WDA_EXCLUDEFROMCAPTURE. */
 function isStealthModeEnabled() {
   return store.get('stealth_mode') === true
 }
 
 /**
  * Overlay content protection follows stealth toggle:
- * - Visible mode (stealth OFF): protection OFF — you see the overlay; it can appear in screen shares.
- * - Stealth mode (stealth ON): protection ON — hidden from screen capture, shares, and recordings.
+ * - Visible mode (stealth OFF): protection OFF ΓÇö you see the overlay; it can appear in screen shares.
+ * - Stealth mode (stealth ON): protection ON ΓÇö hidden from screen capture, shares, and recordings.
  * Ctrl+Enter capture uses hide()+opacity shield (see withOverlayExcludedFromScreenCapture).
  */
 function clearOverlayOpacityShield() {
@@ -552,6 +590,7 @@ function presentOverlayWindow({ inactive = false } = {}) {
       }
       syncOverlayMouseCapture()
     }, STEALTH_OPACITY_SHIELD_MS)
+    applyBackgroundWindowStyles(overlayWindow)
     return
   }
 
@@ -569,9 +608,10 @@ function presentOverlayWindow({ inactive = false } = {}) {
     try { overlayWindow.focus() } catch (_) {}
   }
   syncOverlayMouseCapture()
+  applyBackgroundWindowStyles(overlayWindow)
 }
 
-/** Hide overlay from compositor before a screenshot — Natively hideMainWindow pattern. */
+/** Hide overlay from compositor before a screenshot ΓÇö Natively hideMainWindow pattern. */
 function hideOverlayForCapture() {
   if (!overlayWindow || overlayWindow.isDestroyed()) return
   clearOverlayOpacityShield()
@@ -627,6 +667,13 @@ function setStealthProtectionMode(enabled) {
   // skipped an already-open Settings window, leaving it capturable until reopened.
   applyContentProtectionAllWindows()
   applyTaskbarVisibility()
+  if (process.platform === 'win32' && value) {
+    setTimeout(() => {
+      if (!appQuitting && shouldUseBackgroundProcessGrouping()) {
+        refreshAllBackgroundProcessStyles({ fullProcessScan: true })
+      }
+    }, 250)
+  }
   sendToOverlay('stealth-mode-update', value)
   sendToSettingsWindow('stealth-mode-update', value)
   return value
@@ -668,6 +715,7 @@ function showMeetingToastFromMain(payload) {
   console.log('[meeting-toast] show', { eventId, platform, posX, posY, displayId: display.id })
 
   const toastPreload = path.join(__dirname, '..', 'preload-meeting-toast.cjs')
+  const toastOwner = getBackgroundOwnerParent()
 
   meetingToastWindow = new BrowserWindow({
     width: chipW,
@@ -683,6 +731,7 @@ function showMeetingToastFromMain(payload) {
     focusable: false,
     alwaysOnTop: true,
     roundedCorners: true,
+    ...(toastOwner ? { parent: toastOwner } : {}),
     ...(APP_ICON ? { icon: APP_ICON } : {}),
     webPreferences: {
       preload: toastPreload,
@@ -693,6 +742,7 @@ function showMeetingToastFromMain(payload) {
     },
   })
   meetingToastWindow.setMenuBarVisibility(false)
+  applyBackgroundWindowStyles(meetingToastWindow)
   try {
     meetingToastWindow.setAlwaysOnTop(true, 'screen-saver')
     meetingToastWindow.setVisibleOnAllWorkspaces(true)
@@ -833,7 +883,7 @@ async function runCalendarReminderTick() {
         ? `Meeting starts in ${reminderMinutes} min`
         : 'Meeting is starting now'
       const body = `${String(m.title || 'Upcoming meeting').slice(0, 120)}`
-      sendToOverlay('notify', { message: `📅 ${title}: ${body}` })
+      sendToOverlay('notify', { message: `≡ƒôà ${title}: ${body}` })
       try {
         new Notification({ title: 'VeilAssist', body: `${title}: ${body}` }).show()
       } catch (_) {}
@@ -851,12 +901,12 @@ function startCalendarReminderPoll() {
   }, CALENDAR_REMINDER_POLL_MS)
 }
 
-/** Compositor settle after hide — Natively v2.0.9: 80ms darwin, 40ms win32 (was 150ms). */
+/** Compositor settle after hide ΓÇö Natively v2.0.9: 80ms darwin, 40ms win32 (was 150ms). */
 const CAPTURE_COMPOSITOR_MS = process.platform === 'darwin' ? 80 : 40
 
 /**
- * Natively-style capture wrapper: opacity 0 → hide() → compositor wait → snap → restore.
- * Stealth mode keeps content protection ON — hidden window is enough; lifting protection
+ * Natively-style capture wrapper: opacity 0 ΓåÆ hide() ΓåÆ compositor wait ΓåÆ snap ΓåÆ restore.
+ * Stealth mode keeps content protection ON ΓÇö hidden window is enough; lifting protection
  * caused millisecond leaks into screen share (Natively never disables it for capture).
  */
 async function withOverlayExcludedFromScreenCapture(fn) {
@@ -972,7 +1022,7 @@ function startMousePassthroughPoll() {
 }
 
 /**
- * Overlay mouse capture — hidden overlay ignores all input.
+ * Overlay mouse capture ΓÇö hidden overlay ignores all input.
  * Passthrough mode polls cursor position: forward clicks only when cursor is outside the overlay
  * window bounds so notch buttons remain clickable on hover.
  */
@@ -983,6 +1033,184 @@ function isSettingsWindowActive() {
     settingsWindow.isVisible() &&
     !settingsWindow.isMinimized()
   )
+}
+
+/** Invisible overlay toggle (glasses) → Background processes; Visible (eye) → Apps. */
+function shouldUseBackgroundProcessGrouping() {
+  return process.platform === 'win32' && isStealthModeEnabled()
+}
+
+function getBackgroundManagedWindows() {
+  return [
+    overlayWindow,
+    settingsWindow,
+    globalChatWindow,
+    launcherWindow,
+    consentWindow,
+    onboardingWindow,
+    meetingToastWindow,
+  ]
+}
+
+function getBackgroundOwnerParent() {
+  if (process.platform !== 'win32' || !shouldUseBackgroundProcessGrouping()) return null
+  return ensureBackgroundOwnerWindow()
+}
+
+/** Hidden 1├ù1 owner ΓÇö owned top-level windows skip Task Manager "Apps" on Windows. */
+function ensureBackgroundOwnerWindow() {
+  if (process.platform !== 'win32' || !shouldUseBackgroundProcessGrouping()) return null
+  if (backgroundOwnerWindow && !backgroundOwnerWindow.isDestroyed()) return backgroundOwnerWindow
+  try {
+    backgroundOwnerWindow = new BrowserWindow({
+      width: 1,
+      height: 1,
+      x: -32000,
+      y: -32000,
+      show: false,
+      frame: false,
+      skipTaskbar: true,
+      focusable: false,
+      type: 'toolbar',
+      webPreferences: { nodeIntegration: false, contextIsolation: true },
+    })
+    backgroundOwnerWindow.setMenuBarVisibility(false)
+    win32Bg()?.applyHiddenOwnerStyles(backgroundOwnerWindow)
+  } catch (e) {
+    console.warn('[background-owner] create failed:', e?.message || e)
+    backgroundOwnerWindow = null
+  }
+  return backgroundOwnerWindow
+}
+
+function destroyBackgroundOwnerWindow() {
+  if (backgroundOwnerWindow && !backgroundOwnerWindow.isDestroyed()) {
+    try {
+      backgroundOwnerWindow.destroy()
+    } catch (_) {}
+  }
+  backgroundOwnerWindow = null
+}
+
+function applyBackgroundWindowStyles(win) {
+  if (!win || win.isDestroyed() || process.platform !== 'win32') return
+  if (!shouldUseBackgroundProcessGrouping()) return
+  const win32 = win32Bg()
+  if (!win32) return
+  if (win === backgroundOwnerWindow) {
+    win32.applyHiddenOwnerStyles(win)
+    return
+  }
+  win32.applyBackgroundHiddenWindowStyles(win, backgroundOwnerWindow)
+}
+
+function refreshAllBackgroundProcessStyles({ fullProcessScan = false } = {}) {
+  if (process.platform !== 'win32' || !shouldUseBackgroundProcessGrouping() || appQuitting) return
+  const win32 = win32Bg()
+  if (!win32) return
+  const owner = ensureBackgroundOwnerWindow()
+  if (!owner) return
+  win32.applyHiddenOwnerStyles(owner)
+  if (
+    overlayWindow &&
+    !overlayWindow.isDestroyed() &&
+    !overlayVisible &&
+    overlayWindow.isVisible()
+  ) {
+    try {
+      overlayWindow.hide()
+    } catch (_) {}
+  }
+  syncBackgroundProcessWindows({ fullProcessScan })
+}
+
+function startBackgroundProcessStyleRefresh() {
+  stopBackgroundProcessStyleRefresh()
+  if (!shouldUseBackgroundProcessGrouping()) return
+  backgroundProcessRefreshTick = 0
+  refreshAllBackgroundProcessStyles({ fullProcessScan: true })
+  backgroundProcessStyleTimer = setInterval(() => {
+    backgroundProcessRefreshTick += 1
+    refreshAllBackgroundProcessStyles({
+      fullProcessScan: backgroundProcessRefreshTick % BACKGROUND_FULL_SCAN_EVERY === 0,
+    })
+  }, BACKGROUND_STYLE_REFRESH_MS)
+}
+
+function stopBackgroundProcessStyleRefresh() {
+  if (backgroundProcessStyleTimer != null) {
+    clearInterval(backgroundProcessStyleTimer)
+    backgroundProcessStyleTimer = null
+  }
+}
+
+function safeSetWindowOwner(win, owner) {
+  if (!win || win.isDestroyed() || process.platform !== 'win32') return
+  try {
+    const current = win.getParentWindow?.() || null
+    if (owner) {
+      if (current !== owner) win.setParentWindow(owner)
+      win32Bg()?.setNativeWindowOwner(win, owner)
+      applyBackgroundWindowStyles(win)
+    } else {
+      if (current) win.setParentWindow(null)
+      win32Bg()?.restoreNormalWindowStyles(win)
+    }
+  } catch (e) {
+    console.warn('[background] setParentWindow failed:', e?.message || e)
+  }
+}
+
+function restoreNormalAppWindowPolicy() {
+  if (process.platform !== 'win32') return
+  stopBackgroundProcessStyleRefresh()
+  backgroundProcessPolicyActive = false
+  const win32 = win32Bg()
+  const windows = getBackgroundManagedWindows()
+  for (const w of windows) {
+    if (!w || w.isDestroyed()) continue
+    try {
+      if (w.getParentWindow?.()) w.setParentWindow(null)
+    } catch (_) {}
+    win32?.restoreNormalWindowStyles(w)
+  }
+  win32?.restoreNormalWindowStylesForProcess()
+  destroyBackgroundOwnerWindow()
+}
+
+function syncBackgroundProcessWindows({ fullProcessScan = false } = {}) {
+  if (process.platform !== 'win32' || !shouldUseBackgroundProcessGrouping() || appQuitting) return
+  const win32 = win32Bg()
+  if (!win32) return
+  const owner = ensureBackgroundOwnerWindow()
+  if (!owner) return
+
+  for (const w of getBackgroundManagedWindows()) {
+    if (!w || w.isDestroyed()) continue
+    safeSetWindowOwner(w, owner)
+    try {
+      w.setSkipTaskbar(true)
+    } catch (_) {}
+    applyBackgroundWindowStyles(w)
+  }
+  if (fullProcessScan) {
+    win32.applyBackgroundHiddenStylesForProcess(owner)
+  }
+}
+
+function syncTaskManagerGrouping() {
+  if (process.platform !== 'win32') return
+
+  if (!shouldUseBackgroundProcessGrouping()) {
+    if (backgroundProcessPolicyActive) restoreNormalAppWindowPolicy()
+    return
+  }
+
+  syncBackgroundProcessWindows({ fullProcessScan: !backgroundProcessPolicyActive })
+  if (!backgroundProcessPolicyActive) {
+    backgroundProcessPolicyActive = true
+    startBackgroundProcessStyleRefresh()
+  }
 }
 
 /** One taskbar icon (overlay only). Visible mode: show when overlay or settings is open. Invisible: always hidden. */
@@ -1004,6 +1232,7 @@ function restoreAppWindow(win) {
 }
 
 function applyTaskbarVisibility() {
+  syncTaskManagerGrouping()
   const show = shouldShowAppInTaskbar()
   if (overlayWindow && !overlayWindow.isDestroyed()) {
     try {
@@ -1047,7 +1276,7 @@ function stopUpdateChecks() {
   updateCheckKickoffTimer = null
 }
 
-/** Async vector-index writes in flight — awaited (bounded) during shutdown so they are not lost. */
+/** Async vector-index writes in flight ΓÇö awaited (bounded) during shutdown so they are not lost. */
 const pendingVectorWrites = new Set()
 function trackVectorWrite(promise) {
   pendingVectorWrites.add(promise)
@@ -1081,6 +1310,7 @@ function withTimeout(promise, ms, label) {
 async function shutdownApplication() {
   if (appQuitting) return
   appQuitting = true
+  stopBackgroundProcessStyleRefresh()
   stopMousePassthroughPoll()
   stopUpdateChecks()
   if (sessionActive) {
@@ -1131,6 +1361,7 @@ async function shutdownApplication() {
   onboardingWindow = null
   globalChatWindow = null
   launcherWindow = null
+  destroyBackgroundOwnerWindow()
   try {
     if (tray) tray.destroy()
   } catch (_) {}
@@ -1176,6 +1407,7 @@ function createConsentWindow() {
   const { width: sw, height: sh } = screen.getPrimaryDisplay().workAreaSize
   const w = Math.min(520, Math.max(400, Math.floor(sw * 0.45)))
   const h = Math.min(700, Math.max(560, Math.floor(sh * 0.78)))
+  const consentOwner = getBackgroundOwnerParent()
   consentWindow = new BrowserWindow({
     width: w,
     height: h,
@@ -1186,6 +1418,8 @@ function createConsentWindow() {
     transparent: true,
     backgroundColor: '#00000000',
     roundedCorners: true,
+    skipTaskbar: true,
+    ...(consentOwner ? { parent: consentOwner } : {}),
     ...(APP_ICON ? { icon: APP_ICON } : {}),
     webPreferences: {
       preload: preloadPath,
@@ -1196,6 +1430,7 @@ function createConsentWindow() {
     },
   })
   consentWindow.setMenuBarVisibility(false)
+  applyBackgroundWindowStyles(consentWindow)
   consentWindow.loadFile(useBuilt
     ? path.join(__dirname, '..', 'out', 'consent', 'index.html')
     : path.join(__dirname, '..', 'renderer', 'consent', 'index.html'))
@@ -1213,6 +1448,7 @@ function createOnboardingWindow() {
   const { width: sw, height: sh } = screen.getPrimaryDisplay().workAreaSize
   const w = Math.min(480, Math.max(400, Math.floor(sw * 0.46)))
   const h = Math.min(860, Math.max(620, Math.floor(sh * 0.88)))
+  const onboardingOwner = getBackgroundOwnerParent()
   onboardingWindow = new BrowserWindow({
     width: w,
     height: h,
@@ -1223,6 +1459,8 @@ function createOnboardingWindow() {
     transparent: true,
     backgroundColor: '#00000000',
     roundedCorners: true,
+    skipTaskbar: true,
+    ...(onboardingOwner ? { parent: onboardingOwner } : {}),
     ...(APP_ICON ? { icon: APP_ICON } : {}),
     webPreferences: {
       preload: preloadPath,
@@ -1233,6 +1471,7 @@ function createOnboardingWindow() {
     },
   })
   onboardingWindow.setMenuBarVisibility(false)
+  applyBackgroundWindowStyles(onboardingWindow)
   onboardingWindow.loadFile(useBuilt
     ? path.join(__dirname, '..', 'out', 'onboarding', 'index.html')
     : path.join(__dirname, '..', 'renderer', 'onboarding', 'index.html'))
@@ -1270,6 +1509,7 @@ function createSettingsWindow() {
   const { width: sw, height: sh } = screen.getPrimaryDisplay().workAreaSize
   const w = Math.min(1320, Math.max(1024, Math.floor(sw * 0.88)))
   const h = Math.min(760, Math.max(560, Math.floor(sh * 0.82)))
+  const settingsOwner = getBackgroundOwnerParent()
   settingsWindow = new BrowserWindow({
     width: w,
     height: h,
@@ -1281,6 +1521,7 @@ function createSettingsWindow() {
     backgroundColor: '#00000000',
     roundedCorners: true,
     skipTaskbar: true,
+    ...(settingsOwner ? { parent: settingsOwner } : {}),
     ...(APP_ICON ? { icon: APP_ICON } : {}),
     webPreferences: {
       preload: preloadPath,
@@ -1316,6 +1557,7 @@ function createSettingsWindow() {
     applyContentProtectionAllWindows()
     applyTaskbarVisibility()
   })
+  applyBackgroundWindowStyles(settingsWindow)
 }
 
 function createGlobalChatWindow() {
@@ -1324,6 +1566,7 @@ function createGlobalChatWindow() {
   const { width: sw, height: sh } = screen.getPrimaryDisplay().workAreaSize
   const w = Math.min(720, Math.max(480, Math.floor(sw * 0.42)))
   const h = Math.min(820, Math.max(520, Math.floor(sh * 0.72)))
+  const chatOwner = getBackgroundOwnerParent()
   globalChatWindow = new BrowserWindow({
     width: w,
     height: h,
@@ -1331,9 +1574,10 @@ function createGlobalChatWindow() {
     minHeight: 480,
     center: true,
     frame: true,
-    title: 'VeilAssist — Global Chat',
+    title: 'VeilAssist ΓÇö Global Chat',
     backgroundColor: '#0a0a0b',
     skipTaskbar: true,
+    ...(chatOwner ? { parent: chatOwner } : {}),
     ...(APP_ICON ? { icon: APP_ICON } : {}),
     webPreferences: {
       preload: preloadPath,
@@ -1350,6 +1594,7 @@ function createGlobalChatWindow() {
     applyContentProtectionAllWindows()
     applyTaskbarVisibility()
   })
+  applyBackgroundWindowStyles(globalChatWindow)
 }
 
 async function syncPhoneLinkAutoStart() {
@@ -1399,6 +1644,7 @@ function createLauncherWindow() {
     launcherWindow.focus()
     return
   }
+  const launcherOwner = getBackgroundOwnerParent()
   launcherWindow = new BrowserWindow({
     width: 340,
     height: 460,
@@ -1409,6 +1655,8 @@ function createLauncherWindow() {
     frame: true,
     title: 'VeilAssist Launcher',
     backgroundColor: '#0c0c0e',
+    skipTaskbar: true,
+    ...(launcherOwner ? { parent: launcherOwner } : {}),
     ...(APP_ICON ? { icon: APP_ICON } : {}),
     webPreferences: {
       preload: preloadPath,
@@ -1420,11 +1668,12 @@ function createLauncherWindow() {
   })
   launcherWindow.loadFile(getLauncherHtmlPath())
   launcherWindow.on('closed', () => { launcherWindow = null })
+  applyBackgroundWindowStyles(launcherWindow)
 }
 
 function setupTray() {
   tray = new Tray(createTrayIcon(false))
-  tray.setToolTip('VeilAssist — tray: Open / Hide, Quit to fully exit')
+  tray.setToolTip('VeilAssist ΓÇö tray: Open / Hide, Quit to fully exit')
   const updateTrayMenu = () => {
     tray.setContextMenu(Menu.buildFromTemplate([
       { label: overlayVisible ? 'Hide' : 'Open', click: toggleOverlay },
@@ -1532,7 +1781,7 @@ function broadcastMeetingSummaryStatus(payload) {
 
 async function finalizeMeetingSession(snapshot) {
   if (!sessionRecorder.hasContent(snapshot)) {
-    console.warn('[meeting-session] skip recap — no transcript or asks captured')
+    console.warn('[meeting-session] skip recap ΓÇö no transcript or asks captured')
     return
   }
   if (store.get('doNotSaveMeetingsEnabled') === true) {
@@ -1607,7 +1856,7 @@ async function stopSession() {
   if (!sessionActive) return
   sessionActive = false
 
-  // Drain while capture may still be running — flush VAD before snapshot + before overlay stops mic.
+  // Drain while capture may still be running ΓÇö flush VAD before snapshot + before overlay stops mic.
   try {
     await localStt.stopListeningAndDrain()
   } catch (e) {
@@ -1655,7 +1904,7 @@ function startSession() {
 
 /** Session lines included when overlay did not pass a buffer (tight = no stale replay). */
 const SESSION_TRANSCRIPT_MAX_AGE_MS = 3500
-/** "Just spoke" — narrow window so screen-only asks do not resurrect old lines. */
+/** "Just spoke" ΓÇö narrow window so screen-only asks do not resurrect old lines. */
 const VERY_RECENT_SPEECH_MS = 2200
 
 const CONTEXT_ROUTING_RULES = `
@@ -1667,7 +1916,7 @@ const CONTEXT_ROUTING_RULES = `
 - ## SCREEN is supporting context for a typed or spoken question. Use it only when relevant; never replace a clear question with unrelated screen content.
 - ## TASK means the turn is screen-led: analyze the attached screen as the PRIMARY source.
 - If QUESTION, AUDIO, or TRANSCRIPT contains a clear request, answer it directly. Never use the unclear-context fallback.
-- If the screenshot shows this assistant's own overlay with a prior answer, do not repeat it — focus on new screen content.`
+- If the screenshot shows this assistant's own overlay with a prior answer, do not repeat it ΓÇö focus on new screen content.`
 
 async function buildProfileContextBlock({
   query = '',
@@ -1757,8 +2006,8 @@ async function buildProfileContextBlock({
     if (!referenceBlock && (useAll || routeDecision.useReferenceFiles)) {
       const kb = String(store.get('knowledgeBase') || '').trim()
       if (kb) {
-        const clipped = kb.length > KNOWLEDGE_BASE_MAX ? `${kb.slice(0, KNOWLEDGE_BASE_MAX)}\n…` : kb
-        out += `\n\n---\n## REFERENCE (facts only — do not invent beyond this)\n${clipped}`
+        const clipped = kb.length > KNOWLEDGE_BASE_MAX ? `${kb.slice(0, KNOWLEDGE_BASE_MAX)}\nΓÇª` : kb
+        out += `\n\n---\n## REFERENCE (facts only ΓÇö do not invent beyond this)\n${clipped}`
       }
     }
 
@@ -1830,7 +2079,7 @@ async function handleAskAI(userQuestion, audioTranscript, _askMeta = {}) {
   const keyField = providers.getApiKeyField(provider)
   const apiKey = store.get(keyField)
   if (!apiKey) {
-    sendToAiEventTarget('ai-error', 'No API key. Settings → paste your key.')
+    sendToAiEventTarget('ai-error', 'No API key. Settings ΓåÆ paste your key.')
     currentAbortController = null
     return { ok: false }
   }
@@ -1910,7 +2159,7 @@ async function handleAskAI(userQuestion, audioTranscript, _askMeta = {}) {
   const profileQuery = currentQuestion || retrievalQuery
   const skipAsyncReferenceRetrieval = isScreenMode && !String(profileQuery).trim()
 
-  // noScreen: true = Natively's Ctrl+Shift+Enter (audio/text only — skip all screenshot capture)
+  // noScreen: true = Natively's Ctrl+Shift+Enter (audio/text only ΓÇö skip all screenshot capture)
   const noScreen = !!_askMeta?.noScreen
   const wantVision = !noScreen && providers.supportsVision(provider)
   let visionB64 = null
@@ -1975,7 +2224,7 @@ async function handleAskAI(userQuestion, audioTranscript, _askMeta = {}) {
   } else if (_askMeta?.skillSlug) {
     skillBlock = skillsService.buildSkillBlock(String(_askMeta.skillSlug))
     if (!skillBlock.trim()) {
-      sendToAiEventTarget('ai-error', `Skill "/${_askMeta.skillSlug}" not found. Settings → Skills to create it.`)
+      sendToAiEventTarget('ai-error', `Skill "/${_askMeta.skillSlug}" not found. Settings ΓåÆ Skills to create it.`)
       sendToAiEventTarget('ai-thinking', false)
       currentAbortController = null
       return
@@ -1989,7 +2238,7 @@ async function handleAskAI(userQuestion, audioTranscript, _askMeta = {}) {
     fullSystem += '\n\n---\n## PHONE MIRROR (secondary)\nA second image may show the connected Android screen. The desktop screenshot is primary; use the phone image only as supplementary context.'
   }
   if (_askMeta?.pastMeetingContext && String(_askMeta.pastMeetingContext).trim()) {
-    fullSystem += `\n\n---\n## PAST MEETING CONTEXT (recall — facts only, do not invent)\n${String(_askMeta.pastMeetingContext).trim().slice(0, 4000)}`
+    fullSystem += `\n\n---\n## PAST MEETING CONTEXT (recall ΓÇö facts only, do not invent)\n${String(_askMeta.pastMeetingContext).trim().slice(0, 4000)}`
   }
   if (structured) {
     const segmentedTranscript =
@@ -1999,8 +2248,8 @@ async function handleAskAI(userQuestion, audioTranscript, _askMeta = {}) {
       ? 'This is a screen-led request. Analyze the attached screenshot and solve the visible problem completely. If ## QUESTION is present, answer it directly and use the screen as evidence.'
       : segmentedTranscript
         ? nativelyLabeled
-          ? 'Answer the most recent [INTERVIEWER] line in the transcript. [ME] lines are the user\'s own speech — context only unless no interviewer question exists.'
-          : 'Answer ONLY the ACTIVE QUESTION in the user message. RECENT CONTEXT is optional clarification — do not merge unrelated earlier questions.'
+          ? 'Answer the most recent [INTERVIEWER] line in the transcript. [ME] lines are the user\'s own speech ΓÇö context only unless no interviewer question exists.'
+          : 'Answer ONLY the ACTIVE QUESTION in the user message. RECENT CONTEXT is optional clarification ΓÇö do not merge unrelated earlier questions.'
         : 'Respond ONLY to the last clear question in QUESTION, AUDIO, or TRANSCRIPT. SCREEN is supporting context and must not override an unrelated spoken or typed request.'
     }`
   }
@@ -2027,7 +2276,7 @@ async function handleAskAI(userQuestion, audioTranscript, _askMeta = {}) {
     return { ok: false }
   }
   // Block if there's truly nothing to respond to (no speech, typed question, or structured context).
-  // Vision screenshots are handled separately via visionB64 — they don't need text input.
+  // Vision screenshots are handled separately via visionB64 ΓÇö they don't need text input.
   if (!transcript && !userQ && !structured && !visionB64) {
     currentAbortController = null
     sendToAiEventTarget('ai-no-output')
@@ -2090,7 +2339,7 @@ async function handleAskAI(userQuestion, audioTranscript, _askMeta = {}) {
           const t = String(audioCombined).trim()
           if (!t) return null
           const clipped =
-            t.length > MAX_TRANSCRIPT_ECHO ? `${t.slice(0, MAX_TRANSCRIPT_ECHO)}\n\n… (truncated)` : t
+            t.length > MAX_TRANSCRIPT_ECHO ? `${t.slice(0, MAX_TRANSCRIPT_ECHO)}\n\nΓÇª (truncated)` : t
           return parseTranscriptEchoForDisplay(clipped)
         })()
       : null
@@ -2126,7 +2375,7 @@ async function handleAskAI(userQuestion, audioTranscript, _askMeta = {}) {
     let firstTokenAt = 0
     const tokenBatcher = createAiTokenBatcher((chunk) => sendToAiEventTarget('ai-token', chunk))
     // The Groq on-demand tier allows 8K TPM for Qwen 3.6. Screenshot and
-    // prompt input commonly consume 3–4K tokens. A bounded output also avoids
+    // prompt input commonly consume 3ΓÇô4K tokens. A bounded output also avoids
     // reserving unnecessary TPM and keeps the overlay answer useful quickly.
     const answerStyle = store.get('answerStyle')
     const qwenOutputTokens =
@@ -2260,8 +2509,8 @@ function sendToAiEventTarget(channel, ...args) {
 }
 
 /**
- * Coalesce LLM tokens before IPC — first token flushes immediately so time-to-first-paint
- * stays fast; subsequent tokens batch up to 16ms or 256 chars to cut main↔renderer churn.
+ * Coalesce LLM tokens before IPC ΓÇö first token flushes immediately so time-to-first-paint
+ * stays fast; subsequent tokens batch up to 16ms or 256 chars to cut mainΓåörenderer churn.
  */
 function createAiTokenBatcher(sendToken, { maxDelayMs = 16, maxChars = 256 } = {}) {
   let buf = ''
@@ -3147,7 +3396,7 @@ function setupIPC() {
     const prov = store.get('provider') || 'nvidia'
     return providers.supportsVision(prov)
   })
-  // ── Screenshot queue IPC (Natively-style on-demand capture) ──────────────
+  // ΓöÇΓöÇ Screenshot queue IPC (Natively-style on-demand capture) ΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇ
   ipcMain.handle('screenshot:take', async () => {
     try {
       const filePath = await screenshotQueue.takeScreenshot()
@@ -3180,7 +3429,7 @@ function setupIPC() {
     await screenshotQueue.deleteScreenshot(filePath)
     return { ok: true, queueSize: screenshotQueue.getQueue().length }
   })
-  // ─────────────────────────────────────────────────────────────────────────
+  // ΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇ
 
   ipcMain.handle('show-open-dialog', (_, opts) => dialog.showOpenDialog(opts))
   ipcMain.handle('parse-playbook', async (_, filePath) => {
@@ -3324,7 +3573,7 @@ function setupIPC() {
         store.set('overlayBounds', { ...prev, width: w, height: h })
         if (overlayWindow && !overlayWindow.isDestroyed()) {
           const curH = overlayWindow.getSize()[1]
-          // Collapsed notch (~43px window) — only change width so we don't pop the panel open
+          // Collapsed notch (~43px window) ΓÇö only change width so we don't pop the panel open
           if (curH <= 48) overlayWindow.setSize(w, curH)
           else overlayWindow.setSize(w, h)
         }
@@ -3374,6 +3623,9 @@ async function initApp() {
   seedOverlayPositionIfNeeded()
   setupTray()
   setupHotkeys()
+  if (shouldUseBackgroundProcessGrouping()) {
+    ensureBackgroundOwnerWindow()
+  }
   sessionMemory.startInactivityWatcher(() => {
     // End the whole session, not just the UI: leaving sessionActive true kept the
     // mic and STT sockets running invisibly after the inactivity purge.
@@ -3410,7 +3662,7 @@ async function initApp() {
     console.warn('[meeting-toast] test hotkey register error:', e?.message || e)
   }
 
-  // Auto-start the listen session if the user already completed consent/onboarding —
+  // Auto-start the listen session if the user already completed consent/onboarding ΓÇö
   // no need to manually press the toggle every time the app opens.
   if (hasValidConsent() && hasCompletedOnboardingFlag()) {
     // Wait for the overlay to finish rendering before sending session-start.
@@ -3458,7 +3710,7 @@ function setupAutoUpdater() {
     try {
       new Notification({
         title: 'VeilAssist Update',
-        body: `Version ${info.version} is downloading in the background…`,
+        body: `Version ${info.version} is downloading in the backgroundΓÇª`,
       }).show()
     } catch (e) {
       console.warn('[autoUpdater] notification failed:', e?.message || e)
@@ -3526,7 +3778,7 @@ app.on('before-quit', (event) => {
     .finally(() => app.quit())
 })
 app.on('will-quit', () => {
-  // Synchronous backstop — everything here is idempotent after shutdownApplication().
+  // Synchronous backstop ΓÇö everything here is idempotent after shutdownApplication().
   hotkeys.unregisterAll()
   localStt.shutdown()
   streamingStt.stopListening()
