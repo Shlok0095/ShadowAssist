@@ -12,6 +12,7 @@ import {
   ToggleSwitch,
 } from './SettingsComponents'
 import { listAiResponseLanguages } from '../../lib/aiResponseLanguage.js'
+import { useBrand } from '../shared/branding'
 
 export default function AiProviderPanel({
   snap,
@@ -46,6 +47,7 @@ export default function AiProviderPanel({
   showSetupBanner,
   onLaunchFromSetup,
 }) {
+  const { name } = useBrand()
   return (
     <SettingsPage
       title="AI Providers"
@@ -283,7 +285,7 @@ export default function AiProviderPanel({
 
       {showSetupBanner && (
         <button type="button" onClick={onLaunchFromSetup} className="btn-glow w-full py-4 text-base">
-          Launch VeilAssist
+          Launch {name}
         </button>
       )}
     </SettingsPage>

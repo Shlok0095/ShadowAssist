@@ -5,7 +5,7 @@ This guide walks through shipping the Windows app and a small public site, in or
 ## 1. Repository and versioning
 
 1. Put the project on GitHub (or another host) so you can point downloads and docs at stable URLs.
-2. Bump `version` in `package.json` before each public release. The NSIS installer filename includes that version (`VeilAssist-Setup-<version>.exe`).
+2. Bump `version` in `package.json` before each public release. The NSIS installer filename includes that version (`VeilAssistSetup<version>.exe`).
 
 ## 2. Build artifacts locally
 
@@ -20,7 +20,7 @@ npm run dist:checksums
 Outputs in `dist/`:
 
 - `VeilAssist.exe` — portable (no installer)
-- `VeilAssist-Setup-<version>.exe` — installer (user can pick install folder)
+- `VeilAssistSetup<version>.exe` — installer (user can pick install folder)
 - `SHA256SUMS.txt` — SHA-256 of those `.exe` files (publish next to downloads)
 
 For faster iteration, use `npm run dev`. Use `npm run dist` when you only need the portable executable.

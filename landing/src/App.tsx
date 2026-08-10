@@ -5,6 +5,7 @@ import { DocsHome } from '@/pages/DocsHome'
 import { DocsGettingStarted } from '@/pages/DocsGettingStarted'
 import { DocsShipping } from '@/pages/DocsShipping'
 import { Home } from '@/pages/Home'
+import { DownloadsPage } from '@/pages/DownloadsPage'
 import { MarketingBuiltForLive } from '@/pages/MarketingBuiltForLive'
 import { MarketingHowItWorks } from '@/pages/MarketingHowItWorks'
 import { DocGuidePage } from '@/pages/DocGuidePage'
@@ -17,6 +18,7 @@ export default function App() {
     <Routes>
       <Route element={<Shell />}>
         <Route index element={<Home />} />
+        <Route path="download" element={<DownloadsPage />} />
         <Route path="how-it-works" element={<MarketingHowItWorks />} />
         <Route path="built-for-live-work" element={<MarketingBuiltForLive />} />
         <Route path="docs" element={<DocsLayout />}>

@@ -42,6 +42,7 @@ export default function LiveTranscriptPanel({ segments = [], visible = true, cla
               'break-words rounded-md px-2 py-1 text-[11px] leading-snug text-zinc-100',
               s.interim ? 'bg-sky-500/5 opacity-90' : 'bg-sky-500/10',
             ].join(' ')}
+            style={{ animation: 'overlayLiveLine 220ms ease-out' }}
           >
             {s.text}
           </p>
@@ -61,6 +62,7 @@ export default function LiveTranscriptPanel({ segments = [], visible = true, cla
               'break-words rounded-md px-2 py-1 text-[11px] leading-snug text-zinc-200',
               s.interim ? 'bg-zinc-800/40 opacity-90' : 'bg-zinc-800/70',
             ].join(' ')}
+            style={{ animation: 'overlayLiveLine 220ms ease-out' }}
           >
             {s.text}
           </p>

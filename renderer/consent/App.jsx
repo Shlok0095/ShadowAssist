@@ -4,6 +4,7 @@
 import React, { useState, useMemo, useEffect } from 'react'
 import { applyUiAccentTheme, normalizeUiAccentId } from '../shared/uiAccentThemes'
 import AppWindowFrame from '../shared/AppWindowFrame'
+import { useBrand } from '../shared/branding'
 
 const api = typeof window !== 'undefined' ? window.shadowAPI : null
 
@@ -30,6 +31,7 @@ const CHECKS = [
 ]
 
 export default function ConsentApp() {
+  const { name } = useBrand()
   const [state, setState] = useState({ c1: false, c2: false, c3: false, c4: false })
   const allOk = useMemo(() => state.c1 && state.c2 && state.c3 && state.c4, [state])
 
@@ -56,7 +58,7 @@ export default function ConsentApp() {
     <AppWindowFrame>
       <div className="settings-root relative z-10 flex min-h-0 flex-1 flex-col overflow-hidden">
         <header className="relative z-20 shrink-0 border-b border-white/[0.06] bg-black/30 px-5 py-4 backdrop-blur-xl lg:px-8">
-          <p className="text-[10px] font-medium uppercase tracking-[0.2em] text-zinc-500">VeilAssist</p>
+          <p className="text-[10px] font-medium uppercase tracking-[0.2em] text-zinc-500">{name}</p>
           <h1 className="font-display mt-0.5 text-xl font-semibold tracking-tight text-white">Consent &amp; safety</h1>
           <p className="mt-1 max-w-xl text-[13px] leading-snug text-zinc-500">
             Read the legal documents, then confirm each statement. This matches the commitments in Settings → Privacy &amp; Data.

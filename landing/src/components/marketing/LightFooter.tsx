@@ -42,9 +42,12 @@ export function LightFooter() {
             <Link to="/built-for-live-work" className="lm-footer__link">
               Built for live work
             </Link>
-            <a href={SITE.releasesRollingUrl} className="lm-footer__link" target="_blank" rel="noopener noreferrer">
+            <a href={SITE.releasesUrl} className="lm-footer__link" target="_blank" rel="noopener noreferrer">
               Releases
             </a>
+            <Link to={SITE.downloadPageUrl} className="lm-footer__link">
+              Download
+            </Link>
           </div>
 
           <div>

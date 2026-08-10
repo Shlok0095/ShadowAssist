@@ -2,6 +2,7 @@
 // Unauthorized copying or distribution is prohibited.
 
 import React, { useState, useEffect, useRef, useCallback, startTransition } from 'react'
+import { flushSync } from 'react-dom'
 import { Eye, Glasses } from 'lucide-react'
 import StatusBar from './components/StatusBar'
 import ResponsePanel from './components/ResponsePanel'
@@ -1121,17 +1122,19 @@ export default function App() {
       if (typeof echoCtxRaw === 'string' && echoCtxRaw.trim()) {
         heardContext = echoCtxRaw.trim()
       }
-      setIsThinking(true)
-      setExpanded(true)
-      setActiveAskSource(askSource)
-      if (heardQuestion) {
-        setMessages((m) =>
-          capMessages([
-            ...m,
-            { role: 'heard', text: heardQuestion, context: heardContext, id: ++msgId.current },
-          ]),
-        )
-      }
+      flushSync(() => {
+        setIsThinking(true)
+        setExpanded(true)
+        setActiveAskSource(askSource)
+        if (heardQuestion) {
+          setMessages((m) =>
+            capMessages([
+              ...m,
+              { role: 'heard', text: heardQuestion, context: heardContext, id: ++msgId.current },
+            ]),
+          )
+        }
+      })
       clearStreamDom()
       if (perfAskT0Ref.current) {
         console.log('UI_AI_START_MS', Date.now() - perfAskT0Ref.current)

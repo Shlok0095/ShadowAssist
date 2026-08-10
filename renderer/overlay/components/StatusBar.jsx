@@ -3,10 +3,12 @@
 
 import React, { memo } from 'react'
 import { Settings } from 'lucide-react'
-import overlayBrandLogo from '../../shared/overlayBrandLogo'
 import AppIcon from '../../shared/AppIcon'
+import overlayBrandLogo from '../../shared/overlayBrandLogo'
+import { useBrand } from '../../shared/branding'
 
 function StatusBar({ sessionOn, ocrStatus, onToggleSession, onOpenSettings, onQuit }) {
+  const { name, hasOverlayLogo, overlayLogoDataUrl } = useBrand()
   const ocrHint =
     ocrStatus === 'loading'
       ? 'Loading screen OCR…'
@@ -18,8 +20,8 @@ function StatusBar({ sessionOn, ocrStatus, onToggleSession, onOpenSettings, onQu
     <div className="crystal-status-row crystal-notch-bar relative flex h-10 items-center justify-between gap-2 pl-2 pr-2.5 select-none">
       <div className="flex shrink-0 items-center gap-2" style={{ WebkitAppRegion: 'no-drag' }}>
         <img
-          src={overlayBrandLogo}
-          alt="VeilAssist"
+          src={hasOverlayLogo && overlayLogoDataUrl ? overlayLogoDataUrl : overlayBrandLogo}
+          alt={name}
           className="crystal-notch-logo"
           draggable={false}
         />
@@ -77,7 +79,7 @@ function StatusBar({ sessionOn, ocrStatus, onToggleSession, onOpenSettings, onQu
             e.stopPropagation()
             onQuit?.()
           }}
-          title="Quit VeilAssist — fully exit"
+          title={`Quit ${name} — fully exit`}
           className="crystal-quit-btn cursor-default flex h-7 shrink-0 items-center justify-center rounded-lg px-2.5 text-[10px] font-semibold transition-all duration-150 active:scale-95"
         >
           Quit

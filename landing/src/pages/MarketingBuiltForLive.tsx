@@ -71,8 +71,8 @@ export function MarketingBuiltForLive() {
             <Link to="/" className={ghostBtnClass}>
               ← Home
             </Link>
-            <GlowCta href={SITE.downloadSetupExeUrl} size="md">
-              Download for Windows
+            <GlowCta href={SITE.downloadPageUrl} size="md" external={false}>
+              Download the desktop app
             </GlowCta>
           </ScrollReveal>
         </div>
