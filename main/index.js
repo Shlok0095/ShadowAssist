@@ -48,6 +48,9 @@ function win32Bg() {
   if (win32BackgroundWindowModule === undefined) {
     try {
       win32BackgroundWindowModule = require('../lib/win32BackgroundWindow')
+      if (!win32BackgroundWindowModule?.isAvailable?.()) {
+        console.warn('[background] win32/user32 unavailable — Task Manager grouping needs koffi')
+      }
     } catch (e) {
       console.warn('[background] win32 helper unavailable:', e?.message || e)
       win32BackgroundWindowModule = null
@@ -656,6 +659,18 @@ function setStealthProtectionMode(enabled) {
   if (
     value &&
     process.platform === 'win32' &&
+    settingsWindow &&
+    !settingsWindow.isDestroyed() &&
+    settingsWindow.isVisible()
+  ) {
+    try {
+      settingsWindow.hide()
+    } catch (_) {}
+  }
+
+  if (
+    value &&
+    process.platform === 'win32' &&
     overlayVisible &&
     overlayWindow &&
     !overlayWindow.isDestroyed()
@@ -663,16 +678,17 @@ function setStealthProtectionMode(enabled) {
     presentOverlayWindow({ inactive: true })
   }
 
-  // Always update every managed window. Previously the Windows overlay branch
-  // skipped an already-open Settings window, leaving it capturable until reopened.
   applyContentProtectionAllWindows()
   applyTaskbarVisibility()
-  if (process.platform === 'win32' && value) {
-    setTimeout(() => {
-      if (!appQuitting && shouldUseBackgroundProcessGrouping()) {
-        refreshAllBackgroundProcessStyles({ fullProcessScan: true })
-      }
-    }, 250)
+  if (process.platform === 'win32') {
+    if (value) {
+      refreshAllBackgroundProcessStyles({ fullProcessScan: true })
+      setTimeout(() => {
+        if (!appQuitting && shouldUseBackgroundProcessGrouping()) {
+          refreshAllBackgroundProcessStyles({ fullProcessScan: true })
+        }
+      }, 250)
+    }
   }
   sendToOverlay('stealth-mode-update', value)
   sendToSettingsWindow('stealth-mode-update', value)
@@ -1111,16 +1127,6 @@ function refreshAllBackgroundProcessStyles({ fullProcessScan = false } = {}) {
   const owner = ensureBackgroundOwnerWindow()
   if (!owner) return
   win32.applyHiddenOwnerStyles(owner)
-  if (
-    overlayWindow &&
-    !overlayWindow.isDestroyed() &&
-    !overlayVisible &&
-    overlayWindow.isVisible()
-  ) {
-    try {
-      overlayWindow.hide()
-    } catch (_) {}
-  }
   syncBackgroundProcessWindows({ fullProcessScan })
 }
 
