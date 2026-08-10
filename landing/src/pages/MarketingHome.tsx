@@ -5,6 +5,8 @@ import { CompatLogos, DockIcons, MacosCard } from '@/components/marketing/MacosC
 import { StarfieldBg } from '@/components/marketing/StarfieldBg'
 import { MEDIA } from '@/config/mediaManifest'
 import { useRevealObserver } from '@/hooks/useReveal'
+import { GlowCta } from '@/components/marketing/GlowCta'
+import { SITE } from '@/config/site'
 
 const STEPS = [
   {
@@ -118,12 +120,15 @@ export function MarketingHome() {
             </p>
 
             <div className="lm-hero__ctas">
+              <GlowCta href={SITE.downloadPageUrl} size="md" external={false}>
+                Download the app
+              </GlowCta>
               <a href="#how-it-works" className="sp-btn-glow">
                 See how it works
               </a>
             </div>
 
-            <p className="lm-hero__platform">Windows 10+ · Download from the header</p>
+            <p className="lm-hero__platform">Windows · macOS · Linux — get the build for your device</p>
           </div>
 
           <div className="lm-hero-product reveal">
@@ -266,8 +271,14 @@ export function MarketingHome() {
           </div>
           <h2 className="lm-final-cta__title">Meeting AI that helps during the call, not after.</h2>
           <p className="lm-final-cta__sub">Try VeilAssist on your next meeting today.</p>
+          <div className="lm-final-cta__btns">
+            <GlowCta href={SITE.downloadPageUrl} size="md" external={false}>
+              Download the desktop app
+            </GlowCta>
+          </div>
           <p className="lm-final-cta__hint">
-            Use <strong>Download</strong> in the navigation bar to get the Windows installer.
+            Windows installer, macOS DMG, Linux AppImage &amp; DEB — pick the build for your device on the
+            <strong> Download</strong> page.
           </p>
         </div>
       </section>
