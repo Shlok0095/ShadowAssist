@@ -3,10 +3,12 @@
 import React from 'react'
 import { createIpcShim } from '../shared/ipcShim'
 import { SettingsPage, SettingsSection } from './SettingsComponents'
+import { useBrand } from '../shared/branding'
 
 const ipc = createIpcShim()
 
 export default function PrivacySettingsPanel({ onSelectIntelligenceTab }) {
+  const { name } = useBrand()
   return (
     <SettingsPage title="Privacy" description="What stays on your device and how to export or delete local data.">
       <SettingsSection title="Intelligence & memory">
@@ -62,7 +64,7 @@ export default function PrivacySettingsPanel({ onSelectIntelligenceTab }) {
             type="button"
             onClick={async () => {
               if (!ipc) return
-              if (!window.confirm('Delete all local VeilAssist data and restart? This cannot be undone.')) return
+              if (!window.confirm(`Delete all local ${name} data and restart? This cannot be undone.`)) return
               await ipc.invoke('delete-all-data-relaunch')
             }}
             className="nat-btn-secondary border-rose-500/30 px-5 py-2.5 text-[13px] text-rose-300 hover:bg-rose-500/10"

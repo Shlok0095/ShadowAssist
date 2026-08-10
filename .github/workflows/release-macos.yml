@@ -1,9 +1,13 @@
 # Pushes to `stag` → rolling prerelease "latest-stag".
 # Pushes to `main` / `master` → rolling release "latest" (production channel).
 # Push tag v*.*.* → versioned release with checksums.
-# Auto-update feed: releases/download/<channel>/latest.yml
+# Auto-update feed: releases/download/<channel>/latest-mac.yml
+#
+# NOTE: macOS auto-update (Squirrel.Mac) requires a code-signed app. Builds
+# here are unsigned (CSC_IDENTITY_AUTO_DISCOVERY=false) and ship as manual
+# install DMGs. Signing readiness: provide CSC_LINK/CSC_KEY_PASSWORD secrets.
 
-name: Release Windows
+name: Release macOS
 
 on:
   workflow_dispatch:
@@ -19,12 +23,12 @@ permissions:
   contents: write
 
 concurrency:
-  group: release-windows-${{ github.ref }}
+  group: release-macos-${{ github.ref }}
   cancel-in-progress: true
 
 jobs:
   build-release:
-    runs-on: windows-latest
+    runs-on: macos-latest
 
     steps:
       - uses: actions/checkout@v4
@@ -58,32 +62,28 @@ jobs:
       - name: Write auto-update channel file
         run: node scripts/write-update-channel.cjs ${{ steps.tag.outputs.CHANNEL }}
 
-      - name: Build installers (NSIS + portable)
-        run: npm run build:win
+      - name: Build DMG + zip
+        run: npm run build:mac
         env:
           CSC_IDENTITY_AUTO_DISCOVERY: 'false'
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           VEILASSIST_GOOGLE_CAL_CLIENT_ID: ${{ secrets.GOOGLE_CAL_CLIENT_ID }}
           VEILASSIST_GOOGLE_CAL_CLIENT_SECRET: ${{ secrets.GOOGLE_CAL_CLIENT_SECRET }}
 
-      - name: Use exact build version in installer names
-        shell: pwsh
+      - name: Verify Hide from Dock policy (activation-policy harness)
+        run: npm run verify:dock
+
+      - name: Use exact build version in artifact names
+        shell: bash
         run: |
-          $pkg = Get-Content package.json -Raw | ConvertFrom-Json
-          $ver = (& node -p "require('./build/version-state.json').last").Trim()
-          $cleaned = (& node -p "`"require('semver').clean(require('./package.json').version, true)`"").Trim()
-          Get-ChildItem dist -Filter "*.exe" | Where-Object { $_.Name -like "*$cleaned*" } | ForEach-Object {
-            $nf = $_.Name.Replace($cleaned, $ver)
-            Rename-Item $_.FullName $nf
-          }
-          $setup = "dist/VeilAssistSetup-$ver.exe"
-          if (-not (Test-Path $setup)) {
-            Get-ChildItem dist
-            throw "Missing $setup"
-          }
-          Copy-Item $setup "dist/VeilAssist-Setup.exe" -Force
-          $portable = "dist/VeilAssist$ver.exe"
-          if (Test-Path $portable) { Copy-Item $portable "dist/VeilAssist.exe" -Force }
+          VER=$(node -p "require('./build/version-state.json').last")
+          CLEANED=$(node -p "require('semver').clean(require('./package.json').version, true)")
+          for f in dist/VeilAssist*.dmg dist/VeilAssist*.zip; do
+            [ -f "$f" ] || continue
+            nf=$(basename "$f" | sed "s/$CLEANED/$VER/")
+            if [ "$nf" != "$(basename "$f")" ]; then mv "$f" "dist/$nf"; fi
+          done
+          ls dist
 
       - name: Record build version state
         if: "!startsWith(github.ref, 'refs/tags/v')"
@@ -105,12 +105,12 @@ jobs:
 
       - uses: actions/upload-artifact@v4
         with:
-          name: veilassist-windows-${{ github.run_id }}
+          name: veilassist-macos-${{ github.run_id }}
           if-no-files-found: warn
           path: |
-            dist/VeilAssist.exe
-            dist/VeilAssist-Setup*.exe
-            dist/latest.yml
+            dist/VeilAssist-*.dmg
+            dist/VeilAssist-*.zip
+            dist/latest-mac.yml
             dist/SHA256SUMS.txt
 
       - name: Rolling GitHub Release (stag / main)
@@ -126,20 +126,19 @@ jobs:
 
             | Asset | Use |
             |------|-----|
-            | **VeilAssist-Setup.exe** | NSIS one-click installer |
-            | **VeilAssist.exe** | Portable |
-            | **latest.yml** | Auto-update metadata |
+            | **VeilAssist-*.dmg** | Drag-and-drop macOS installer |
+            | **VeilAssist-*.zip** | Manual update archive |
+            | **latest-mac.yml** | Auto-update metadata (signing required) |
 
-            **Installer:** `${{ github.server_url }}/${{ github.repository }}/releases/download/${{ steps.tag.outputs.TAG }}/VeilAssist-Setup.exe`
+            **Note:** macOS builds are unsigned. Gatekeeper will require right-click → Open on first launch, and in-app auto-update needs a Developer ID certificate.
           prerelease: ${{ steps.tag.outputs.PRERELEASE }}
           allowUpdates: true
           replacesArtifacts: true
           artifactErrorsFailBuild: true
           artifacts: |
-            dist/VeilAssist-Setup.exe
-            dist/VeilAssist-Setup-*.exe
-            dist/VeilAssist.exe
-            dist/latest.yml
+            dist/VeilAssist-*.dmg
+            dist/VeilAssist-*.zip
+            dist/latest-mac.yml
             dist/SHA256SUMS.txt
 
       - name: Versioned GitHub Release (git tag v*.*.*)
@@ -148,9 +147,9 @@ jobs:
         with:
           generate_release_notes: true
           files: |
-            dist/VeilAssist.exe
-            dist/VeilAssist-Setup-*.exe
-            dist/latest.yml
+            dist/VeilAssist-*.dmg
+            dist/VeilAssist-*.zip
+            dist/latest-mac.yml
             dist/SHA256SUMS.txt
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

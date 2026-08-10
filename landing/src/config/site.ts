@@ -16,9 +16,6 @@ export const DOWNLOAD_ROUTES = {
   windowsPortable: '/download/portable',
 } as const
 
-/** App marketing version — keep in sync with electron package.json. */
-export const APP_VERSION = '1.0.1'
-
 function releaseAssetUrl(file: string, tag = rollingTag) {
   return `https://github.com/${repoOwner}/${repoName}/releases/download/${tag}/${file}`
 }
@@ -38,11 +35,18 @@ export const SITE = {
   get repoUrl() {
     return `https://github.com/${this.repoOwner}/${this.repoName}`
   },
+  get releasesUrl() {
+    return `${this.repoUrl}/releases`
+  },
   get releasesLatestUrl() {
     return `${this.repoUrl}/releases/tag/latest`
   },
   get releasesRollingUrl() {
     return `${this.repoUrl}/releases/tag/${this.rollingTag}`
+  },
+  /** Download center — lists every platform/artifact currently published. */
+  get downloadPageUrl() {
+    return '/download'
   },
   /** Primary installer CTA — beta path on stag, production path on main/latest. */
   get downloadSetupExeUrl() {

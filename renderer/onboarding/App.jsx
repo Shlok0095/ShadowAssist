@@ -5,6 +5,7 @@ import React, { useState, useEffect, useMemo } from 'react'
 import { applyUiAccentTheme, normalizeUiAccentId } from '../shared/uiAccentThemes'
 import { createIpcShim } from '../shared/ipcShim'
 import AppWindowFrame from '../shared/AppWindowFrame'
+import { useBrand } from '../shared/branding'
 
 const ipc = createIpcShim()
 
@@ -27,6 +28,7 @@ const BYOK_CHECKS = [
 ]
 
 export default function Onboarding() {
+  const { name } = useBrand()
   useEffect(() => {
     if (!ipc) return
     ipc.invoke('get-store', 'uiAccentTheme').then((id) => applyUiAccentTheme(document.documentElement, normalizeUiAccentId(id)))
@@ -79,7 +81,7 @@ export default function Onboarding() {
       <div className="settings-root relative z-10 flex min-h-0 flex-1 flex-col overflow-hidden text-zinc-300">
         <header className="relative z-20 shrink-0 border-b border-white/[0.06] bg-black/30 px-5 py-4 backdrop-blur-xl lg:px-8">
           <p className="text-[10px] font-medium uppercase tracking-[0.2em] text-zinc-500">First launch</p>
-          <h1 className="font-display mt-0.5 text-xl font-semibold tracking-tight text-white">VeilAssist</h1>
+          <h1 className="font-display mt-0.5 text-xl font-semibold tracking-tight text-white">{name}</h1>
           <p className="mt-1 max-w-md text-[13px] leading-snug text-zinc-500">
             Bring your own API key (BYOK). The app never includes vendor keys. A successful connection test is required before you continue.
           </p>
@@ -194,7 +196,7 @@ export default function Onboarding() {
               title={!canStart ? 'Check all boxes, enter your key, and run Test until it succeeds' : ''}
               className="btn-glow w-full py-2.5 text-[13px] font-semibold disabled:cursor-not-allowed disabled:opacity-35"
             >
-              Start VeilAssist
+              Start {name}
             </button>
           </div>
         </div>

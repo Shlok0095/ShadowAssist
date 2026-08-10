@@ -50,6 +50,14 @@ contextBridge.exposeInMainWorld('shadowAPI', {
   getProtection: () => ipcRenderer.invoke('protection:get'),
   invoke: (channel, ...args) => ipcRenderer.invoke(channel, ...args),
   send: (channel, ...args) => ipcRenderer.send(channel, ...args),
+  /** Synchronous brand snapshot (sendSync) so first paint shows the custom brand. */
+  getBrandingSync: () => {
+    try {
+      return ipcRenderer.sendSync('branding:get-sync')
+    } catch (_) {
+      return null
+    }
+  },
   on: (channel, listener) => {
     const wrapped = (_event, ...args) => listener(...args)
     ipcRenderer.on(channel, wrapped)

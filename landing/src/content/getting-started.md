@@ -4,12 +4,13 @@ Everything below is served on this site — no GitHub wiki or raw files to open.
 
 ## Download
 
-Use **Download** in the header or the home page. It points at the rolling **stag** build on GitHub (tag **`latest-stag`**), not the generic “Latest” release (GitHub ignores prereleases there).
+Open the **Download** page (header button or [direct link](/download)) and pick the build for your device — Windows, macOS, or Linux. The page lists every artifact currently published to GitHub Releases, with the rolling **stag** build highlighted when it is the newest.
 
-- **Installer (`VeilAssist-Setup.exe`)** — stable filename from CI; classic wizard: license, folder, Start menu entry, optional desktop shortcut on the last page.
-- **Portable (`VeilAssist.exe`)** — one file, no install. Good for USB or locked-down machines.
+- **Windows** — `VeilAssist-Setup.exe` installer or portable `VeilAssist.exe`.
+- **macOS** — `VeilAssist-mac.dmg` (drag-and-drop install) or zip archive.
+- **Linux** — `VeilAssist-linux.AppImage` (portable) or `.deb` package.
 
-Assets and **SHA256SUMS.txt** for that build: [VeilAssist releases (latest-stag)](https://github.com/Shlok0095/VeilAssist/releases/tag/latest-stag). Verify hashes when SmartScreen or AV makes you nervous.
+Assets and **SHA256SUMS.txt** for a build: [VeilAssist releases](https://github.com/Shlok0095/VeilAssist/releases). Verify hashes when SmartScreen or AV makes you nervous.
 
 ## First launch
 

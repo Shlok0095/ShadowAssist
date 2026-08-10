@@ -2,6 +2,7 @@
 // Meeting toast — dark, sharp card; platform marks (SVG).
 
 import brandLogo from '../shared/brandLogo.js'
+import { resolveBrandNow } from '../shared/branding.jsx'
 
 const root = document.getElementById('root')
 /** Last payload `eventId` — sent on dismiss so main can suppress repeats. */
@@ -62,13 +63,15 @@ function render(data) {
   const headline = String(data?.headline || data?.title || 'Meeting detected').slice(0, 48)
   const platform = String(data?.platform || 'generic')
   const logo = platformSvg(platform)
+  const brand = resolveBrandNow()
+  const brandName = brand.name || 'VeilAssist'
   root.innerHTML = `
     <div class="wrap">
       <div class="top">
         <button type="button" class="close" aria-label="Close">×</button>
         <div class="brand">
-          <img class="brand-logo" src="${brandLogo}" alt="" draggable="false" />
-          <span>VeilAssist</span>
+          <img class="brand-logo" src="${brand.hasCustomLogo && brand.logoDataUrl ? brand.logoDataUrl : brandLogo}" alt="" draggable="false" />
+          <span>${escapeHtml(brandName)}</span>
         </div>
       </div>
       <div class="row">

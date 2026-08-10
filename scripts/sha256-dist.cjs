@@ -1,5 +1,6 @@
 /**
- * Write dist/SHA256SUMS.txt for Windows artifacts (portable + NSIS installer).
+ * Write dist/SHA256SUMS.txt for packaged installers/archives across all
+ * supported platforms (Windows, macOS, Linux).
  */
 const crypto = require('crypto')
 const fs = require('fs')
@@ -14,10 +15,14 @@ if (!fs.existsSync(dist)) {
 
 const names = fs
   .readdirSync(dist)
-  .filter((n) => n.endsWith('.exe') && !n.includes('unpacked'))
+  .filter(
+    (n) =>
+      !n.includes('unpacked') &&
+      (n.endsWith('.exe') || n.endsWith('.dmg') || n.endsWith('.zip') || n.endsWith('.AppImage') || n.endsWith('.deb')),
+  )
 
 if (names.length === 0) {
-  console.error('[sha256-dist] No .exe files in dist/.')
+  console.error('[sha256-dist] No installer artifacts found in dist/.')
   process.exit(1)
 }
 

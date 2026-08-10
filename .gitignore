@@ -1,7 +1,5 @@
 # Dependencies & build output
 node_modules/
-dist/
-dist-v100/
 out/
 build/*
 !build/update-channel.txt
@@ -36,3 +34,7 @@ eng.traineddata
 .vscode/
 *.swp
 .vercel/
+
+# Graphify knowledge graph (local dev artifact)
+graphify-out/
+!build/version-state.json
