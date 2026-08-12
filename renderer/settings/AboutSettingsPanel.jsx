@@ -35,14 +35,19 @@ export default function AboutSettingsPanel({ logoSrc, appVersion }) {
       .catch(() => {})
   }, [api])
 
+  const showBrandingResult = (next, fallback) => {
+    if (next?.error) setMessage(next.error)
+    else if (next?.notice) setMessage(next.notice)
+    else setMessage(fallback)
+  }
+
   const saveName = async () => {
     if (!api || saving) return
     setSaving(true)
     setMessage('')
     try {
       const next = await api.invoke('branding:set-name', nameDraft)
-      if (next?.error) setMessage(next.error)
-      else setMessage('Display name saved — applied instantly.')
+      showBrandingResult(next, 'Display name saved — applied instantly.')
     } catch (e) {
       setMessage(e?.message || 'Failed to save name.')
     } finally {
@@ -55,8 +60,7 @@ export default function AboutSettingsPanel({ logoSrc, appVersion }) {
     setMessage('')
     try {
       const next = await api.invoke('branding:pick-logo', kind)
-      if (next?.error) setMessage(next.error)
-      else setMessage(`Logo applied — tray, taskbar/window icons, and in-app chrome updated.`)
+      showBrandingResult(next, 'Logo applied — tray, taskbar/window icons, and in-app chrome updated.')
     } catch (e) {
       setMessage(e?.message || 'Failed to apply logo.')
     }
@@ -67,9 +71,11 @@ export default function AboutSettingsPanel({ logoSrc, appVersion }) {
     setMessage('')
     try {
       const next = await api.invoke('branding:apply-preset', presetId)
-      if (next?.error) setMessage(next.error)
-      else if (presetId === 'default') setMessage('App logo reset to VeilAssist default.')
-      else setMessage('Preset logo applied — tray, taskbar/window icons, and in-app chrome updated.')
+      const fallback =
+        presetId === 'default'
+          ? 'App logo reset to VeilAssist default.'
+          : 'Preset logo applied — tray, taskbar/window icons, and in-app chrome updated.'
+      showBrandingResult(next, fallback)
     } catch (e) {
       setMessage(e?.message || 'Failed to apply preset logo.')
     }
@@ -83,8 +89,8 @@ export default function AboutSettingsPanel({ logoSrc, appVersion }) {
     if (!window.confirm('Reset display name and logos back to default VeilAssist branding?')) return
     setMessage('')
     try {
-      await api.invoke('branding:reset')
-      setMessage('Branding reset to default.')
+      const next = await api.invoke('branding:reset')
+      showBrandingResult(next, 'Branding reset to default.')
     } catch (e) {
       setMessage(e?.message || 'Failed to reset branding.')
     }

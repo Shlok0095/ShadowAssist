@@ -56,6 +56,7 @@ const store = require('../lib/store')
 const { ENCRYPTED_KEYS } = store
 const branding = require('../lib/branding')
 const brandPresets = require('../lib/brandPresets')
+const win32ExeBranding = require('../lib/win32ExeBranding')
 const { setDockVisibility, isDockHidden } = require('./dockPolicy')
 
 // macOS: apply the Dock policy BEFORE the first frame so the Dock icon never
@@ -324,6 +325,111 @@ function getWindowIcon() {
   return custom || APP_ICON
 }
 
+/** Normalized nativeImage (256px) for taskbar, tray, and Task Manager window chrome. */
+function getBrandIconImage() {
+  const iconPath = getWindowIcon()
+  if (!iconPath) return null
+  try {
+    const img = nativeImage.createFromPath(iconPath)
+    if (img.isEmpty()) return null
+    const { width, height } = img.getSize()
+    if (width >= 256 && height >= 256) return img
+    return img.resize({ width: 256, height: 256, quality: 'best' })
+  } catch (_) {
+    return null
+  }
+}
+
+/** Apply display name + icon to a single BrowserWindow (taskbar / TM Apps row). */
+function applyBrandingToWindow(win, { title } = {}) {
+  if (!win || win.isDestroyed()) return
+  if (title) {
+    try {
+      win.setTitle(title)
+    } catch (_) {}
+  }
+  const iconImg = getBrandIconImage()
+  if (iconImg) {
+    try {
+      win.setIcon(iconImg)
+    } catch (_) {}
+  }
+}
+
+/** Keep every HWND title/icon aligned with the current brand (taskbar ↔ Task Manager Apps). */
+function applyBrandingToAllWindows() {
+  const name = getBrandName()
+  applyBrandingToWindow(overlayWindow, { title: name })
+  applyBrandingToWindow(settingsWindow, { title: `${name} — Settings` })
+  applyBrandingToWindow(backgroundOwnerWindow, { title: name })
+  applyBrandingToWindow(globalChatWindow, { title: `${name} — Global Chat` })
+  applyBrandingToWindow(launcherWindow, { title: `${name} Launcher` })
+  applyBrandingToWindow(consentWindow, { title: name })
+  applyBrandingToWindow(onboardingWindow, { title: name })
+  applyBrandingToWindow(meetingToastWindow, { title: name })
+  if (process.platform === 'win32') {
+    try {
+      applyTaskbarVisibility()
+    } catch (_) {}
+  }
+}
+
+/** Icon file for embedding into the Windows executable (ICO/PNG — presets prefer native .ico). */
+function getBrandLogoSrcForExePatch() {
+  const presetId = String(store.get('brandAppLogoPreset') || '').trim()
+  if (presetId) {
+    const presetPath = brandPresets.resolveAppLogoPresetPath(
+      presetId,
+      app.getAppPath(),
+      process.resourcesPath,
+      app.isPackaged,
+    )
+    if (presetPath) return presetPath
+  }
+  const custom = branding.getBrandLogoSrcPath(app.getPath('userData'), 'app')
+  if (custom) return custom
+  if (app.isPackaged) {
+    const packagedIco = path.join(process.resourcesPath, 'app.ico')
+    if (fs.existsSync(packagedIco)) return packagedIco
+  }
+  const buildIco = path.join(__dirname, '..', 'build', 'app.ico')
+  if (fs.existsSync(buildIco)) return buildIco
+  return APP_ICON || ''
+}
+
+async function tryApplyWindowsExecutableBranding() {
+  if (process.platform !== 'win32') return { skipped: true }
+  const iconPath = getBrandLogoSrcForExePatch()
+  const displayName = getBrandName()
+  if (!iconPath) {
+    return { ok: false, error: 'No icon available for Task Manager branding.' }
+  }
+  return win32ExeBranding.applyBrandingToExecutable({
+    exePath: process.execPath,
+    userDataPath: app.getPath('userData'),
+    displayName,
+    iconPath,
+  })
+}
+
+async function finalizeBrandingIpcResponse({ patchExe = true } = {}) {
+  applyRuntimeBranding()
+  sendBrandingUpdateToWindows()
+  let notice = ''
+  if (patchExe) {
+    try {
+      const exeResult = await tryApplyWindowsExecutableBranding()
+      notice = win32ExeBranding.noticeFromResult(exeResult)
+      if (!exeResult?.ok && exeResult?.error) {
+        console.warn('[branding] exe patch:', exeResult.error)
+      }
+    } catch (e) {
+      console.warn('[branding] exe patch failed:', e?.message || e)
+    }
+  }
+  return { ...getBrandingSnapshot(), ...(notice ? { notice } : {}) }
+}
+
 let brandDataUrlCache = {}
 /** Base64 data URL (max 256px) for renderer <img> usage; cached per source path. */
 function loadBrandLogoDataUrl(kind) {
@@ -354,10 +460,15 @@ function invalidateBrandDataUrlCache() {
 function writeBrandLogoFromImagePath(srcPath, kind = 'app') {
   const img = nativeImage.createFromPath(srcPath)
   if (img.isEmpty()) throw new Error('Could not load image file.')
+  const { width, height } = img.getSize()
+  const normalized =
+    width >= 256 && height >= 256
+      ? img
+      : img.resize({ width: 256, height: 256, quality: 'best' })
   const destDir = branding.getBrandAssetsDir(app.getPath('userData'))
   fs.mkdirSync(destDir, { recursive: true })
   const dest = path.join(destDir, branding.getBrandLogoFileName(kind))
-  fs.writeFileSync(dest, img.toPNG())
+  fs.writeFileSync(dest, normalized.toPNG())
 }
 
 /** Snapshot sent to renderers / returned by IPC. */
@@ -457,20 +568,9 @@ function applyRuntimeBranding() {
       setupApplicationMenu()
     } catch (_) {}
   }
-  // Refresh taskbar / window icons on every open window (Windows + Linux).
+  // Refresh taskbar / window icons and titles on every open window (Windows + Linux).
   try {
-    const iconPath = getWindowIcon()
-    if (iconPath) {
-      const iconImg = nativeImage.createFromPath(iconPath)
-      if (!iconImg.isEmpty()) {
-        for (const w of BrowserWindow.getAllWindows()) {
-          if (!w || w.isDestroyed()) continue
-          try {
-            w.setIcon(iconImg)
-          } catch (_) {}
-        }
-      }
-    }
+    applyBrandingToAllWindows()
   } catch (_) {}
   if (tray) {
     try {
@@ -625,13 +725,11 @@ function createTrayIcon(active = false) {
     img.setTemplateImage(true)
     return img
   }
-  // Windows / Linux: use the user's custom app logo when branding is active,
-  // so the tray icon matches the rest of the app. Falls back to the status dot.
-  const brandPath = branding.getBrandLogoSrcPath(app.getPath('userData'), 'app')
-  if (brandPath) {
+  // Windows / Linux: same 256px brand asset as taskbar — tray scales down for DPI.
+  const brandImg = getBrandIconImage()
+  if (brandImg) {
     try {
-      const brandImg = nativeImage.createFromPath(brandPath)
-      if (!brandImg.isEmpty()) return brandImg.resize({ width: 16, height: 16 })
+      return brandImg.resize({ width: 32, height: 32, quality: 'best' })
     } catch (_) {}
   }
   const size = 16
@@ -739,8 +837,10 @@ function createOverlayWindow() {
   savedOpacity = store.get('overlayOpacity') ?? 0.92
 
   const owner = getBackgroundOwnerParent()
+  const brandTitle = getBrandName()
   const winOpts = {
     width: w, height: h, x, y,
+    title: brandTitle,
     transparent: true, frame: false, alwaysOnTop: true, skipTaskbar: true,
     focusable: true, hasShadow: false, resizable: true,
     minWidth: 280, minHeight: 180, maxWidth: 860, maxHeight: 940,
@@ -1476,10 +1576,13 @@ function ensureBackgroundOwnerWindow() {
       frame: false,
       skipTaskbar: true,
       focusable: false,
+      title: getBrandName(),
       type: 'toolbar',
+      ...(getWindowIcon() ? { icon: getWindowIcon() } : {}),
       webPreferences: { nodeIntegration: false, contextIsolation: true },
     })
     backgroundOwnerWindow.setMenuBarVisibility(false)
+    applyBrandingToWindow(backgroundOwnerWindow, { title: getBrandName() })
     win32Bg()?.applyHiddenOwnerStyles(backgroundOwnerWindow)
   } catch (e) {
     console.warn('[background-owner] create failed:', e?.message || e)
@@ -1986,6 +2089,7 @@ function createSettingsWindow() {
     backgroundColor: '#00000000',
     roundedCorners: true,
     skipTaskbar: true,
+    title: `${getBrandName()} — Settings`,
     ...(getWindowIcon() ? { icon: getWindowIcon() } : {}),
     webPreferences: {
       preload: preloadPath,
@@ -3240,11 +3344,9 @@ function setupIPC() {
     event.returnValue = getBrandingSnapshot()
   })
   ipcMain.handle('branding:get', () => getBrandingSnapshot())
-  ipcMain.handle('branding:set-name', (_event, raw) => {
+  ipcMain.handle('branding:set-name', async (_event, raw) => {
     store.set('brandName', branding.normalizeBrandNameForStore(raw))
-    applyRuntimeBranding()
-    sendBrandingUpdateToWindows()
-    return getBrandingSnapshot()
+    return finalizeBrandingIpcResponse({ patchExe: true })
   })
   ipcMain.handle('branding:pick-logo', async (_event, kind) => {
     const target = kind === 'overlay' ? 'overlay' : 'app'
@@ -3277,13 +3379,11 @@ function setupIPC() {
       )
       if (target === 'app') store.set('brandAppLogoPreset', '')
       invalidateBrandDataUrlCache()
-      applyRuntimeBranding()
-      sendBrandingUpdateToWindows()
     } catch (e) {
       console.warn('[branding] pick-logo failed:', e?.message || e)
       return { ...getBrandingSnapshot(), error: e?.message || 'Failed to apply logo.' }
     }
-    return getBrandingSnapshot()
+    return finalizeBrandingIpcResponse({ patchExe: target === 'app' })
   })
   ipcMain.handle('branding:list-presets', () => {
     const presets = brandPresets.listAppLogoPresets(
@@ -3309,7 +3409,7 @@ function setupIPC() {
       }
     })
   })
-  ipcMain.handle('branding:apply-preset', (_event, presetId) => {
+  ipcMain.handle('branding:apply-preset', async (_event, presetId) => {
     const id = String(presetId || '').trim()
     try {
       if (!id || id === 'default') {
@@ -3331,15 +3431,13 @@ function setupIPC() {
         store.set('brandAppLogoPreset', id)
       }
       invalidateBrandDataUrlCache()
-      applyRuntimeBranding()
-      sendBrandingUpdateToWindows()
     } catch (e) {
       console.warn('[branding] apply-preset failed:', e?.message || e)
       return { ...getBrandingSnapshot(), error: e?.message || 'Failed to apply preset logo.' }
     }
-    return getBrandingSnapshot()
+    return finalizeBrandingIpcResponse({ patchExe: true })
   })
-  ipcMain.handle('branding:reset', () => {
+  ipcMain.handle('branding:reset', async () => {
     store.set('brandName', '')
     store.set('brandLogoCustomized', false)
     store.set('brandOverlayLogoCustomized', false)
@@ -3347,9 +3445,7 @@ function setupIPC() {
     branding.removeBrandLogo(app.getPath('userData'), 'app')
     branding.removeBrandLogo(app.getPath('userData'), 'overlay')
     invalidateBrandDataUrlCache()
-    applyRuntimeBranding()
-    sendBrandingUpdateToWindows()
-    return getBrandingSnapshot()
+    return finalizeBrandingIpcResponse({ patchExe: true })
   })
   ipcMain.handle('help:get-doc', () => {
     try {
@@ -4344,6 +4440,19 @@ async function initApp() {
       .catch(() => callback({}))
   })
   seedOverlayPositionIfNeeded()
+  if (process.platform === 'win32') {
+    try {
+      const pending = win32ExeBranding.applyPendingBrandingOnStartup(app.getPath('userData'))
+      if (pending?.ok) {
+        console.log('[branding] applied pending executable branding from last session')
+      }
+    } catch (e) {
+      console.warn('[branding] pending exe branding failed:', e?.message || e)
+    }
+    void tryApplyWindowsExecutableBranding().catch((e) => {
+      console.warn('[branding] startup exe branding failed:', e?.message || e)
+    })
+  }
   setupTray()
   applyRuntimeBranding()
   setupHotkeys()
