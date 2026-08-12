@@ -139,7 +139,7 @@ export default function AiProviderPanel({
 
                 {chatMf && chatOpts.length > 0 && (
                   <div className="space-y-2">
-                    {(chatVendor.id === 'groq' || chatVendor.id === 'nvidia') && (
+                    {(chatVendor.id === 'groq' || chatVendor.id === 'nvidia' || chatVendor.id === 'openrouter') && (
                       <p className="text-[11px] leading-relaxed text-zinc-500">
                         Vision models only — Ask AI sends screen captures with your question.
                       </p>
