@@ -19,10 +19,21 @@ export default function AboutSettingsPanel({ logoSrc, appVersion }) {
   const [nameDraft, setNameDraft] = useState(brand.name)
   const [saving, setSaving] = useState(false)
   const [message, setMessage] = useState('')
+  const [logoPresets, setLogoPresets] = useState([])
 
   useEffect(() => {
     setNameDraft(brand.name)
   }, [brand.name])
+
+  useEffect(() => {
+    if (!api) return
+    api
+      .invoke('branding:list-presets')
+      .then((list) => {
+        if (Array.isArray(list)) setLogoPresets(list)
+      })
+      .catch(() => {})
+  }, [api])
 
   const saveName = async () => {
     if (!api || saving) return
@@ -45,11 +56,27 @@ export default function AboutSettingsPanel({ logoSrc, appVersion }) {
     try {
       const next = await api.invoke('branding:pick-logo', kind)
       if (next?.error) setMessage(next.error)
-      else setMessage(`Logo applied — used everywhere (tray, dock, windows).`)
+      else setMessage(`Logo applied — tray, taskbar/window icons, and in-app chrome updated.`)
     } catch (e) {
       setMessage(e?.message || 'Failed to apply logo.')
     }
   }
+
+  const applyLogoPreset = async (presetId) => {
+    if (!api) return
+    setMessage('')
+    try {
+      const next = await api.invoke('branding:apply-preset', presetId)
+      if (next?.error) setMessage(next.error)
+      else if (presetId === 'default') setMessage('App logo reset to VeilAssist default.')
+      else setMessage('Preset logo applied — tray, taskbar/window icons, and in-app chrome updated.')
+    } catch (e) {
+      setMessage(e?.message || 'Failed to apply preset logo.')
+    }
+  }
+
+  const appLogoPresetValue = brand.appLogoPreset
+    || (brand.hasCustomLogo ? 'custom' : 'default')
 
   const resetBranding = async () => {
     if (!api) return
@@ -65,6 +92,42 @@ export default function AboutSettingsPanel({ logoSrc, appVersion }) {
 
   const appLogo = brand.hasCustomLogo && brand.logoDataUrl ? brand.logoDataUrl : logoSrc
   const overlayLogo = brand.hasOverlayLogo && brand.overlayLogoDataUrl ? brand.overlayLogoDataUrl : logoSrc
+
+  const hostPresets = logoPresets.filter((p) => p.group === 'host')
+  const appPresets = logoPresets.filter((p) => p.group !== 'host')
+
+  const renderPresetButton = (preset) => {
+    const selected = appLogoPresetValue === preset.id
+    return (
+      <button
+        key={preset.id}
+        type="button"
+        title={preset.label}
+        onClick={() => void applyLogoPreset(preset.id)}
+        className="flex flex-col items-center gap-1 rounded-lg border p-2 transition-colors hover:bg-white/[0.04]"
+        style={{
+          borderColor: selected ? 'rgba(139,92,246,0.55)' : 'var(--border-subtle)',
+          background: selected ? 'rgba(139,92,246,0.12)' : 'var(--bg-surface)',
+        }}
+      >
+        {preset.previewDataUrl ? (
+          <img
+            src={preset.previewDataUrl}
+            alt=""
+            className="h-8 w-8 rounded object-contain"
+            draggable={false}
+          />
+        ) : (
+          <span className="flex h-8 w-8 items-center justify-center rounded text-[10px]" style={{ background: 'var(--bg-input)' }}>
+            ?
+          </span>
+        )}
+        <span className="text-[9px] leading-tight text-center line-clamp-2" style={{ color: 'var(--text-secondary)' }}>
+          {preset.label}
+        </span>
+      </button>
+    )
+  }
 
   return (
     <SettingsPage title="About" description={`${brand.name} — private AI overlay for meetings and interviews.`}>
@@ -114,9 +177,9 @@ export default function AboutSettingsPanel({ logoSrc, appVersion }) {
 
       <SettingsSection title="Branding">
         <p className="text-[12px] leading-relaxed" style={{ color: 'var(--text-secondary)' }}>
-          Customize the display name and logos. Changes apply instantly to the tray, dock, windows, and
-          notifications, and persist across restarts. The OS-level name (executable / installer / app
-          bundle) is fixed at build time.
+          Customize this app&apos;s display name and logos. The app logo updates the system tray,
+          taskbar/window icons (when visible), dock, and in-app chrome. Changes persist across restarts.
+          The OS executable / installer name stays fixed at build time.
         </p>
 
         <div className="mt-4 space-y-4">
@@ -149,21 +212,70 @@ export default function AboutSettingsPanel({ logoSrc, appVersion }) {
           </div>
 
           <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
-            <div className="flex items-center gap-3 rounded-lg border p-3" style={{ borderColor: 'var(--border-subtle)', background: 'var(--bg-input)' }}>
-              <img src={appLogo} alt="" className="h-10 w-10 rounded-lg object-contain" draggable={false} />
-              <div className="min-w-0 flex-1">
-                <p className="text-[12px] font-semibold" style={{ color: 'var(--text-primary)' }}>App logo</p>
-                <p className="truncate text-[11px]" style={{ color: 'var(--text-secondary)' }}>
-                  {brand.hasCustomLogo ? 'Custom logo active' : 'Using bundled logo'}
-                </p>
+            <div className="rounded-lg border p-3 sm:col-span-2" style={{ borderColor: 'var(--border-subtle)', background: 'var(--bg-input)' }}>
+              <div className="flex items-center gap-3">
+                <img src={appLogo} alt="" className="h-10 w-10 rounded-lg object-contain" draggable={false} />
+                <div className="min-w-0 flex-1">
+                  <p className="text-[12px] font-semibold" style={{ color: 'var(--text-primary)' }}>App logo</p>
+                  <p className="truncate text-[11px]" style={{ color: 'var(--text-secondary)' }}>
+                    Tray, taskbar &amp; window icons
+                  </p>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => void pickLogo('app')}
+                  className="shrink-0 rounded-lg border border-white/10 px-3 py-1.5 text-[11px] font-medium text-zinc-200 transition-colors hover:bg-white/[0.06]"
+                >
+                  Choose file…
+                </button>
               </div>
-              <button
-                type="button"
-                onClick={() => void pickLogo('app')}
-                className="shrink-0 rounded-lg border border-white/10 px-3 py-1.5 text-[11px] font-medium text-zinc-200 transition-colors hover:bg-white/[0.06]"
-              >
-                Choose…
-              </button>
+              <div className="mt-3 space-y-4">
+                <div>
+                  <span className="text-[11px] font-semibold uppercase tracking-wider" style={{ color: 'var(--text-secondary)' }}>
+                    Host process icons
+                  </span>
+                  <p className="mt-1 text-[11px] leading-relaxed" style={{ color: 'var(--text-secondary)' }}>
+                    Generic white-window icons from <code className="text-[10px]">C:\Windows\System32</code> host EXEs
+                    (e.g. taskhostw.exe — &quot;Host Process for Windows Tasks&quot;).
+                  </p>
+                  <div className="mt-2 grid grid-cols-4 gap-2 sm:grid-cols-6">
+                    {hostPresets.map(renderPresetButton)}
+                  </div>
+                </div>
+
+                <div>
+                  <span className="text-[11px] font-semibold uppercase tracking-wider" style={{ color: 'var(--text-secondary)' }}>
+                    Windows app icons
+                  </span>
+                  <p className="mt-1 text-[11px] leading-relaxed" style={{ color: 'var(--text-secondary)' }}>
+                    Branded icons from local install paths (Calculator, Notepad, Settings, Edge, etc.).
+                  </p>
+                  <div className="mt-2 grid grid-cols-4 gap-2 sm:grid-cols-6">
+                    <button
+                      type="button"
+                      title="VeilAssist (default)"
+                      onClick={() => void applyLogoPreset('default')}
+                      className="flex flex-col items-center gap-1 rounded-lg border p-2 transition-colors hover:bg-white/[0.04]"
+                      style={{
+                        borderColor: appLogoPresetValue === 'default' ? 'rgba(139,92,246,0.55)' : 'var(--border-subtle)',
+                        background: appLogoPresetValue === 'default' ? 'rgba(139,92,246,0.12)' : 'var(--bg-surface)',
+                      }}
+                    >
+                      <img src={logoSrc} alt="" className="h-8 w-8 rounded object-contain" draggable={false} />
+                      <span className="text-[9px] leading-tight text-center" style={{ color: 'var(--text-secondary)' }}>
+                        Default
+                      </span>
+                    </button>
+                    {appPresets.map(renderPresetButton)}
+                  </div>
+                </div>
+
+                {brand.hasCustomLogo && !brand.appLogoPreset ? (
+                  <p className="text-[11px]" style={{ color: 'var(--text-secondary)' }}>
+                    Custom file selected — pick a preset above to replace it.
+                  </p>
+                ) : null}
+              </div>
             </div>
 
             <div className="flex items-center gap-3 rounded-lg border p-3" style={{ borderColor: 'var(--border-subtle)', background: 'var(--bg-input)' }}>
@@ -171,7 +283,7 @@ export default function AboutSettingsPanel({ logoSrc, appVersion }) {
               <div className="min-w-0 flex-1">
                 <p className="text-[12px] font-semibold" style={{ color: 'var(--text-primary)' }}>Overlay logo</p>
                 <p className="truncate text-[11px]" style={{ color: 'var(--text-secondary)' }}>
-                  {brand.hasOverlayLogo ? 'Custom overlay logo active' : 'Using bundled logo'}
+                  {brand.hasOverlayLogo ? 'Custom overlay chrome' : 'Default overlay chrome'}
                 </p>
               </div>
               <button
@@ -179,7 +291,7 @@ export default function AboutSettingsPanel({ logoSrc, appVersion }) {
                 onClick={() => void pickLogo('overlay')}
                 className="shrink-0 rounded-lg border border-white/10 px-3 py-1.5 text-[11px] font-medium text-zinc-200 transition-colors hover:bg-white/[0.06]"
               >
-                Choose…
+                Change…
               </button>
             </div>
           </div>

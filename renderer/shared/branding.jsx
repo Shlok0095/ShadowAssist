@@ -13,6 +13,7 @@ const DEFAULT_BRAND = {
   overlayLogoDataUrl: '',
   hasCustomLogo: false,
   hasOverlayLogo: false,
+  appLogoPreset: '',
 }
 
 let state = { ...DEFAULT_BRAND }
@@ -38,6 +39,7 @@ function apply(next) {
     overlayLogoDataUrl: typeof next.overlayLogoDataUrl === 'string' ? next.overlayLogoDataUrl : '',
     hasCustomLogo,
     hasOverlayLogo,
+    appLogoPreset: typeof next.appLogoPreset === 'string' ? next.appLogoPreset : '',
   }
   emit()
 }

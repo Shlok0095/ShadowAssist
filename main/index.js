@@ -55,6 +55,7 @@ if (!gotLock) {
 const store = require('../lib/store')
 const { ENCRYPTED_KEYS } = store
 const branding = require('../lib/branding')
+const brandPresets = require('../lib/brandPresets')
 const { setDockVisibility, isDockHidden } = require('./dockPolicy')
 
 // macOS: apply the Dock policy BEFORE the first frame so the Dock icon never
@@ -121,7 +122,12 @@ const { parsePlaybookFile } = require('../lib/playbookParser')
 const contextVectorStore = require('../lib/contextVectorStore')
 const { detectMeetingForegroundOrScan, MEETING_POLL_MS } = require('../lib/meetingForegroundWindows')
 const googleCalendar = require('../lib/googleCalendar')
-const { routeContext, formatAnswerContractBlock, formatDomainRoutingBlock } = require('../lib/contextRouter')
+const {
+  routeContext,
+  formatAnswerContractBlock,
+  formatDomainRoutingBlock,
+  LAYER_BUDGET,
+} = require('../lib/contextRouter')
 const { modeTemplateFromPrompt } = require('../lib/answerPlanner')
 const meetingRecall = require('../lib/meetingRecall')
 const { createLongTermMemoryStore } = require('../lib/longTermMemory')
@@ -131,6 +137,7 @@ const localStt = require('../lib/localStt')
 const cloudRestStt = require('../lib/cloudRestStt')
 const streamingStt = require('../lib/streamingSttRouter')
 const { parseResumeTree, parseJdTree, formatResumeBlock, formatJdBlock, formatResumeBlockV2, formatJdBlockV2, buildProfileTreeV2VoiceGuard } = require('../lib/profileTreeService')
+const { retrieveProfileEvidence, charsFromTokenBudget, clipTextToBudget } = require('../lib/profileEvidence')
 const debugLog = require('../lib/debugLog')
 const { sessionToMarkdown } = require('../lib/sessionExport')
 const { createHindsightClient } = require('../lib/hindsightClient')
@@ -343,6 +350,16 @@ function invalidateBrandDataUrlCache() {
   brandDataUrlCache = {}
 }
 
+/** Normalize any supported image (PNG/JPEG/ICO) into the persisted brand logo PNG. */
+function writeBrandLogoFromImagePath(srcPath, kind = 'app') {
+  const img = nativeImage.createFromPath(srcPath)
+  if (img.isEmpty()) throw new Error('Could not load image file.')
+  const destDir = branding.getBrandAssetsDir(app.getPath('userData'))
+  fs.mkdirSync(destDir, { recursive: true })
+  const dest = path.join(destDir, branding.getBrandLogoFileName(kind))
+  fs.writeFileSync(dest, img.toPNG())
+}
+
 /** Snapshot sent to renderers / returned by IPC. */
 function getBrandingSnapshot() {
   return {
@@ -351,6 +368,7 @@ function getBrandingSnapshot() {
     overlayLogoDataUrl: loadBrandLogoDataUrl('overlay'),
     hasCustomLogo: branding.hasCustomBrandLogo(app.getPath('userData'), 'app'),
     hasOverlayLogo: branding.hasCustomBrandLogo(app.getPath('userData'), 'overlay'),
+    appLogoPreset: String(store.get('brandAppLogoPreset') || ''),
   }
 }
 
@@ -439,6 +457,21 @@ function applyRuntimeBranding() {
       setupApplicationMenu()
     } catch (_) {}
   }
+  // Refresh taskbar / window icons on every open window (Windows + Linux).
+  try {
+    const iconPath = getWindowIcon()
+    if (iconPath) {
+      const iconImg = nativeImage.createFromPath(iconPath)
+      if (!iconImg.isEmpty()) {
+        for (const w of BrowserWindow.getAllWindows()) {
+          if (!w || w.isDestroyed()) continue
+          try {
+            w.setIcon(iconImg)
+          } catch (_) {}
+        }
+      }
+    }
+  } catch (_) {}
   if (tray) {
     try {
       tray.setToolTip(`${name} — tray: Open / Hide, Quit to fully exit`)
@@ -2371,13 +2404,26 @@ async function buildProfileContextBlock({
     const activePrompt = getActivePrompt(prompts, activeId)
     const routingOn = store.get('intelligenceRoutingEnabled') !== false && routeDecision
     const useAll = !routingOn
-    const profileTreeV2 = store.get('profileTreeV2Enabled') === true
+    const domainTag = routeDecision?.domainTag || 'general'
+    const interviewDomain = domainTag === 'interview' || domainTag === 'meeting'
+    // Sprint B: profileTreeV2 on by default; still force for interview/meeting domains.
+    const profileTreeV2 =
+      store.get('profileTreeV2Enabled') !== false || interviewDomain
     const q = String(query || '').trim()
+    const resumeBudget = charsFromTokenBudget(LAYER_BUDGET.resume)
+    const jdBudget = charsFromTokenBudget(LAYER_BUDGET.jd)
+    const refBudget = charsFromTokenBudget(LAYER_BUDGET.reference_files)
+    const modeBudget = charsFromTokenBudget(LAYER_BUDGET.active_mode)
 
     let out = ''
+    let resumeEvidenceCount = 0
+    let jdEvidenceCount = 0
+    let resumeUsedEmbedding = false
+    let jdUsedEmbedding = false
 
     if (useAll || routeDecision.useActiveMode) {
-      out += formatActivePromptBlock(activePrompt)
+      const modeBlock = formatActivePromptBlock(activePrompt)
+      out += clipTextToBudget(modeBlock, modeBudget + 2000)
     }
 
     let referenceBlock = ''
@@ -2390,7 +2436,7 @@ async function buildProfileContextBlock({
         const chunks = await contextVectorStore.retrieveChunksAsync(
           activePrompt.id,
           q,
-          {},
+          { maxChars: refBudget },
           store,
           embeddingClient,
         )
@@ -2399,28 +2445,70 @@ async function buildProfileContextBlock({
       } else {
         referenceBlock = formatReferenceFilesBlock(activePrompt)
       }
-      out += referenceBlock
+      out += clipTextToBudget(referenceBlock, refBudget + 400)
     }
 
     if (useAll || routeDecision.useResume) {
       const resume = String(store.get('resumeContext') || '').trim()
       if (resume) {
-        const tree = store.get('resumeTree')
-        const block = profileTreeV2 ? formatResumeBlockV2(tree, resume, q) : formatResumeBlock(tree, resume)
-        if (block) out += `\n\n---\n## RESUME / BACKGROUND\n${block}`
+        const tree = store.get('resumeTree') || parseResumeTree(resume)
+        let block = ''
+        if (profileTreeV2 || q) {
+          const evidence = await retrieveProfileEvidence({
+            tree,
+            raw: resume,
+            query: q,
+            maxChars: resumeBudget,
+            topK: 6,
+            embedClient: embeddingClient,
+          })
+          resumeEvidenceCount = evidence.evidenceCount
+          resumeUsedEmbedding = evidence.usedEmbedding
+          block = evidence.text || (profileTreeV2
+            ? formatResumeBlockV2(tree, resume, q)
+            : formatResumeBlock(tree, resume))
+        } else {
+          block = formatResumeBlock(tree, resume)
+        }
+        block = clipTextToBudget(block, resumeBudget)
+        if (block) {
+          if (!resumeEvidenceCount) resumeEvidenceCount = 1
+          out += `\n\n---\n## RESUME / BACKGROUND\n${block}`
+        }
       }
     }
 
     if (useAll || routeDecision.useJd) {
       const jd = String(store.get('jdContext') || '').trim()
       if (jd) {
-        const tree = store.get('jdTree')
-        const block = profileTreeV2 ? formatJdBlockV2(tree, jd, q) : formatJdBlock(tree, jd)
-        if (block) out += `\n\n---\n## JOB DESCRIPTION\n${block}`
+        const tree = store.get('jdTree') || parseJdTree(jd)
+        let block = ''
+        if (profileTreeV2 || q) {
+          const evidence = await retrieveProfileEvidence({
+            tree: { ...tree, kind: 'jd' },
+            raw: jd,
+            query: q,
+            maxChars: jdBudget,
+            topK: 5,
+            embedClient: embeddingClient,
+          })
+          jdEvidenceCount = evidence.evidenceCount
+          jdUsedEmbedding = evidence.usedEmbedding
+          block = evidence.text || (profileTreeV2
+            ? formatJdBlockV2(tree, jd, q)
+            : formatJdBlock(tree, jd))
+        } else {
+          block = formatJdBlock(tree, jd)
+        }
+        block = clipTextToBudget(block, jdBudget)
+        if (block) {
+          if (!jdEvidenceCount) jdEvidenceCount = 1
+          out += `\n\n---\n## JOB DESCRIPTION\n${block}`
+        }
       }
     }
 
-    if (profileTreeV2 && (out.includes('## RESUME') || out.includes('## JOB DESCRIPTION'))) {
+    if (out.includes('## RESUME') || out.includes('## JOB DESCRIPTION')) {
       out += buildProfileTreeV2VoiceGuard()
     }
 
@@ -2429,11 +2517,16 @@ async function buildProfileContextBlock({
     }
 
     if (routingOn && (routeDecision.useMeetingSummary || routeDecision.useHindsightRecall || routeDecision.useHybridRag)) {
+      const softVector =
+        store.get('vectorMemoryEnabled') === true ||
+        domainTag === 'interview' ||
+        domainTag === 'meeting'
       const recall = await hindsight.hybridRecall({
         query: String(query || '').trim(),
         useMeetingSummary: routeDecision.useMeetingSummary,
         useHindsightRecall: routeDecision.useHindsightRecall,
         useHybridRag: routeDecision.useHybridRag,
+        forceVectorMemory: softVector,
         promptId: activePrompt?.id,
         maxResults: 6,
         timeoutMs: routeDecision.hindsightRecallTimeoutMs || 800,
@@ -2444,10 +2537,25 @@ async function buildProfileContextBlock({
     if (!referenceBlock && (useAll || routeDecision.useReferenceFiles)) {
       const kb = String(store.get('knowledgeBase') || '').trim()
       if (kb) {
-        const clipped = kb.length > KNOWLEDGE_BASE_MAX ? `${kb.slice(0, KNOWLEDGE_BASE_MAX)}\nΓÇª` : kb
-        out += `\n\n---\n## REFERENCE (facts only ΓÇö do not invent beyond this)\n${clipped}`
+        const clipped = kb.length > KNOWLEDGE_BASE_MAX ? `${kb.slice(0, KNOWLEDGE_BASE_MAX)}\n…` : kb
+        out += `\n\n---\n## REFERENCE (facts only — do not invent beyond this)\n${clipTextToBudget(clipped, refBudget)}`
       }
     }
+
+    console.log(
+      '[profile-evidence]',
+      JSON.stringify({
+        domainTag,
+        resumeEvidenceCount,
+        jdEvidenceCount,
+        resumeUsedEmbedding,
+        jdUsedEmbedding,
+        profileTreeV2,
+        hasResumeBlock: out.includes('## RESUME'),
+        hasJdBlock: out.includes('## JOB DESCRIPTION'),
+        outChars: out.length,
+      }),
+    )
 
     profileContextCache.set(cacheKey, out)
     return out
@@ -2475,7 +2583,7 @@ function resolveContextRouteDecision({ userQuery, audioTranscript, _askMeta, has
     const decision = routeContext({
       userQuery: String(userQuery || '').trim(),
       mode,
-      profileAvailable: !!(resume || activePrompt),
+      profileAvailable: !!resume,
       jdAvailable: !!jd,
       referenceFilesAvailable,
       hasLiveTranscript: !!hasLiveTranscript,
@@ -3141,26 +3249,33 @@ function setupIPC() {
   ipcMain.handle('branding:pick-logo', async (_event, kind) => {
     const target = kind === 'overlay' ? 'overlay' : 'app'
     const res = await dialog.showOpenDialog(settingsWindow || undefined, {
-      title: `Choose ${target === 'overlay' ? 'overlay' : 'app'} logo (PNG or JPEG)`,
+      title: `Choose ${target === 'overlay' ? 'overlay' : 'app'} logo (PNG, JPEG, or ICO)`,
       properties: ['openFile'],
-      filters: [{ name: 'Images', extensions: ['png', 'jpg', 'jpeg'] }],
+      filters: [{ name: 'Images', extensions: ['png', 'jpg', 'jpeg', 'ico'] }],
     })
     if (res.canceled || !res.filePaths || !res.filePaths.length) {
       return getBrandingSnapshot()
     }
     try {
-      const buf = fs.readFileSync(res.filePaths[0])
-      if (!branding.isSupportedImageBytes(buf)) {
-        return {
-          ...getBrandingSnapshot(),
-          error: 'Unsupported image file — please choose a PNG or JPEG.',
+      const srcPath = res.filePaths[0]
+      const ext = path.extname(srcPath).toLowerCase()
+      if (ext === '.ico') {
+        writeBrandLogoFromImagePath(srcPath, target)
+      } else {
+        const buf = fs.readFileSync(srcPath)
+        if (!branding.isSupportedImageBytes(buf)) {
+          return {
+            ...getBrandingSnapshot(),
+            error: 'Unsupported image file — please choose a PNG, JPEG, or ICO.',
+          }
         }
+        writeBrandLogoFromImagePath(srcPath, target)
       }
-      branding.persistBrandLogo(res.filePaths[0], app.getPath('userData'), target)
       store.set(
         target === 'overlay' ? 'brandOverlayLogoCustomized' : 'brandLogoCustomized',
         true,
       )
+      if (target === 'app') store.set('brandAppLogoPreset', '')
       invalidateBrandDataUrlCache()
       applyRuntimeBranding()
       sendBrandingUpdateToWindows()
@@ -3170,10 +3285,65 @@ function setupIPC() {
     }
     return getBrandingSnapshot()
   })
+  ipcMain.handle('branding:list-presets', () => {
+    const presets = brandPresets.listAppLogoPresets(
+      app.getAppPath(),
+      process.resourcesPath,
+      app.isPackaged,
+    )
+    return presets.map((preset) => {
+      let previewDataUrl = ''
+      try {
+        const img = nativeImage.createFromPath(preset.srcPath)
+        if (!img.isEmpty()) {
+          const size = img.getSize()
+          const resized = size.width > 64 || size.height > 64 ? img.resize({ width: 64 }) : img
+          previewDataUrl = resized.toDataURL()
+        }
+      } catch (_) {}
+      return {
+        id: preset.id,
+        label: preset.label,
+        group: preset.group || 'app',
+        previewDataUrl,
+      }
+    })
+  })
+  ipcMain.handle('branding:apply-preset', (_event, presetId) => {
+    const id = String(presetId || '').trim()
+    try {
+      if (!id || id === 'default') {
+        branding.removeBrandLogo(app.getPath('userData'), 'app')
+        store.set('brandLogoCustomized', false)
+        store.set('brandAppLogoPreset', '')
+      } else {
+        const src = brandPresets.resolveAppLogoPresetPath(
+          id,
+          app.getAppPath(),
+          process.resourcesPath,
+          app.isPackaged,
+        )
+        if (!src) {
+          return { ...getBrandingSnapshot(), error: 'Preset logo file not found.' }
+        }
+        writeBrandLogoFromImagePath(src, 'app')
+        store.set('brandLogoCustomized', true)
+        store.set('brandAppLogoPreset', id)
+      }
+      invalidateBrandDataUrlCache()
+      applyRuntimeBranding()
+      sendBrandingUpdateToWindows()
+    } catch (e) {
+      console.warn('[branding] apply-preset failed:', e?.message || e)
+      return { ...getBrandingSnapshot(), error: e?.message || 'Failed to apply preset logo.' }
+    }
+    return getBrandingSnapshot()
+  })
   ipcMain.handle('branding:reset', () => {
     store.set('brandName', '')
     store.set('brandLogoCustomized', false)
     store.set('brandOverlayLogoCustomized', false)
+    store.set('brandAppLogoPreset', '')
     branding.removeBrandLogo(app.getPath('userData'), 'app')
     branding.removeBrandLogo(app.getPath('userData'), 'overlay')
     invalidateBrandDataUrlCache()
