@@ -406,10 +406,60 @@ async function tryApplyWindowsExecutableBranding() {
   }
   return win32ExeBranding.applyBrandingToExecutable({
     exePath: process.execPath,
+    appExePath: app.getPath('exe'),
     userDataPath: app.getPath('userData'),
     displayName,
     iconPath,
   })
+}
+
+function scheduleDeferredExeBrandingPatchOnQuit() {
+  if (process.platform !== 'win32') return
+  try {
+    const iconPath = getBrandLogoSrcForExePatch()
+    const displayName = getBrandName()
+    if (!iconPath) return
+    const targets = new Set(
+      win32ExeBranding.resolveBrandingExeTargets({
+        execPath: process.execPath,
+        appExePath: app.getPath('exe'),
+      }),
+    )
+    const cachePath = win32ExeBranding.getBrandedExeCachePath(app.getPath('userData'))
+    if (cachePath) targets.add(cachePath)
+    win32ExeBranding.scheduleDeferredExeBrandingPatch({
+      parentPid: process.pid,
+      userDataPath: app.getPath('userData'),
+      displayName,
+      iconPath,
+      targets: [...targets],
+      nodeExecPath: process.execPath,
+      scriptPath: path.join(__dirname, '..', 'scripts', 'apply-deferred-exe-branding.cjs'),
+    })
+  } catch (e) {
+    console.warn('[branding] deferred exe patch schedule failed:', e?.message || e)
+  }
+}
+
+/** Portable builds extract a fresh exe — sync cached branded binary then relaunch once. */
+function maybeSyncBrandedExecutableAndRelaunch() {
+  if (process.platform !== 'win32') return false
+  if (process.argv.includes('--brand-exe-synced')) return false
+  const userDataPath = app.getPath('userData')
+  const cachePath = win32ExeBranding.getBrandedExeCachePath(userDataPath)
+  const livePath = process.execPath
+  if (!fs.existsSync(cachePath)) return false
+  if (win32ExeBranding.filesEqual(cachePath, livePath)) return false
+  const sync = win32ExeBranding.syncBrandedCacheToLiveExe(userDataPath, livePath)
+  if (!sync.ok) return false
+  try {
+    app.relaunch({ args: [...process.argv.slice(1), '--brand-exe-synced'] })
+    app.exit(0)
+    return true
+  } catch (e) {
+    console.warn('[branding] relaunch after exe sync failed:', e?.message || e)
+    return false
+  }
 }
 
 async function finalizeBrandingIpcResponse({ patchExe = true } = {}) {
@@ -1924,6 +1974,7 @@ async function shutdownApplication() {
   globalChatWindow = null
   launcherWindow = null
   destroyBackgroundOwnerWindow()
+  scheduleDeferredExeBrandingPatchOnQuit()
   try {
     if (tray) tray.destroy()
   } catch (_) {}
@@ -4441,8 +4492,12 @@ async function initApp() {
   })
   seedOverlayPositionIfNeeded()
   if (process.platform === 'win32') {
+    if (maybeSyncBrandedExecutableAndRelaunch()) return
     try {
-      const pending = win32ExeBranding.applyPendingBrandingOnStartup(app.getPath('userData'))
+      const pending = win32ExeBranding.applyPendingBrandingOnStartup(app.getPath('userData'), {
+        execPath: process.execPath,
+        appExePath: app.getPath('exe'),
+      })
       if (pending?.ok) {
         console.log('[branding] applied pending executable branding from last session')
       }
