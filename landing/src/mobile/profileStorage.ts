@@ -4,6 +4,11 @@ import {
   type AppSettings,
   type PersonalProfile,
 } from './profileTypes'
+import {
+  getChatProviderMeta,
+  getProviderApiKey,
+  getProviderModel,
+} from './providerRegistry'
 
 const STORAGE_PROFILE = 'veilassist.mobile.profile.v1'
 const STORAGE_SETTINGS = 'veilassist.mobile.appSettings.v1'
@@ -54,13 +59,13 @@ export function saveAppSettings(settings: AppSettings) {
 }
 
 export function getActiveApiKey(settings: AppSettings): string {
-  if (settings.provider === 'nvidia') return settings.nvidiaKey.trim()
-  if (settings.provider === 'groq') return settings.groqKey.trim()
-  return settings.apiKey.trim()
+  return getProviderApiKey(settings, settings.provider)
 }
 
 export function getActiveModel(settings: AppSettings): string {
-  if (settings.provider === 'nvidia') return settings.nvidiaModel.trim()
-  if (settings.provider === 'groq') return settings.groqModel.trim()
-  return settings.selectedModel.trim()
+  return getProviderModel(settings, settings.provider)
+}
+
+export function getActiveProviderMeta(settings: AppSettings) {
+  return getChatProviderMeta(settings.provider)
 }

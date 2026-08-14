@@ -1,5 +1,7 @@
 // Vercel serverless — BYOK chat proxy with profile-aware routing (mirrors desktop answerPlanner).
 
+import { handleCorsPreflight } from './_cors.js'
+
 const PROVIDERS = {
   nvidia: {
     base: 'https://integrate.api.nvidia.com/v1',
@@ -12,6 +14,27 @@ const PROVIDERS = {
   openai: {
     base: 'https://api.openai.com/v1',
     defaultModel: 'gpt-4o-mini',
+  },
+  openrouter: {
+    base: 'https://openrouter.ai/api/v1',
+    defaultModel: 'nvidia/nemotron-nano-12b-v2-vl:free',
+  },
+  anthropic: {
+    base: 'https://api.anthropic.com/v1',
+    defaultModel: 'claude-sonnet-4-20250514',
+    kind: 'anthropic',
+  },
+  google: {
+    base: 'https://generativelanguage.googleapis.com/v1beta/openai/',
+    defaultModel: 'gemini-2.0-flash',
+  },
+  deepseek: {
+    base: 'https://api.deepseek.com/v1',
+    defaultModel: 'deepseek-chat',
+  },
+  custom: {
+    baseFromBody: true,
+    defaultModel: 'gpt-4o',
   },
 }
 
@@ -160,6 +183,8 @@ function buildSystemPrompt({
 }
 
 export default async function handler(req, res) {
+  if (handleCorsPreflight(req, res)) return
+
   if (req.method !== 'POST') {
     res.status(405).json({ error: 'Method not allowed' })
     return
@@ -183,10 +208,14 @@ export default async function handler(req, res) {
     const apiKey = String(body.apiKey || '').trim() || process.env.NVIDIA_API_KEY || ''
     if (!apiKey) {
       res.status(400).json({
-        error: 'Add your API key in Settings → AI Provider (or configure NVIDIA_API_KEY on server).',
+        error: 'Add your API key in Settings → AI Providers (or configure NVIDIA_API_KEY on server).',
       })
       return
     }
+
+    const baseUrl = providerCfg.baseFromBody
+      ? String(body.customBaseUrl || '').trim().replace(/\/$/, '') || 'https://api.openai.com/v1'
+      : providerCfg.base
 
     const profileText = String(body.profileText || body.resume || '').trim()
     const jobDescription = String(body.jobDescription || '').trim()
@@ -239,12 +268,60 @@ export default async function handler(req, res) {
       payload.chat_template_kwargs = { enable_thinking: false }
     }
 
-    const upstream = await fetch(`${providerCfg.base}/chat/completions`, {
+    if (providerCfg.kind === 'anthropic') {
+      const anthropicRes = await fetch('https://api.anthropic.com/v1/messages', {
+        method: 'POST',
+        headers: {
+          'x-api-key': apiKey,
+          'anthropic-version': '2023-06-01',
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          model,
+          max_tokens: payload.max_tokens,
+          system: systemPrompt,
+          messages: [{ role: 'user', content: question }],
+        }),
+      })
+      const anthropicText = await anthropicRes.text()
+      if (!anthropicRes.ok) {
+        res.status(anthropicRes.status).json({
+          error: `Provider API error (${anthropicRes.status})`,
+          detail: anthropicText.slice(0, 500),
+        })
+        return
+      }
+      const anthropicData = JSON.parse(anthropicText)
+      const anthropicAnswer =
+        anthropicData?.content?.find((c) => c.type === 'text')?.text?.trim() || ''
+      if (!anthropicAnswer) {
+        res.status(502).json({ error: 'Empty response from model' })
+        return
+      }
+      res.status(200).json({
+        answer: anthropicAnswer,
+        model,
+        route: {
+          useResume: route.useResume,
+          useJd: route.useJd,
+          answerContract: route.answerContract,
+        },
+      })
+      return
+    }
+
+    const headers = {
+      Authorization: `Bearer ${apiKey}`,
+      'Content-Type': 'application/json',
+    }
+    if (provider === 'openrouter') {
+      headers['HTTP-Referer'] = 'https://veilassist.vercel.app'
+      headers['X-Title'] = 'VeilAssist Interview'
+    }
+
+    const upstream = await fetch(`${baseUrl}/chat/completions`, {
       method: 'POST',
-      headers: {
-        Authorization: `Bearer ${apiKey}`,
-        'Content-Type': 'application/json',
-      },
+      headers,
       body: JSON.stringify(payload),
     })
 

@@ -1,14 +1,22 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { minCharsForDetection } from './answerRouting'
+import { transcribeAudioBlob } from './cloudStt'
 import type { AppSettings, PersonalProfile } from './profileTypes'
 import { profileIsReady } from './profileTypes'
 import { getActiveApiKey } from './profileStorage'
+import { speechLangFromSettings } from './providerRegistry'
 import {
   createSpeechRecognition,
   requestInterviewAnswer,
   speechRecognitionAvailable,
   type SessionPhase,
 } from './interviewTypes'
+
+function effectiveMinChars(settings: AppSettings): number {
+  const base = minCharsForDetection(settings.questionDetection)
+  if (settings.micSensitivity === 'boost') return Math.max(8, Math.floor(base * 0.65))
+  return base
+}
 
 export function useInterviewSession(profile: PersonalProfile, settings: AppSettings) {
   const [phase, setPhase] = useState<SessionPhase>('home')
@@ -22,10 +30,15 @@ export function useInterviewSession(profile: PersonalProfile, settings: AppSetti
   const [isGenerating, setIsGenerating] = useState(false)
 
   const recognitionRef = useRef<SpeechRecognition | null>(null)
+  const mediaRecorderRef = useRef<MediaRecorder | null>(null)
+  const mediaStreamRef = useRef<MediaStream | null>(null)
+  const cloudTranscribingRef = useRef(false)
   const generatingRef = useRef(false)
   const lastFinalRef = useRef('')
   const transcriptRef = useRef('')
   const answerEndRef = useRef<HTMLDivElement | null>(null)
+  const settingsRef = useRef(settings)
+  settingsRef.current = settings
 
   const scrollAnswer = useCallback(() => {
     if (!settings.autoScroll) return
@@ -34,12 +47,33 @@ export function useInterviewSession(profile: PersonalProfile, settings: AppSetti
     })
   }, [settings.autoScroll])
 
+  const appendTranscript = useCallback(
+    (chunk: string, opts?: { autoAnswer?: boolean }) => {
+      const piece = String(chunk || '').trim()
+      if (!piece) return
+      const merged = `${transcriptRef.current} ${piece}`.trim()
+      transcriptRef.current = merged
+      setTranscript(merged)
+      setInterimTranscript('')
+      lastFinalRef.current = piece
+      const s = settingsRef.current
+      if (opts?.autoAnswer && s.autoAnswer && piece.length >= effectiveMinChars(s)) {
+        void generateFromTextRef.current?.(piece, { source: 'transcript' })
+      }
+    },
+    [],
+  )
+
+  const generateFromTextRef = useRef<
+    (q: string, opts?: { manual?: boolean; source?: 'manual_input' | 'transcript' }) => Promise<void>
+  >()
+
   const generateFromText = useCallback(
     async (question: string, opts?: { manual?: boolean; source?: 'manual_input' | 'transcript' }) => {
       const q = String(question || '').trim()
       if (!q || generatingRef.current) return
       if (!getActiveApiKey(settings)) {
-        setError('Add your API key in Settings → AI Provider.')
+        setError('Add your API key in Settings → AI Providers.')
         return
       }
       generatingRef.current = true
@@ -67,8 +101,25 @@ export function useInterviewSession(profile: PersonalProfile, settings: AppSetti
     },
     [profile, settings, thinkMode, scrollAnswer],
   )
+  generateFromTextRef.current = generateFromText
+
+  const stopCloudCapture = useCallback(() => {
+    const recorder = mediaRecorderRef.current
+    mediaRecorderRef.current = null
+    if (recorder && recorder.state !== 'inactive') {
+      try {
+        recorder.stop()
+      } catch {
+        /* ignore */
+      }
+    }
+    const stream = mediaStreamRef.current
+    mediaStreamRef.current = null
+    if (stream) stream.getTracks().forEach((t) => t.stop())
+  }, [])
 
   const stopRecognition = useCallback(() => {
+    stopCloudCapture()
     const rec = recognitionRef.current
     recognitionRef.current = null
     if (rec) {
@@ -81,19 +132,60 @@ export function useInterviewSession(profile: PersonalProfile, settings: AppSetti
         /* ignore */
       }
     }
-  }, [])
+  }, [stopCloudCapture])
 
-  const startRecognition = useCallback(() => {
-    stopRecognition()
+  const startCloudCapture = useCallback(async () => {
+    stopCloudCapture()
+    try {
+      const stream = await navigator.mediaDevices.getUserMedia({
+        audio: {
+          echoCancellation: true,
+          noiseSuppression: true,
+          autoGainControl: settings.micSensitivity === 'boost',
+        },
+      })
+      mediaStreamRef.current = stream
+      const mime = MediaRecorder.isTypeSupported('audio/webm;codecs=opus')
+        ? 'audio/webm;codecs=opus'
+        : 'audio/webm'
+      const recorder = new MediaRecorder(stream, { mimeType: mime })
+      mediaRecorderRef.current = recorder
+
+      recorder.ondataavailable = async (event) => {
+        if (!event.data || event.data.size < 1200 || cloudTranscribingRef.current) return
+        cloudTranscribingRef.current = true
+        setInterimTranscript('Listening…')
+        try {
+          const text = await transcribeAudioBlob(settingsRef.current, event.data)
+          appendTranscript(text, { autoAnswer: true })
+        } catch (e) {
+          const msg = e instanceof Error ? e.message : 'Cloud transcription failed'
+          console.warn('[stt]', msg)
+        } finally {
+          cloudTranscribingRef.current = false
+          setInterimTranscript('')
+        }
+      }
+
+      recorder.onerror = () => setError('Microphone recording error.')
+
+      recorder.start(4500)
+    } catch (e) {
+      setError(e instanceof Error ? e.message : 'Microphone permission denied')
+    }
+  }, [appendTranscript, stopCloudCapture, settings.micSensitivity])
+
+  const startDeviceRecognition = useCallback(() => {
     if (!speechRecognitionAvailable()) {
-      setError('Speech recognition unavailable. Type questions in the bar below.')
+      setError('On-device speech recognition unavailable. Try Cloud API in Settings → Audio.')
       return
     }
 
     try {
-      const recognition = createSpeechRecognition()
+      const lang = speechLangFromSettings(settings.micListenLanguage)
+      const recognition = createSpeechRecognition(lang)
       recognitionRef.current = recognition
-      const minChars = minCharsForDetection(settings.questionDetection)
+      const minChars = effectiveMinChars(settings)
 
       recognition.onresult = (event: SpeechRecognitionEvent) => {
         let interim = ''
@@ -105,11 +197,7 @@ export function useInterviewSession(profile: PersonalProfile, settings: AppSetti
         }
         if (interim) setInterimTranscript(interim.trim())
         if (finalChunk.trim()) {
-          const merged = `${transcriptRef.current} ${finalChunk}`.trim()
-          transcriptRef.current = merged
-          setTranscript(merged)
-          setInterimTranscript('')
-          lastFinalRef.current = finalChunk.trim()
+          appendTranscript(finalChunk.trim())
           if (settings.autoAnswer && finalChunk.trim().length >= minChars) {
             void generateFromText(finalChunk.trim(), { source: 'transcript' })
           }
@@ -135,7 +223,32 @@ export function useInterviewSession(profile: PersonalProfile, settings: AppSetti
     } catch (e) {
       setError(e instanceof Error ? e.message : 'Speech recognition failed to start')
     }
-  }, [stopRecognition, settings.autoAnswer, settings.questionDetection, generateFromText, sessionActive])
+  }, [
+    appendTranscript,
+    generateFromText,
+    sessionActive,
+    settings.autoAnswer,
+    settings.micListenLanguage,
+    settings.micSensitivity,
+    settings.questionDetection,
+  ])
+
+  const startRecognition = useCallback(() => {
+    stopRecognition()
+    if (!settings.audioEnabled) return
+
+    if (settings.sttMode === 'cloud') {
+      void startCloudCapture()
+      return
+    }
+    startDeviceRecognition()
+  }, [
+    stopRecognition,
+    settings.audioEnabled,
+    settings.sttMode,
+    startCloudCapture,
+    startDeviceRecognition,
+  ])
 
   const startSession = useCallback(() => {
     if (!profileIsReady(profile)) {
@@ -143,7 +256,7 @@ export function useInterviewSession(profile: PersonalProfile, settings: AppSetti
       return
     }
     if (!getActiveApiKey(settings)) {
-      setError('Add your API key in Settings → AI Provider.')
+      setError('Add your API key in Settings → AI Providers.')
       return
     }
     setError(null)
@@ -183,8 +296,8 @@ export function useInterviewSession(profile: PersonalProfile, settings: AppSetti
     setAnswer('')
     lastFinalRef.current = ''
     setError(null)
-    if (sessionActive && !recognitionRef.current) startRecognition()
-  }, [sessionActive, startRecognition])
+    if (sessionActive && settings.audioEnabled) startRecognition()
+  }, [sessionActive, settings.audioEnabled, startRecognition])
 
   const sendTypedQuestion = useCallback(
     (text: string) => {
@@ -196,6 +309,8 @@ export function useInterviewSession(profile: PersonalProfile, settings: AppSetti
     },
     [generateFromText],
   )
+
+  const clearError = useCallback(() => setError(null), [])
 
   useEffect(() => {
     return () => stopRecognition()
@@ -220,5 +335,6 @@ export function useInterviewSession(profile: PersonalProfile, settings: AppSetti
     sendTypedQuestion,
     answerEndRef,
     isGenerating,
+    clearError,
   }
 }

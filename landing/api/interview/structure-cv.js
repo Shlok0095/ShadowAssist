@@ -1,5 +1,7 @@
 // BYOK — extract structured profile JSON from raw CV text via LLM.
 
+import { handleCorsPreflight } from './_cors.js'
+
 const PROVIDERS = {
   nvidia: {
     base: 'https://integrate.api.nvidia.com/v1',
@@ -23,14 +25,14 @@ Return ONLY valid JSON (no markdown fences) matching this schema:
   "experience": [{ "title": "string", "company": "string", "dateRange": "string", "bullets": "string — bullet points joined with newlines" }],
   "skills": ["string"],
   "projects": [{ "name": "string", "tech": "string", "description": "string" }],
-  "education": [{ "degree": "string", "details": "string" }],
-  "extraContext": "string — gaps, transitions, notes not elsewhere"
+  "education": [{ "degree": "string", "details": "string" }]
 }
 Rules:
 - Extract deeply: every job, project, skill, and degree you can find.
 - Split skills into individual tags (Python, PyTorch, etc.) — not one blob.
 - Preserve metrics and facts in bullets/descriptions.
 - Never invent employers, dates, or achievements not in the source text.
+- Do not include extra context — the user adds that manually in the app.
 - Use empty strings or empty arrays when a section is missing.`
 
 function stripJsonFence(text) {
@@ -44,6 +46,8 @@ function stripJsonFence(text) {
 }
 
 export default async function handler(req, res) {
+  if (handleCorsPreflight(req, res)) return
+
   if (req.method !== 'POST') {
     res.status(405).json({ error: 'Method not allowed' })
     return

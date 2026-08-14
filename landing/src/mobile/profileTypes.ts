@@ -38,7 +38,19 @@ export type ResponseFormat = 'bullets' | 'paragraph'
 export type AnswerLength = 'short' | 'medium' | 'long'
 export type DetectionLevel = 'low' | 'medium' | 'high'
 export type FontSize = 'small' | 'standard' | 'large'
-export type AiProvider = 'nvidia' | 'groq' | 'openai'
+export type AiProvider =
+  | 'groq'
+  | 'nvidia'
+  | 'openrouter'
+  | 'openai'
+  | 'anthropic'
+  | 'google'
+  | 'deepseek'
+  | 'custom'
+export type SttProvider = 'groq' | 'openai'
+export type SttMode = 'device' | 'cloud'
+export type MicSensitivity = 'standard' | 'boost'
+export type MicListenLanguage = 'en' | 'hi' | 'en_hi_hinglish'
 
 export type AppSettings = {
   interviewTopic: string
@@ -56,9 +68,26 @@ export type AppSettings = {
   nvidiaKey: string
   groqKey: string
   apiKey: string
+  openrouterKey: string
+  anthropicKey: string
+  googleKey: string
+  deepseekKey: string
+  customOpenaiKey: string
+  customOpenaiBaseUrl: string
   nvidiaModel: string
   groqModel: string
   selectedModel: string
+  openrouterModel: string
+  anthropicModel: string
+  googleModel: string
+  deepseekModel: string
+  customOpenaiModel: string
+  audioEnabled: boolean
+  micSensitivity: MicSensitivity
+  micListenLanguage: MicListenLanguage
+  sttMode: SttMode
+  sttProvider: SttProvider
+  groqWhisperModel: string
 }
 
 export const DEFAULT_PROFILE: PersonalProfile = {
@@ -88,9 +117,26 @@ export const DEFAULT_APP_SETTINGS: AppSettings = {
   nvidiaKey: '',
   groqKey: '',
   apiKey: '',
+  openrouterKey: '',
+  anthropicKey: '',
+  googleKey: '',
+  deepseekKey: '',
+  customOpenaiKey: '',
+  customOpenaiBaseUrl: '',
   nvidiaModel: 'nvidia/nemotron-nano-12b-v2-vl',
   groqModel: 'llama-3.3-70b-versatile',
   selectedModel: 'gpt-4o-mini',
+  openrouterModel: 'nvidia/nemotron-nano-12b-v2-vl:free',
+  anthropicModel: 'claude-sonnet-4-20250514',
+  googleModel: 'gemini-2.0-flash',
+  deepseekModel: 'deepseek-chat',
+  customOpenaiModel: 'gpt-4o',
+  audioEnabled: true,
+  micSensitivity: 'standard',
+  micListenLanguage: 'en',
+  sttMode: 'device',
+  sttProvider: 'groq',
+  groqWhisperModel: 'whisper-large-v3-turbo',
 }
 
 export function profileIsReady(profile: PersonalProfile): boolean {
@@ -100,6 +146,23 @@ export function profileIsReady(profile: PersonalProfile): boolean {
   )
   const hasRaw = (profile.rawText || '').trim().length > 80
   return hasSummary || hasExperience || hasRaw
+}
+
+/** Apply CV extraction — updates resume fields only; keeps manual-only fields. */
+export function mergeCvIntoProfile(current: PersonalProfile, fromCv: PersonalProfile): PersonalProfile {
+  return {
+    name: fromCv.name,
+    summary: fromCv.summary,
+    experience: fromCv.experience,
+    skills: fromCv.skills,
+    projects: fromCv.projects,
+    education: fromCv.education,
+    rawText: fromCv.rawText,
+    sourceFileName: fromCv.sourceFileName,
+    jobDescription: current.jobDescription,
+    extraContext: current.extraContext,
+    updatedAt: Date.now(),
+  }
 }
 
 export function profileToContextText(profile: PersonalProfile): string {

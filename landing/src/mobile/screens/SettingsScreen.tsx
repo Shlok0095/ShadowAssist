@@ -1,4 +1,7 @@
 import type { AppSettings } from '../profileTypes'
+import { AiProvidersSection } from './settings/AiProvidersSection'
+import { AudioSettingsSection } from './settings/AudioSettingsSection'
+import { Segmented, Toggle } from './settings/SettingsPrimitives'
 
 export function HomeScreen({
   onStart,
@@ -46,7 +49,7 @@ export function HomeScreen({
           <p className="mobile-home-hint">Add your resume in Settings → Personal Info first.</p>
         ) : null}
         {!hasApiKey ? (
-          <p className="mobile-home-hint">Add your API key in Settings → AI Provider.</p>
+          <p className="mobile-home-hint">Add your API key in Settings → AI Providers.</p>
         ) : null}
       </div>
     </div>
@@ -109,95 +112,8 @@ export function SettingsScreen({
           </div>
         </section>
 
-        <section className="mobile-settings-group">
-          <p className="mobile-settings-group-label">AI PROVIDER</p>
-          <div className="mobile-settings-card">
-            <label className="mobile-field">
-              <span>Provider</span>
-              <select
-                value={settings.provider}
-                onChange={(e) => onChange({ provider: e.target.value as AppSettings['provider'] })}
-              >
-                <option value="nvidia">NVIDIA NIM</option>
-                <option value="groq">Groq</option>
-                <option value="openai">OpenAI</option>
-              </select>
-            </label>
-            {settings.provider === 'nvidia' ? (
-              <>
-                <label className="mobile-field">
-                  <span>NVIDIA API Key</span>
-                  <input
-                    type="password"
-                    value={settings.nvidiaKey}
-                    onChange={(e) => onChange({ nvidiaKey: e.target.value })}
-                    placeholder="nvapi-…"
-                  />
-                </label>
-                <label className="mobile-field">
-                  <span>Model</span>
-                  <input
-                    value={settings.nvidiaModel}
-                    onChange={(e) => onChange({ nvidiaModel: e.target.value })}
-                  />
-                </label>
-              </>
-            ) : null}
-            {settings.provider === 'groq' ? (
-              <>
-                <label className="mobile-field">
-                  <span>Groq API Key</span>
-                  <input
-                    type="password"
-                    value={settings.groqKey}
-                    onChange={(e) => onChange({ groqKey: e.target.value })}
-                    placeholder="gsk_…"
-                  />
-                </label>
-                <label className="mobile-field">
-                  <span>Model</span>
-                  <input value={settings.groqModel} onChange={(e) => onChange({ groqModel: e.target.value })} />
-                </label>
-              </>
-            ) : null}
-            {settings.provider === 'openai' ? (
-              <>
-                <label className="mobile-field">
-                  <span>OpenAI API Key</span>
-                  <input
-                    type="password"
-                    value={settings.apiKey}
-                    onChange={(e) => onChange({ apiKey: e.target.value })}
-                    placeholder="sk-…"
-                  />
-                </label>
-                <label className="mobile-field">
-                  <span>Model</span>
-                  <input
-                    value={settings.selectedModel}
-                    onChange={(e) => onChange({ selectedModel: e.target.value })}
-                  />
-                </label>
-              </>
-            ) : null}
-            <p className="mobile-field-hint">Bring your own key — same as the desktop app. Keys stay on your device.</p>
-          </div>
-        </section>
-
-        <section className="mobile-settings-group">
-          <p className="mobile-settings-group-label">LANGUAGES</p>
-          <div className="mobile-settings-card">
-            <label className="mobile-field">
-              <span>Interview Language</span>
-              <select
-                value={settings.interviewLanguage}
-                onChange={(e) => onChange({ interviewLanguage: e.target.value })}
-              >
-                <option value="en">English (Default)</option>
-              </select>
-            </label>
-          </div>
-        </section>
+        <AiProvidersSection settings={settings} onChange={onChange} />
+        <AudioSettingsSection settings={settings} onChange={onChange} />
 
         <section className="mobile-settings-group">
           <p className="mobile-settings-group-label">AI RESPONSES</p>
@@ -278,57 +194,12 @@ export function SettingsScreen({
               </select>
             </label>
             <div className="mobile-settings-row">
-              <span className="mobile-settings-row-label">Show Transcription</span>
-              <Toggle
-                on={settings.showTranscription}
-                onChange={(v) => onChange({ showTranscription: v })}
-              />
-            </div>
-            <div className="mobile-settings-row">
-              <span className="mobile-settings-row-label">Auto-scroll</span>
+              <span className="mobile-settings-row-label">Auto-scroll answers</span>
               <Toggle on={settings.autoScroll} onChange={(v) => onChange({ autoScroll: v })} />
             </div>
           </div>
         </section>
       </div>
-    </div>
-  )
-}
-
-function Toggle({ on, onChange }: { on: boolean; onChange: (v: boolean) => void }) {
-  return (
-    <button
-      type="button"
-      className={`mobile-interview-toggle ${on ? 'on' : ''}`}
-      aria-pressed={on}
-      onClick={() => onChange(!on)}
-    >
-      <span className="mobile-interview-toggle-knob" />
-    </button>
-  )
-}
-
-function Segmented<T extends string>({
-  value,
-  options,
-  onChange,
-}: {
-  value: T
-  options: { value: T; label: string }[]
-  onChange: (v: T) => void
-}) {
-  return (
-    <div className="mobile-segmented">
-      {options.map((opt) => (
-        <button
-          key={opt.value}
-          type="button"
-          className={`mobile-segmented-btn ${value === opt.value ? 'active' : ''}`}
-          onClick={() => onChange(opt.value)}
-        >
-          {opt.label}
-        </button>
-      ))}
     </div>
   )
 }

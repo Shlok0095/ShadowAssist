@@ -29,13 +29,11 @@ export function InterviewScreen({
   settings,
   onOpenSettings,
   onPatchSettings,
-  fontClass,
 }: {
   session: Session
   settings: AppSettings
   onOpenSettings: () => void
   onPatchSettings: (patch: Partial<AppSettings>) => void
-  fontClass: string
 }) {
   const [typed, setTyped] = useState('')
   const [settingsOpen, setSettingsOpen] = useState(false)
@@ -43,7 +41,7 @@ export function InterviewScreen({
   const showTranscriptPanel = settings.showTranscription
 
   return (
-    <div className={`mobile-interview-root ${fontClass}`}>
+    <>
       <header className="mobile-interview-header">
         <button type="button" className="mobile-interview-icon-btn" aria-label="Back" onClick={session.stopSession}>
           ←
@@ -82,7 +80,14 @@ export function InterviewScreen({
         </div>
       ) : null}
 
-      {session.error ? <div className="mobile-interview-error">{session.error}</div> : null}
+      {session.error ? (
+        <div className="mobile-interview-error mobile-interview-error-inline">
+          <span>{session.error}</span>
+          <button type="button" className="mobile-error-dismiss" onClick={() => session.clearError?.()}>
+            ✕
+          </button>
+        </div>
+      ) : null}
 
       <main className="mobile-interview-main">
         {session.starting ? (
@@ -173,6 +178,6 @@ export function InterviewScreen({
           </button>
         </div>
       </div>
-    </div>
+    </>
   )
 }

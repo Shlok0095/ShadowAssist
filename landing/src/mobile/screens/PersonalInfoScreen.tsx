@@ -1,5 +1,12 @@
-import { useRef, useState } from 'react'
-import type { AppSettings, Education, PersonalProfile, Project, WorkExperience } from '../profileTypes'
+import { useCallback, useRef, useState } from 'react'
+import {
+  mergeCvIntoProfile,
+  type AppSettings,
+  type Education,
+  type PersonalProfile,
+  type Project,
+  type WorkExperience,
+} from '../profileTypes'
 import { DraggableList, DragHandle, type ReorderControls } from '../components/DraggableList'
 import { extractDocumentText } from '../pdfExtract'
 import { getActiveApiKey } from '../profileStorage'
@@ -22,11 +29,31 @@ export function PersonalInfoScreen({
   onBack: () => void
 }) {
   const fileRef = useRef<HTMLInputElement>(null)
+  const [local, setLocal] = useState(profile)
   const [uploading, setUploading] = useState(false)
   const [uploadError, setUploadError] = useState<string | null>(null)
   const [uploadNote, setUploadNote] = useState<string | null>(null)
+  const saveTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
 
-  const patch = (partial: Partial<PersonalProfile>) => onChange({ ...profile, ...partial })
+  const commitProfile = useCallback(
+    (next: PersonalProfile) => {
+      onChange({ ...next, updatedAt: Date.now() })
+    },
+    [onChange],
+  )
+
+  const patch = useCallback(
+    (partial: Partial<PersonalProfile> | ((prev: PersonalProfile) => PersonalProfile)) => {
+      setLocal((prev) => {
+        const next = typeof partial === 'function' ? partial(prev) : { ...prev, ...partial }
+        if (saveTimer.current) clearTimeout(saveTimer.current)
+        saveTimer.current = setTimeout(() => commitProfile(next), 500)
+        return next
+      })
+    },
+    [commitProfile],
+  )
+
   const hasApiKey = !!getActiveApiKey(settings)
 
   const onUpload = async (file: File) => {
@@ -50,18 +77,16 @@ export function PersonalInfoScreen({
         } catch (llmErr) {
           console.warn('[cv]', llmErr)
           structured = structureResumeText(text, file.name)
-          note = 'AI extraction failed — used basic parser. Check API key or try again.'
+          note = 'AI extraction failed — used basic parser.'
         }
       } else {
         structured = structureResumeText(text, file.name)
         note = 'CV imported. Add an API key in Settings for deeper extraction.'
       }
 
-      onChange({
-        ...structured,
-        jobDescription: profile.jobDescription,
-        extraContext: profile.extraContext || structured.extraContext,
-      })
+      const merged = mergeCvIntoProfile(local, structured)
+      setLocal(merged)
+      commitProfile(merged)
       setUploadNote(note)
     } catch (e) {
       setUploadError(e instanceof Error ? e.message : 'Upload failed')
@@ -107,13 +132,13 @@ export function PersonalInfoScreen({
         <h2 className="mobile-section-title">Basic Info</h2>
         <label className="mobile-field block">
           <span>Name</span>
-          <input value={profile.name} onChange={(e) => patch({ name: e.target.value })} />
+          <input value={local.name} onChange={(e) => patch({ name: e.target.value })} />
         </label>
         <label className="mobile-field block">
           <span>Professional Summary</span>
           <textarea
             rows={5}
-            value={profile.summary}
+            value={local.summary}
             onChange={(e) => patch({ summary: e.target.value })}
           />
         </label>
@@ -123,7 +148,7 @@ export function PersonalInfoScreen({
           Drag ⋮⋮ or use arrows to reorder. Use bullet points with numbers and facts.
         </p>
         <DraggableList
-          items={profile.experience}
+          items={local.experience}
           onReorder={(experience) => patch({ experience })}
         >
           {(exp, _i, controls) => (
@@ -132,11 +157,17 @@ export function PersonalInfoScreen({
               exp={exp}
               controls={controls}
               onChange={(next) =>
-                patch({
-                  experience: profile.experience.map((e) => (e.id === exp.id ? next : e)),
-                })
+                patch((prev) => ({
+                  ...prev,
+                  experience: prev.experience.map((e) => (e.id === exp.id ? next : e)),
+                }))
               }
-              onRemove={() => patch({ experience: profile.experience.filter((e) => e.id !== exp.id) })}
+              onRemove={() =>
+                patch((prev) => ({
+                  ...prev,
+                  experience: prev.experience.filter((e) => e.id !== exp.id),
+                }))
+              }
             />
           )}
         </DraggableList>
@@ -144,12 +175,13 @@ export function PersonalInfoScreen({
           type="button"
           className="mobile-add-btn"
           onClick={() =>
-            patch({
+            patch((prev) => ({
+              ...prev,
               experience: [
-                ...profile.experience,
+                ...prev.experience,
                 { id: uid(), title: '', company: '', dateRange: '', bullets: '' },
               ],
-            })
+            }))
           }
         >
           + Add one more experience
@@ -158,13 +190,13 @@ export function PersonalInfoScreen({
         <h2 className="mobile-section-title">Skills</h2>
         <p className="mobile-section-hint">Add skills that show you fit the position.</p>
         <div className="mobile-chips">
-          {profile.skills.map((skill) => (
-            <span key={skill} className="mobile-chip">
+          {local.skills.map((skill, i) => (
+            <span key={`${i}-${skill}`} className="mobile-chip">
               {skill}
               <button
                 type="button"
                 aria-label={`Remove ${skill}`}
-                onClick={() => patch({ skills: profile.skills.filter((s) => s !== skill) })}
+                onClick={() => patch((prev) => ({ ...prev, skills: prev.skills.filter((_, idx) => idx !== i) }))}
               >
                 ×
               </button>
@@ -175,7 +207,12 @@ export function PersonalInfoScreen({
             className="mobile-chip-add"
             onClick={() => {
               const val = prompt('Add skill')
-              if (val?.trim()) patch({ skills: [...profile.skills, val.trim()] })
+              if (val?.trim()) {
+                const skill = val.trim()
+                patch((prev) =>
+                  prev.skills.includes(skill) ? prev : { ...prev, skills: [...prev.skills, skill] },
+                )
+              }
             }}
           >
             + Add
@@ -183,17 +220,25 @@ export function PersonalInfoScreen({
         </div>
 
         <h2 className="mobile-section-title">Projects</h2>
-        <p className="mobile-section-hint">Drag to reorder projects. Showcase portfolio pieces and impact.</p>
-        <DraggableList items={profile.projects} onReorder={(projects) => patch({ projects })}>
+        <p className="mobile-section-hint">Drag to reorder projects.</p>
+        <DraggableList items={local.projects} onReorder={(projects) => patch({ projects })}>
           {(proj, _i, controls) => (
             <ProjectCard
               key={proj.id}
               proj={proj}
               controls={controls}
               onChange={(next) =>
-                patch({ projects: profile.projects.map((p) => (p.id === proj.id ? next : p)) })
+                patch((prev) => ({
+                  ...prev,
+                  projects: prev.projects.map((p) => (p.id === proj.id ? next : p)),
+                }))
               }
-              onRemove={() => patch({ projects: profile.projects.filter((p) => p.id !== proj.id) })}
+              onRemove={() =>
+                patch((prev) => ({
+                  ...prev,
+                  projects: prev.projects.filter((p) => p.id !== proj.id),
+                }))
+              }
             />
           )}
         </DraggableList>
@@ -201,9 +246,10 @@ export function PersonalInfoScreen({
           type="button"
           className="mobile-add-btn"
           onClick={() =>
-            patch({
-              projects: [...profile.projects, { id: uid(), name: '', tech: '', description: '' }],
-            })
+            patch((prev) => ({
+              ...prev,
+              projects: [...prev.projects, { id: uid(), name: '', tech: '', description: '' }],
+            }))
           }
         >
           + Add one more project
@@ -211,16 +257,24 @@ export function PersonalInfoScreen({
 
         <h2 className="mobile-section-title">Education</h2>
         <p className="mobile-section-hint">Include degrees, certifications, and relevant coursework.</p>
-        <DraggableList items={profile.education} onReorder={(education) => patch({ education })}>
+        <DraggableList items={local.education} onReorder={(education) => patch({ education })}>
           {(edu, _i, controls) => (
             <EducationCard
               key={edu.id}
               edu={edu}
               controls={controls}
               onChange={(next) =>
-                patch({ education: profile.education.map((e) => (e.id === edu.id ? next : e)) })
+                patch((prev) => ({
+                  ...prev,
+                  education: prev.education.map((e) => (e.id === edu.id ? next : e)),
+                }))
               }
-              onRemove={() => patch({ education: profile.education.filter((e) => e.id !== edu.id) })}
+              onRemove={() =>
+                patch((prev) => ({
+                  ...prev,
+                  education: prev.education.filter((e) => e.id !== edu.id),
+                }))
+              }
             />
           )}
         </DraggableList>
@@ -228,9 +282,10 @@ export function PersonalInfoScreen({
           type="button"
           className="mobile-add-btn"
           onClick={() =>
-            patch({
-              education: [...profile.education, { id: uid(), degree: '', details: '' }],
-            })
+            patch((prev) => ({
+              ...prev,
+              education: [...prev.education, { id: uid(), degree: '', details: '' }],
+            }))
           }
         >
           + Add one more
@@ -238,12 +293,12 @@ export function PersonalInfoScreen({
 
         <h2 className="mobile-section-title">Extra Context</h2>
         <p className="mobile-section-hint">
-          Career transitions, gaps, strengths to highlight, or other context for better answers.
+          Add your own notes here — career transitions, gaps, strengths. This section is not filled from your CV upload.
         </p>
         <textarea
           className="mobile-textarea"
           rows={4}
-          value={profile.extraContext}
+          value={local.extraContext}
           onChange={(e) => patch({ extraContext: e.target.value })}
           placeholder="e.g., I'm transitioning from backend to frontend development…"
         />
@@ -252,7 +307,7 @@ export function PersonalInfoScreen({
         <textarea
           className="mobile-textarea"
           rows={4}
-          value={profile.jobDescription}
+          value={local.jobDescription}
           onChange={(e) => patch({ jobDescription: e.target.value })}
           placeholder="Paste the role JD for fit questions…"
         />

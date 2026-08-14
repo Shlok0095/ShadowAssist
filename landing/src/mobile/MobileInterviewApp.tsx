@@ -12,6 +12,7 @@ type AppScreen = 'home' | 'settings' | 'personal-info'
 
 export default function MobileInterviewApp() {
   const [screen, setScreen] = useState<AppScreen>('home')
+  const [overlayScreen, setOverlayScreen] = useState<AppScreen | null>(null)
   const [profile, setProfile] = useState<PersonalProfile>(() => loadProfile())
   const [settings, setSettings] = useState<AppSettings>(() => loadAppSettings())
 
@@ -46,13 +47,33 @@ export default function MobileInterviewApp() {
 
   if (session.phase === 'interview') {
     return (
-      <InterviewScreen
-        session={session}
-        settings={settings}
-        onOpenSettings={() => setScreen('settings')}
-        onPatchSettings={updateSettings}
-        fontClass={fontClass}
-      />
+      <div className={`mobile-interview-root ${fontClass}`}>
+        <InterviewScreen
+          session={session}
+          settings={settings}
+          onOpenSettings={() => setOverlayScreen('settings')}
+          onPatchSettings={updateSettings}
+        />
+        {overlayScreen ? (
+          <div className="mobile-overlay">
+            {overlayScreen === 'settings' ? (
+              <SettingsScreen
+                settings={settings}
+                onChange={updateSettings}
+                onBack={() => setOverlayScreen(null)}
+                onOpenPersonalInfo={() => setOverlayScreen('personal-info')}
+              />
+            ) : (
+              <PersonalInfoScreen
+                profile={profile}
+                settings={settings}
+                onChange={updateProfile}
+                onBack={() => setOverlayScreen('settings')}
+              />
+            )}
+          </div>
+        ) : null}
+      </div>
     )
   }
 
