@@ -16,7 +16,8 @@ import {
 } from '@/config/downloads'
 import { FALLBACK_CHANNEL } from '@/config/downloads'
 
-const ghostBtnClass =
+const ANDROID_APK_URL =
+  'https://github.com/Shlok0095/VeilAssist/releases/download/latest-stag/VeilAssist-Interview.apk'
   'inline-flex items-center justify-center rounded-xl border border-white/[0.08] bg-white/[0.03] px-5 py-3 text-sm font-medium text-zinc-200 no-underline transition-colors hover:border-cyan-500/20 hover:text-white'
 
 function AppleIcon() {
@@ -302,19 +303,14 @@ export function DownloadsPage() {
             </p>
             <div className="mt-5 flex flex-wrap gap-3">
               <a
-                href={SITE.downloadAndroidApkBetaUrl}
+                href={ANDROID_APK_URL}
                 className="inline-flex items-center rounded-xl bg-blue-600 px-5 py-3 text-sm font-semibold text-white no-underline hover:bg-blue-500"
                 download="VeilAssist-Interview.apk"
               >
                 Download Android APK
               </a>
-              <a
-                href="https://github.com/Shlok0095/VeilAssist/releases/download/latest-stag/VeilAssist-Interview.apk"
-                className={ghostBtnClass}
-                target="_blank"
-                rel="noreferrer"
-              >
-                GitHub direct link
+              <a href={ANDROID_APK_URL} className={ghostBtnClass} target="_blank" rel="noreferrer">
+                Open download link
               </a>
             </div>
             <ol className="mt-5 list-decimal space-y-2 pl-5 text-sm text-zinc-400">
