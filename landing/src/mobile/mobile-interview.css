@@ -634,9 +634,60 @@
 }
 
 .mobile-drag {
-  opacity: 0.35;
+  opacity: 0.45;
   font-size: 0.7rem;
+  cursor: grab;
+  touch-action: none;
+  user-select: none;
 }
+
+.mobile-drag:active {
+  cursor: grabbing;
+}
+
+.mobile-drag-handle-wrap {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  flex-shrink: 0;
+}
+
+.mobile-reorder-arrows {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.mobile-reorder-btn {
+  border: none;
+  background: rgba(255, 255, 255, 0.08);
+  color: rgba(255, 255, 255, 0.55);
+  width: 22px;
+  height: 18px;
+  border-radius: 4px;
+  font-size: 0.65rem;
+  line-height: 1;
+  cursor: pointer;
+  padding: 0;
+}
+
+.mobile-draggable-list {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.mobile-list-card.drag-over {
+  border-color: rgba(59, 130, 246, 0.45);
+  background: rgba(59, 130, 246, 0.08);
+}
+
+.mobile-upload-note {
+  font-size: 0.75rem;
+  color: rgba(74, 222, 128, 0.85);
+  margin: 4px 0 12px;
+}
+
 
 .mobile-list-card-title {
   flex: 1;

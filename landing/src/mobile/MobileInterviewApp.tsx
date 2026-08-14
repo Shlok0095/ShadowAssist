@@ -61,6 +61,7 @@ export default function MobileInterviewApp() {
       <div className={`mobile-interview-root ${fontClass}`}>
         <PersonalInfoScreen
           profile={profile}
+          settings={settings}
           onChange={updateProfile}
           onBack={() => setScreen('settings')}
         />
