@@ -88,3 +88,26 @@ unauthenticated users away from `/dashboard`, `/onboarding`, `/session`,
 Set the project **root directory** to `webapp/`. Add every variable from
 `.env.example` in the Vercel project settings. `vercel.json` pins the Next.js
 framework preset.
+
+### One-shot deploy from a machine with the secrets
+
+```bash
+cd webapp
+
+# 1. Apply schema + RLS to Supabase (needs DATABASE_URL / DIRECT_URL exported)
+npm run db:migrate                         # drizzle/0000_*.sql (tables + indexes)
+node scripts/apply-policies.mjs            # supabase/policies.sql (RLS + trigger)
+
+# 2. Deploy to Vercel (needs VERCEL_TOKEN exported)
+npx vercel link --yes --token "$VERCEL_TOKEN"
+for v in NEXT_PUBLIC_SUPABASE_URL NEXT_PUBLIC_SUPABASE_ANON_KEY \
+         SUPABASE_SERVICE_ROLE_KEY DATABASE_URL DIRECT_URL \
+         NEXT_PUBLIC_SITE_URL NVIDIA_NIM_API_KEY NIM_LLM_MODEL; do
+  printf '%s' "${!v}" | npx vercel env add "$v" production --token "$VERCEL_TOKEN" --force
+done
+npx vercel deploy --prod --token "$VERCEL_TOKEN"
+```
+
+After the first deploy, set `NEXT_PUBLIC_SITE_URL` to the production URL and add
+`${NEXT_PUBLIC_SITE_URL}/auth/callback` to Supabase → Authentication → URL
+Configuration (Redirect URLs), then redeploy.
