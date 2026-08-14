@@ -18,6 +18,8 @@ import { FALLBACK_CHANNEL } from '@/config/downloads'
 
 const ANDROID_APK_URL =
   'https://github.com/Shlok0095/VeilAssist/releases/download/latest-stag/VeilAssist-Interview.apk'
+
+const ghostBtnClass =
   'inline-flex items-center justify-center rounded-xl border border-white/[0.08] bg-white/[0.03] px-5 py-3 text-sm font-medium text-zinc-200 no-underline transition-colors hover:border-cyan-500/20 hover:text-white'
 
 function AppleIcon() {
