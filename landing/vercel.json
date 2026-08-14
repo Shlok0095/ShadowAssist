@@ -7,6 +7,10 @@
     "VITE_SITE_ORIGIN": "https://veilassist.vercel.app",
     "VITE_ROLLING_TAG": "latest"
   },
+  "rewrites": [
+    { "source": "/api/(.*)", "destination": "/api/$1" },
+    { "source": "/((?!api/).*)", "destination": "/index.html" }
+  ],
   "redirects": [
     {
       "source": "/:path*",

@@ -11,4 +11,12 @@ Optional — defaults match `github.com/Shlok0095/VeilAssist`. Vercel sets the p
 | `VITE_SITE_ORIGIN` | Canonical website origin used for first-party download routes |
 | `VITE_DOWNLOAD_SETUP_URL` | Optional complete installer URL override |
 
+### Server-only (Vercel dashboard — never `VITE_`)
+
+| Variable | Purpose |
+|----------|---------|
+| `NVIDIA_API_KEY` | NVIDIA NIM API key for `/api/interview/chat` (mobile interview app) |
+| `NVIDIA_CHAT_MODEL` | Optional model id (default `nvidia/nemotron-nano-12b-v2-vl`) |
+
 Create a local file `.env` (gitignored) with `VITE_*` keys to override.
+For API routes locally, run `npx vercel dev` from the `landing/` folder.

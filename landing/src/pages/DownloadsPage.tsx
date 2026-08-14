@@ -274,6 +274,37 @@ export function DownloadsPage() {
         channels.map((channel) => <ChannelSection key={channel.tag} channel={channel} />)
       )}
 
+      <section className="mx-auto w-full max-w-5xl px-4 pb-10 sm:px-8">
+        <ScrollReveal>
+          <div className="rounded-2xl border border-white/[0.08] bg-white/[0.03] p-6 sm:p-8">
+            <p className="font-mono text-xs font-medium uppercase tracking-[0.24em] text-cyan-400/70">
+              Mobile interview
+            </p>
+            <h2 className="mt-2 text-xl font-semibold tracking-tight text-white">Android / phone copilot</h2>
+            <p className="mt-3 max-w-2xl text-sm leading-relaxed text-zinc-400">
+              Open the mobile interview app in Chrome on your phone — paste your resume, start a session, and
+              VeilAssist listens, transcribes, and generates answers when you finish speaking. Install to home
+              screen for an app-like experience (PWA).
+            </p>
+            <div className="mt-5 flex flex-wrap gap-3">
+              <Link to="/app" className="inline-flex items-center rounded-xl bg-blue-600 px-5 py-3 text-sm font-semibold text-white no-underline hover:bg-blue-500">
+                Open mobile interview →
+              </Link>
+              <a
+                href="/manifest.webmanifest"
+                className={ghostBtnClass}
+              >
+                PWA manifest
+              </a>
+            </div>
+            <p className="mt-4 text-xs text-zinc-500">
+              Requires microphone permission. AI answers use NVIDIA NIM on the server — set{' '}
+              <code className="text-zinc-400">NVIDIA_API_KEY</code> in Vercel env for production.
+            </p>
+          </div>
+        </ScrollReveal>
+      </section>
+
       <section className="mx-auto w-full max-w-5xl px-4 pb-16 pt-6 sm:px-8">
         <ScrollReveal>
           <div className="flex flex-col items-center gap-3 text-center">

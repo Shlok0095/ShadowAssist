@@ -10,12 +10,14 @@ import { MarketingBuiltForLive } from '@/pages/MarketingBuiltForLive'
 import { MarketingHowItWorks } from '@/pages/MarketingHowItWorks'
 import { DocGuidePage } from '@/pages/DocGuidePage'
 import { LegalPage } from '@/pages/LegalPage'
+import MobileInterviewApp from '@/mobile/MobileInterviewApp'
 import terms from '../../legal/terms.txt?raw'
 import privacy from '../../legal/privacy.txt?raw'
 
 export default function App() {
   return (
     <Routes>
+      <Route path="app" element={<MobileInterviewApp />} />
       <Route element={<Shell />}>
         <Route index element={<Home />} />
         <Route path="download" element={<DownloadsPage />} />
