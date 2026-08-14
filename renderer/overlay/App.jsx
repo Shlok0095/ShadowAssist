@@ -1,7 +1,7 @@
 // Copyright (c) 2026 ShadowAssist. All rights reserved.
 // Unauthorized copying or distribution is prohibited.
 
-import React, { useState, useEffect, useRef, useCallback, startTransition } from 'react'
+import React, { useState, useEffect, useRef, useCallback } from 'react'
 import { flushSync } from 'react-dom'
 import { Eye, Glasses } from 'lucide-react'
 import StatusBar from './components/StatusBar'
@@ -772,14 +772,17 @@ export default function App() {
       clearTimeout(liveTranscriptUiFlushRef.current)
       liveTranscriptUiFlushRef.current = null
     }
+    if (isThinkingRef.current) return
     setLiveTranscriptSegments([...speechSegmentsRef.current])
   }, [])
 
   /** Partials only — finals call flushLiveTranscriptUi immediately so Ask timing is unchanged. */
   const scheduleLiveTranscriptUi = useCallback(() => {
+    if (isThinkingRef.current) return
     if (liveTranscriptUiFlushRef.current != null) return
     liveTranscriptUiFlushRef.current = window.setTimeout(() => {
       liveTranscriptUiFlushRef.current = null
+      if (isThinkingRef.current) return
       setLiveTranscriptSegments([...speechSegmentsRef.current])
     }, LIVE_TRANSCRIPT_UI_MS)
   }, [])
@@ -789,13 +792,16 @@ export default function App() {
       clearTimeout(rollingBarUiFlushRef.current)
       rollingBarUiFlushRef.current = null
     }
+    if (isThinkingRef.current) return
     setRollingBar({ ...rollingBarDisplayRef.current })
   }, [])
 
   const scheduleRollingBarUi = useCallback(() => {
+    if (isThinkingRef.current) return
     if (rollingBarUiFlushRef.current != null) return
     rollingBarUiFlushRef.current = window.setTimeout(() => {
       rollingBarUiFlushRef.current = null
+      if (isThinkingRef.current) return
       setRollingBar({ ...rollingBarDisplayRef.current })
     }, LIVE_TRANSCRIPT_UI_MS)
   }, [])
@@ -1038,22 +1044,11 @@ export default function App() {
   }, [])
 
   /**
-   * Low-priority formatted preview; the full token stream remains lossless in
-   * streamAccumRef. startTransition keeps the markdown reparse interruptible so
-   * scrolling and input stay responsive while long answers stream.
+   * Mid-stream markdown preview was disabled: swapping the raw token mirror for a
+   * full reparse froze the overlay. Tokens still accumulate in streamAccumRef and
+   * paint into streamTextRef; formatted layout is applied on commit only.
    */
-  const scheduleStreamPreviewFlush = useCallback(() => {
-    if (streamPreviewFlushRef.current != null) return
-    streamPreviewFlushRef.current = window.setTimeout(() => {
-      streamPreviewFlushRef.current = null
-      const full = streamAccumRef.current
-      if (!streamDomAcceptingRef.current || !full) return
-      streamPreviewActiveRef.current = true
-      startTransition(() => {
-        setStreamPreview(full)
-      })
-    }, streamPreviewIntervalFor(streamAccumRef.current.length))
-  }, [])
+  const scheduleStreamPreviewFlush = useCallback(() => {}, [])
 
   const appendTokenToStreamDom = useCallback(
     (t) => {
@@ -1197,6 +1192,8 @@ export default function App() {
       setStreamPreview('')
       // Resume mic chunk processing after AI finishes speaking
       setTimeout(() => { micPausedForAskRef.current = false }, 400)
+      setLiveTranscriptSegments([...speechSegmentsRef.current])
+      setRollingBar({ ...rollingBarDisplayRef.current })
     }
     const onAborted = () => {
       setIsThinking(false)

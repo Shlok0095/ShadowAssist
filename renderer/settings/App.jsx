@@ -1,7 +1,7 @@
 // Copyright (c) 2026 VeilAssist. All rights reserved.
 // Unauthorized copying or distribution is prohibited.
 
-import React, { useState, useEffect, useMemo } from 'react'
+import React, { useState, useEffect, useMemo, useRef } from 'react'
 import { createIpcShim } from '../shared/ipcShim'
 import SettingsTabContent from './SettingsTabContent'
 import { SettingsNav } from './settingsNav.jsx'
@@ -91,6 +91,21 @@ export default function Settings() {
   const [jdContext, setJdContext] = useState('')
   const [resumeSourceName, setResumeSourceName] = useState('')
   const [profileDocBusy, setProfileDocBusy] = useState(null)
+  const resumeContextRef = useRef('')
+  const jdContextRef = useRef('')
+  const resumeSourceNameRef = useRef('')
+  const resumeSaveTimerRef = useRef(null)
+  const jdSaveTimerRef = useRef(null)
+  resumeContextRef.current = resumeContext
+  jdContextRef.current = jdContext
+  resumeSourceNameRef.current = resumeSourceName
+
+  useEffect(() => {
+    return () => {
+      if (resumeSaveTimerRef.current) clearTimeout(resumeSaveTimerRef.current)
+      if (jdSaveTimerRef.current) clearTimeout(jdSaveTimerRef.current)
+    }
+  }, [])
 
   const [modelCatalog, setModelCatalog] = useState({})
   const [sttPolicy, setSttPolicy] = useState(null)
@@ -582,10 +597,12 @@ export default function Settings() {
 
   const saveResumeContext = async (text, sourceName) => {
     const v = String(text || '').slice(0, RESUME_MAX)
+    resumeContextRef.current = v
     setResumeContext(v)
     await save('resumeContext', v)
     if (sourceName !== undefined) {
       const n = String(sourceName || '').slice(0, 200)
+      resumeSourceNameRef.current = n
       setResumeSourceName(n)
       await save('resumeSourceName', n)
     }
@@ -593,8 +610,31 @@ export default function Settings() {
 
   const saveJdContext = async (text) => {
     const v = String(text || '').slice(0, JD_MAX)
+    jdContextRef.current = v
     setJdContext(v)
     await save('jdContext', v)
+  }
+
+  const onResumeChange = (value) => {
+    const v = String(value || '').slice(0, RESUME_MAX)
+    resumeContextRef.current = v
+    setResumeContext(v)
+    if (resumeSaveTimerRef.current) clearTimeout(resumeSaveTimerRef.current)
+    resumeSaveTimerRef.current = setTimeout(() => {
+      resumeSaveTimerRef.current = null
+      void save('resumeContext', resumeContextRef.current)
+    }, 400)
+  }
+
+  const onJdChange = (value) => {
+    const v = String(value || '').slice(0, JD_MAX)
+    jdContextRef.current = v
+    setJdContext(v)
+    if (jdSaveTimerRef.current) clearTimeout(jdSaveTimerRef.current)
+    jdSaveTimerRef.current = setTimeout(() => {
+      jdSaveTimerRef.current = null
+      void save('jdContext', jdContextRef.current)
+    }, 400)
   }
 
   const uploadProfileDoc = async (kind) => {
@@ -1230,10 +1270,22 @@ export default function Settings() {
               onUploadFile: uploadReferenceFile,
               onRemoveFile: removeReferenceFile,
               onToggleTemplates: () => setShowModeTemplates((v) => !v),
-              onResumeChange: setResumeContext,
-              onResumeBlur: () => void saveResumeContext(resumeContext, resumeSourceName),
-              onJdChange: setJdContext,
-              onJdBlur: () => void saveJdContext(jdContext),
+              onResumeChange,
+              onResumeBlur: () => {
+                if (resumeSaveTimerRef.current) {
+                  clearTimeout(resumeSaveTimerRef.current)
+                  resumeSaveTimerRef.current = null
+                }
+                void saveResumeContext(resumeContextRef.current, resumeSourceNameRef.current)
+              },
+              onJdChange,
+              onJdBlur: () => {
+                if (jdSaveTimerRef.current) {
+                  clearTimeout(jdSaveTimerRef.current)
+                  jdSaveTimerRef.current = null
+                }
+                void saveJdContext(jdContextRef.current)
+              },
               onUploadResume: () => void uploadProfileDoc('resume'),
               onUploadJd: () => void uploadProfileDoc('jd'),
               onClearResume: () => void saveResumeContext('', ''),

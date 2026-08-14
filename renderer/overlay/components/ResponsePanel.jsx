@@ -651,28 +651,21 @@ function HeardQuestionBubble({ text }) {
 }
 
 /**
- * Brief mode while generating. Two layers:
- * - Raw mirror (`streamTextRef`): a plain <p> that App.jsx appends tokens into
- *   imperatively — every token paints without a React render or markdown parse.
- * - Formatted preview (`streamPreview`): throttled low-priority state that
- *   replaces the raw mirror once the first flush lands.
- * `streamPlaceholderRef` is hidden imperatively on the first token for the same reason.
+ * Brief mode while generating. Raw token mirror only — App.jsx appends into
+ * `streamTextRef` without a React render or markdown parse. Formatted BriefAnswer
+ * is applied on commit so the overlay stays responsive while tokens arrive.
  */
 function BriefStreamPreview({
-  streamPreview,
   streamTextRef,
   streamPlaceholderRef,
   onAbort,
   teleprompter = false,
   heardText = '',
-  heardContext = null,
 }) {
   const heard = String(heardText || '').trim()
 
   return (
-    <div
-      className={`mx-auto w-full ${teleprompter ? 'max-w-[46rem]' : 'max-w-[44rem]'}`}
-    >
+    <div className="mx-auto w-full max-w-full">
       {heard && !teleprompter ? (
         <div className="mb-4">
           <HeardQuestionBubble text={heard} />
@@ -696,22 +689,16 @@ function BriefStreamPreview({
           </button>
         ) : null}
       </div>
-      <div className="crystal-answer-shell rounded-xl px-3.5 py-3.5">
-        {streamPreview ? (
-          <BriefAnswer text={streamPreview} teleprompter={teleprompter} allowCode streaming />
-        ) : (
-          <>
-            <p
-              ref={streamTextRef}
-              className={`crystal-answer-text whitespace-pre-wrap ${
-                teleprompter ? 'text-[17px] leading-[1.85]' : 'text-[15px] leading-[1.8]'
-              }`}
-            />
-            <p ref={streamPlaceholderRef} className="crystal-muted text-[12px]">
-              Composing answer…
-            </p>
-          </>
-        )}
+      <div className="crystal-answer-shell crystal-stream-shell rounded-xl px-3.5 py-3.5">
+        <p
+          ref={streamTextRef}
+          className={`crystal-answer-text crystal-stream-text whitespace-pre-wrap ${
+            teleprompter ? 'text-[17px] leading-[1.85]' : 'text-[15px] leading-[1.8]'
+          }`}
+        />
+        <p ref={streamPlaceholderRef} className="crystal-muted text-[12px]">
+          Composing answer…
+        </p>
       </div>
     </div>
   )
@@ -765,63 +752,31 @@ function ComposingShell({ onAbort, teleprompter = false, heardText = '', heardCo
   )
 }
 
-/** Detailed mode: raw mirror until throttled markdown preview is ready. */
+/** Detailed mode: same raw token mirror as brief — markdown is applied on commit. */
 function DetailedStreamPreview({
-  streamPreview,
   streamTextRef,
   streamPlaceholderRef,
   onAbort,
   teleprompter = false,
   heardText = '',
-  heardContext = null,
 }) {
-  const nodes = useMemo(() => parseMarkdown(streamPreview || ''), [streamPreview])
-  const hasPreview = nodes.length > 0
   const heard = String(heardText || '').trim()
 
-  if (!hasPreview) {
-    return (
-      <div className={`mx-auto w-full ${teleprompter ? 'max-w-[46rem]' : 'max-w-[44rem]'}`}>
-        {heard && !teleprompter ? (
-          <div className="mb-4">
-            <HeardQuestionBubble text={heard} />
-          </div>
-        ) : null}
-        <div className="mb-2 flex items-center justify-between gap-2">
-          <div className="flex items-center gap-2" style={{ color: 'rgba(200,235,255,0.88)' }}>
-            <span
-              className="h-2 w-2 animate-pulse rounded-full"
-              style={{ background: 'rgba(180,225,255,0.65)', boxShadow: '0 0 8px rgba(160,215,245,0.45)' }}
-            />
-            <span className="crystal-sublabel text-[10px] normal-case">Generating</span>
-          </div>
-          {onAbort ? (
-            <button
-              type="button"
-              onClick={onAbort}
-              className="crystal-panel-inset rounded-lg px-2 py-0.5 text-[10px] crystal-muted hover:text-white/90"
-            >
-              Stop
-            </button>
-          ) : null}
-        </div>
-        <div className="crystal-panel-inset rounded-xl px-3.5 py-3 opacity-90">
-          <p
-            ref={streamTextRef}
-            className={`crystal-answer-text whitespace-pre-wrap text-[13px] leading-[1.65]`}
-          />
-          <p ref={streamPlaceholderRef} className="crystal-muted text-[12px]">
-            Composing answer…
-          </p>
-        </div>
-      </div>
-    )
-  }
-
   return (
-    <div className={`mx-auto w-full space-y-2 ${teleprompter ? 'max-w-[46rem]' : 'max-w-[44rem]'}`}>
-      <div className="flex items-center justify-between gap-2">
-        <span className="crystal-sublabel text-[10px] normal-case">Draft preview</span>
+    <div className="mx-auto w-full max-w-full">
+      {heard && !teleprompter ? (
+        <div className="mb-4">
+          <HeardQuestionBubble text={heard} />
+        </div>
+      ) : null}
+      <div className="mb-2 flex items-center justify-between gap-2">
+        <div className="flex items-center gap-2" style={{ color: 'rgba(200,235,255,0.88)' }}>
+          <span
+            className="h-2 w-2 animate-pulse rounded-full"
+            style={{ background: 'rgba(180,225,255,0.65)', boxShadow: '0 0 8px rgba(160,215,245,0.45)' }}
+          />
+          <span className="crystal-sublabel text-[10px] normal-case">Generating</span>
+        </div>
         {onAbort ? (
           <button
             type="button"
@@ -832,8 +787,14 @@ function DetailedStreamPreview({
           </button>
         ) : null}
       </div>
-      <div className="crystal-panel-inset rounded-xl px-3.5 py-3 opacity-90">
-        <MarkdownNodes nodes={nodes} suppressHighlight />
+      <div className="crystal-panel-inset crystal-stream-shell rounded-xl px-3.5 py-3">
+        <p
+          ref={streamTextRef}
+          className="crystal-answer-text crystal-stream-text whitespace-pre-wrap text-[13px] leading-[1.65]"
+        />
+        <p ref={streamPlaceholderRef} className="crystal-muted text-[12px]">
+          Composing answer…
+        </p>
       </div>
     </div>
   )
@@ -944,23 +905,19 @@ const ResponsePanelInner = React.forwardRef(function ResponsePanel(
           <div className="mx-auto w-full max-w-full mb-2">
             {answerStyle === 'detailed' ? (
               <DetailedStreamPreview
-                streamPreview={streamPreview}
                 streamTextRef={streamTextRef}
                 streamPlaceholderRef={streamPlaceholderRef}
                 onAbort={onAbort}
                 teleprompter={overlayTeleprompter}
                 heardText={activeHeard?.text}
-                heardContext={activeHeard?.context}
               />
             ) : answerStyle === 'brief' ? (
               <BriefStreamPreview
-                streamPreview={streamPreview}
                 streamTextRef={streamTextRef}
                 streamPlaceholderRef={streamPlaceholderRef}
                 onAbort={onAbort}
                 teleprompter={overlayTeleprompter}
                 heardText={activeHeard?.text}
-                heardContext={activeHeard?.context}
               />
             ) : null}
             <div ref={streamPulseRef} className="hidden" aria-hidden />

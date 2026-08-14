@@ -1,7 +1,9 @@
 const { test, beforeEach } = require('node:test')
 const assert = require('node:assert/strict')
 const {
+  formatUserFacingChatError,
   isEligibleFallbackError,
+  isTransientRetryError,
   resetFallbackHealth,
   runStreamingFallback,
 } = require('../lib/chatStreamFallback')
@@ -206,9 +208,15 @@ test('ResourceExhausted retries primary before fallback', async () => {
   assert.equal(fallbackCalls, 0)
 })
 
-test('ResourceExhausted is fallback eligible without HTTP status', () => {
-  const error = new Error('ResourceExhausted: Worker local total request limit reached (16/16)')
+test('EngineCore is fallback eligible and transient-retryable without HTTP status', () => {
+  const error = new Error('EngineCore encountered an issue. See stack trace (above) for the root cause.')
   assert.equal(isEligibleFallbackError(error), true)
+  assert.equal(isTransientRetryError(error), true)
+})
+
+test('formatUserFacingChatError explains EngineCore to users', () => {
+  const error = new Error('EngineCore encountered an issue. See stack trace (above) for the root cause.')
+  assert.match(formatUserFacingChatError(error), /NVIDIA model server crashed/i)
 })
 
 test('403 and 404 are fallback eligible (deprecated or entitlement-blocked NIM models)', () => {

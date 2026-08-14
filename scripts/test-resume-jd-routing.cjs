@@ -116,7 +116,7 @@ test('source separation guard separates resume from JD', () => {
   assert.match(guard, /World knowledge fallback/i)
 })
 
-test('what is unknown term uses general LLM fallback, not resume honesty', () => {
+test('what is unknown term outside interview forbids resume', () => {
   const { isGeneralKnowledgeQuestion } = require('../lib/answerPlanner')
   const q = 'what is shapp?'
   assert.equal(isCandidateExperienceQuestion(q), false)
@@ -124,11 +124,23 @@ test('what is unknown term uses general LLM fallback, not resume honesty', () =>
   const plan = planAnswer({
     question: q,
     hasCandidateProfile: true,
-    activeMode: 'looking-for-work',
+    activeMode: 'team-meet',
   })
   assert.equal(plan.answerType, 'general_assistant')
   assert.equal(plan.profileContextPolicy, 'forbidden')
   assert.ok(!plan.requiredContextLayers.includes('resume'))
+})
+
+test('interview mode keeps resume nearby even for definitional asks', () => {
+  const q = 'what is shapp?'
+  const plan = planAnswer({
+    question: q,
+    hasCandidateProfile: true,
+    activeMode: 'looking-for-work',
+  })
+  assert.equal(plan.answerType, 'behavioral_interview_answer')
+  assert.ok(['required', 'allowed'].includes(plan.profileContextPolicy))
+  assert.ok(plan.requiredContextLayers.includes('resume'))
   const route = routeContext({
     userQuery: q,
     mode: 'looking-for-work',
@@ -136,7 +148,6 @@ test('what is unknown term uses general LLM fallback, not resume honesty', () =>
     jdAvailable: true,
     source: 'manual_input',
   })
-  assert.equal(route.useResume, false)
-  assert.equal(route.useJd, false)
-  assert.equal(route.answerContract, 'general_assistant')
+  assert.equal(route.useResume, true)
+  assert.equal(route.domainTag, 'interview')
 })

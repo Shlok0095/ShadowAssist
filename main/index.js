@@ -102,6 +102,7 @@ const screenCapture = require('../lib/screenCapture')
 const screenshotQueue = require('../lib/screenshotQueue')
 const providers = require('../lib/providers')
 const { isMultimodalChatModel } = require('../lib/chatMultimodalModels')
+const { formatUserFacingChatError } = require('../lib/chatStreamFallback')
 const { nvidiaFallbackModelsFor } = require('../lib/nvidiaChatModels.cjs')
 const {
   getTranscriptionRequestConfig,
@@ -124,6 +125,7 @@ const googleCalendar = require('../lib/googleCalendar')
 const {
   routeContext,
   formatAnswerContractBlock,
+  formatSpeakerIdentityBlock,
   formatDomainRoutingBlock,
   LAYER_BUDGET,
 } = require('../lib/contextRouter')
@@ -2748,6 +2750,7 @@ async function handleAskAI(userQuestion, audioTranscript, _askMeta = {}) {
   const effectiveAnswerContract =
     followUp?.kind === 'coding' ? 'coding_answer' : routeDecision?.answerContract
   const contractBlock = effectiveAnswerContract ? formatAnswerContractBlock(effectiveAnswerContract) : ''
+  const speakerIdentityBlock = formatSpeakerIdentityBlock(routeDecision)
   const domainBlock =
     routeDecision?.domainTag && store.get('intelligenceRoutingEnabled') !== false
       ? formatDomainRoutingBlock(routeDecision.domainTag)
@@ -2764,7 +2767,7 @@ async function handleAskAI(userQuestion, audioTranscript, _askMeta = {}) {
       return
     }
   }
-  let fullSystem = `${systemPrompt}${profileBlock}${skillBlock}${contractBlock}${domainBlock}${CONTEXT_ROUTING_RULES}${buildAiResponseLanguageBlock(store.get('aiResponseLanguage'))}`
+  let fullSystem = `${systemPrompt}${profileBlock}${skillBlock}${contractBlock}${speakerIdentityBlock}${domainBlock}${CONTEXT_ROUTING_RULES}${buildAiResponseLanguageBlock(store.get('aiResponseLanguage'))}`
   if (store.get('answerDiversityEnabled') === true) {
     fullSystem += `\n\n---\n## STYLE\n${getAiClient().buildAnswerDiversityHint()}`
   }
@@ -3019,7 +3022,7 @@ async function handleAskAI(userQuestion, audioTranscript, _askMeta = {}) {
     }
   } catch (err) {
     if (err.name === 'AbortError' || abortController.signal.aborted) sendToAiEventTarget('ai-aborted')
-    else sendToAiEventTarget('ai-error', err.message || 'Request failed')
+    else sendToAiEventTarget('ai-error', formatUserFacingChatError(err))
   } finally {
     llmResponseInFlight = false
     if (currentAbortController === abortController) currentAbortController = null
