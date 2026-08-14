@@ -47,7 +47,6 @@
     "test:chat-fallback": "node --test scripts/test-chat-stream-fallback.cjs",
     "test:ask-context": "node --test scripts/test-ask-context-priority.cjs",
     "test:ci": "node scripts/run-ci-tests.mjs",
-    "test:win32-exe-branding": "node scripts/test-win32-exe-branding.cjs",
     "test:web": "npm --prefix landing run typecheck",
     "test": "npm run test:ci && npm run test:web",
     "test:electron-sqlite": "electron scripts/test-electron-sqlite.cjs",
@@ -155,8 +154,7 @@
       "artifactName": "VeilAssist${version}-${arch}.${ext}"
     },
     "portable": {
-      "artifactName": "VeilAssist${version}.${ext}",
-      "unpackDirName": "VeilAssist-v2"
+      "artifactName": "VeilAssist${version}.${ext}"
     },
     "nsis": {
       "oneClick": true,
