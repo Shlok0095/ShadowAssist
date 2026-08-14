@@ -55,7 +55,6 @@ if (!gotLock) {
 const store = require('../lib/store')
 const { ENCRYPTED_KEYS } = store
 const branding = require('../lib/branding')
-const brandPresets = require('../lib/brandPresets')
 const { setDockVisibility, isDockHidden } = require('./dockPolicy')
 
 // macOS: apply the Dock policy BEFORE the first frame so the Dock icon never
@@ -350,16 +349,6 @@ function invalidateBrandDataUrlCache() {
   brandDataUrlCache = {}
 }
 
-/** Normalize any supported image (PNG/JPEG/ICO) into the persisted brand logo PNG. */
-function writeBrandLogoFromImagePath(srcPath, kind = 'app') {
-  const img = nativeImage.createFromPath(srcPath)
-  if (img.isEmpty()) throw new Error('Could not load image file.')
-  const destDir = branding.getBrandAssetsDir(app.getPath('userData'))
-  fs.mkdirSync(destDir, { recursive: true })
-  const dest = path.join(destDir, branding.getBrandLogoFileName(kind))
-  fs.writeFileSync(dest, img.toPNG())
-}
-
 /** Snapshot sent to renderers / returned by IPC. */
 function getBrandingSnapshot() {
   return {
@@ -368,7 +357,6 @@ function getBrandingSnapshot() {
     overlayLogoDataUrl: loadBrandLogoDataUrl('overlay'),
     hasCustomLogo: branding.hasCustomBrandLogo(app.getPath('userData'), 'app'),
     hasOverlayLogo: branding.hasCustomBrandLogo(app.getPath('userData'), 'overlay'),
-    appLogoPreset: String(store.get('brandAppLogoPreset') || ''),
   }
 }
 
@@ -3240,117 +3228,6 @@ function setupIPC() {
     event.returnValue = getBrandingSnapshot()
   })
   ipcMain.handle('branding:get', () => getBrandingSnapshot())
-  ipcMain.handle('branding:set-name', (_event, raw) => {
-    store.set('brandName', branding.normalizeBrandNameForStore(raw))
-    applyRuntimeBranding()
-    sendBrandingUpdateToWindows()
-    return getBrandingSnapshot()
-  })
-  ipcMain.handle('branding:pick-logo', async (_event, kind) => {
-    const target = kind === 'overlay' ? 'overlay' : 'app'
-    const res = await dialog.showOpenDialog(settingsWindow || undefined, {
-      title: `Choose ${target === 'overlay' ? 'overlay' : 'app'} logo (PNG, JPEG, or ICO)`,
-      properties: ['openFile'],
-      filters: [{ name: 'Images', extensions: ['png', 'jpg', 'jpeg', 'ico'] }],
-    })
-    if (res.canceled || !res.filePaths || !res.filePaths.length) {
-      return getBrandingSnapshot()
-    }
-    try {
-      const srcPath = res.filePaths[0]
-      const ext = path.extname(srcPath).toLowerCase()
-      if (ext === '.ico') {
-        writeBrandLogoFromImagePath(srcPath, target)
-      } else {
-        const buf = fs.readFileSync(srcPath)
-        if (!branding.isSupportedImageBytes(buf)) {
-          return {
-            ...getBrandingSnapshot(),
-            error: 'Unsupported image file — please choose a PNG, JPEG, or ICO.',
-          }
-        }
-        writeBrandLogoFromImagePath(srcPath, target)
-      }
-      store.set(
-        target === 'overlay' ? 'brandOverlayLogoCustomized' : 'brandLogoCustomized',
-        true,
-      )
-      if (target === 'app') store.set('brandAppLogoPreset', '')
-      invalidateBrandDataUrlCache()
-      applyRuntimeBranding()
-      sendBrandingUpdateToWindows()
-    } catch (e) {
-      console.warn('[branding] pick-logo failed:', e?.message || e)
-      return { ...getBrandingSnapshot(), error: e?.message || 'Failed to apply logo.' }
-    }
-    return getBrandingSnapshot()
-  })
-  ipcMain.handle('branding:list-presets', () => {
-    const presets = brandPresets.listAppLogoPresets(
-      app.getAppPath(),
-      process.resourcesPath,
-      app.isPackaged,
-    )
-    return presets.map((preset) => {
-      let previewDataUrl = ''
-      try {
-        const img = nativeImage.createFromPath(preset.srcPath)
-        if (!img.isEmpty()) {
-          const size = img.getSize()
-          const resized = size.width > 64 || size.height > 64 ? img.resize({ width: 64 }) : img
-          previewDataUrl = resized.toDataURL()
-        }
-      } catch (_) {}
-      return {
-        id: preset.id,
-        label: preset.label,
-        group: preset.group || 'app',
-        previewDataUrl,
-      }
-    })
-  })
-  ipcMain.handle('branding:apply-preset', (_event, presetId) => {
-    const id = String(presetId || '').trim()
-    try {
-      if (!id || id === 'default') {
-        branding.removeBrandLogo(app.getPath('userData'), 'app')
-        store.set('brandLogoCustomized', false)
-        store.set('brandAppLogoPreset', '')
-      } else {
-        const src = brandPresets.resolveAppLogoPresetPath(
-          id,
-          app.getAppPath(),
-          process.resourcesPath,
-          app.isPackaged,
-        )
-        if (!src) {
-          return { ...getBrandingSnapshot(), error: 'Preset logo file not found.' }
-        }
-        writeBrandLogoFromImagePath(src, 'app')
-        store.set('brandLogoCustomized', true)
-        store.set('brandAppLogoPreset', id)
-      }
-      invalidateBrandDataUrlCache()
-      applyRuntimeBranding()
-      sendBrandingUpdateToWindows()
-    } catch (e) {
-      console.warn('[branding] apply-preset failed:', e?.message || e)
-      return { ...getBrandingSnapshot(), error: e?.message || 'Failed to apply preset logo.' }
-    }
-    return getBrandingSnapshot()
-  })
-  ipcMain.handle('branding:reset', () => {
-    store.set('brandName', '')
-    store.set('brandLogoCustomized', false)
-    store.set('brandOverlayLogoCustomized', false)
-    store.set('brandAppLogoPreset', '')
-    branding.removeBrandLogo(app.getPath('userData'), 'app')
-    branding.removeBrandLogo(app.getPath('userData'), 'overlay')
-    invalidateBrandDataUrlCache()
-    applyRuntimeBranding()
-    sendBrandingUpdateToWindows()
-    return getBrandingSnapshot()
-  })
   ipcMain.handle('help:get-doc', () => {
     try {
       const { loadUserGuideMarkdown } = require('../lib/userGuideDoc')

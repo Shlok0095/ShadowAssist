@@ -51,7 +51,6 @@
     "test": "npm run test:ci && npm run test:web",
     "test:electron-sqlite": "electron scripts/test-electron-sqlite.cjs",
     "verify:dock": "electron scripts/verify-dock.cjs",
-    "fetch:icon-presets": "node scripts/fetch-system-icon-presets.cjs",
     "verify": "npm run test && npm run test:persistent-memory && npm run test:electron-sqlite && npm run build:all",
     "package:windows": "npm run build:win"
   },
@@ -75,7 +74,6 @@
       "HOW_IT_WORKS.md",
       "logo.png",
       "overlaylogo.png",
-      "resources/brand-presets/**/*",
       "package.json",
       "!**/*.map",
       "!**/*.test.*"
@@ -108,10 +106,6 @@
       {
         "from": "build/update-channel.txt",
         "to": "update-channel.txt"
-      },
-      {
-        "from": "resources/brand-presets",
-        "to": "brand-presets"
       }
     ],
     "win": {
