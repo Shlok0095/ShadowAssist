@@ -1,0 +1,17 @@
+{
+  "name": "VeilAssist",
+  "install": "npm ci && npm --prefix landing ci",
+  "terminals": [
+    {
+      "name": "web",
+      "command": "npm run dev:web",
+      "description": "VeilAssist marketing website dev server (Vite) at http://localhost:5174"
+    }
+  ],
+  "ports": [
+    {
+      "name": "landing website",
+      "port": 5174
+    }
+  ]
+}
