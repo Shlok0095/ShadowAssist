@@ -16,7 +16,7 @@ import {
 } from '@/config/downloads'
 import { FALLBACK_CHANNEL } from '@/config/downloads'
 
-const ANDROID_APK_URL =
+const ANDROID_APK_GITHUB =
   'https://github.com/Shlok0095/VeilAssist/releases/download/latest-stag/VeilAssist-Interview.apk'
 
 const ghostBtnClass =
@@ -305,16 +305,19 @@ export function DownloadsPage() {
             </p>
             <div className="mt-5 flex flex-wrap gap-3">
               <a
-                href={ANDROID_APK_URL}
+                href={SITE.downloadAndroidApkSiteUrl}
                 className="inline-flex items-center rounded-xl bg-blue-600 px-5 py-3 text-sm font-semibold text-white no-underline hover:bg-blue-500"
                 download="VeilAssist-Interview.apk"
               >
                 Download Android APK
               </a>
-              <a href={ANDROID_APK_URL} className={ghostBtnClass} target="_blank" rel="noreferrer">
-                Open download link
+              <a href={ANDROID_APK_GITHUB} className={ghostBtnClass} target="_blank" rel="noreferrer">
+                GitHub mirror
               </a>
             </div>
+            <p className="mt-3 text-xs text-zinc-500">
+              Use the blue button for a normal Chrome download from veilassist.vercel.app (recommended on Android).
+            </p>
             <ol className="mt-5 list-decimal space-y-2 pl-5 text-sm text-zinc-400">
               <li>Tap <strong className="text-zinc-300">Download Android APK</strong> on your phone.</li>
               <li>Open the downloaded file and allow install from this source if Android asks.</li>

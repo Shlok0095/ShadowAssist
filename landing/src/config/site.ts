@@ -16,6 +16,7 @@ export const DOWNLOAD_ROUTES = {
   windowsPortable: '/download/portable',
   androidApk: '/download/android',
   androidApkBeta: '/download/android-beta',
+  androidApkSite: '/downloads/VeilAssist-Interview.apk',
 } as const
 
 function releaseAssetUrl(file: string, tag = rollingTag) {
@@ -79,6 +80,10 @@ export const SITE = {
   },
   get downloadAndroidApkBetaUrl() {
     return vanityDownloadPath(DOWNLOAD_ROUTES.androidApkBeta)
+  },
+  /** Same-origin APK — normal Chrome download on Android (recommended). */
+  get downloadAndroidApkSiteUrl() {
+    return vanityDownloadPath(DOWNLOAD_ROUTES.androidApkSite)
   },
   get downloadAndroidApkDirectUrl() {
     return releaseAssetUrl('VeilAssist-Interview.apk')

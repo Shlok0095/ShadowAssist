@@ -10,6 +10,8 @@ on:
       - stag
       - main
       - master
+    paths-ignore:
+      - 'landing/public/downloads/**'
 
 permissions:
   contents: write
@@ -79,9 +81,24 @@ jobs:
             | **VeilAssist-Interview.apk** | Android interview app (install on phone) |
 
             **APK:** `${{ github.server_url }}/${{ github.repository }}/releases/download/${{ steps.tag.outputs.TAG }}/VeilAssist-Interview.apk`
-            **Website download:** https://veilassist.vercel.app/download/android-beta
+            **Website download:** https://veilassist.vercel.app/downloads/VeilAssist-Interview.apk
           prerelease: ${{ steps.tag.outputs.PRERELEASE }}
           allowUpdates: true
           replacesArtifacts: false
           artifactErrorsFailBuild: true
           artifacts: landing/release-android/VeilAssist-Interview.apk
+
+      - name: Publish APK on VeilAssist site (normal Chrome download)
+        shell: bash
+        run: |
+          mkdir -p landing/public/downloads
+          cp landing/release-android/VeilAssist-Interview.apk landing/public/downloads/VeilAssist-Interview.apk
+          git config user.name "veilassist-ci"
+          git config user.email "veilassist-ci@users.noreply.github.com"
+          git add landing/public/downloads/VeilAssist-Interview.apk
+          if git diff --cached --quiet; then
+            echo "APK already published on site"
+          else
+            git commit -m "chore: publish VeilAssist-Interview.apk for website download [skip ci]"
+            git push
+          fi
