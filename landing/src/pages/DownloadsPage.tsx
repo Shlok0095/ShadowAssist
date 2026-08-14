@@ -43,9 +43,18 @@ function LinuxIcon() {
   )
 }
 
+function AndroidIcon() {
+  return (
+    <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor" aria-hidden>
+      <path d="M17.6 9.48l1.84-3.18c.16-.31.04-.69-.26-.85a.637.637 0 0 0-.83.22l-1.88 3.24a11.463 11.463 0 0 0-8.94 0L5.65 5.67a.643.643 0 0 0-.87-.2.566.566 0 0 0-.22.87l1.84 3.18C4.4 11.22 3 13.29 3 15.5V18h18v-2.5c0-2.21-1.4-4.28-3.4-5.02zM8.5 14c-.83 0-1.5-.67-1.5-1.5S7.67 11 8.5 11s1.5.67 1.5 1.5S9.33 14 8.5 14zm7 0c-.83 0-1.5-.67-1.5-1.5S14.67 11 15.5 11s1.5.67 1.5 1.5-.67 1.5-1.5 1.5z" />
+    </svg>
+  )
+}
+
 function PlatformIcon({ platform }: { platform: DownloadPlatform }) {
   if (platform === 'windows') return <WindowsIcon />
   if (platform === 'macos') return <AppleIcon />
+  if (platform === 'android') return <AndroidIcon />
   return <LinuxIcon />
 }
 
@@ -149,7 +158,12 @@ function PlatformGroup({
 
 function ChannelSection({ channel, note }: { channel: ReleaseChannel; note?: string }) {
   const grouped = useMemo(() => {
-    const map: Record<DownloadPlatform, DownloadArtifact[]> = { windows: [], macos: [], linux: [] }
+    const map: Record<DownloadPlatform, DownloadArtifact[]> = {
+      windows: [],
+      macos: [],
+      linux: [],
+      android: [],
+    }
     for (const a of channel.artifacts) map[a.platform].push(a)
     return map
   }, [channel])
@@ -183,6 +197,7 @@ function ChannelSection({ channel, note }: { channel: ReleaseChannel; note?: str
         </p>
       ) : null}
       <div className="space-y-10">
+        <PlatformGroup platform="android" artifacts={grouped.android} recommendedPlatform={recommended} />
         <PlatformGroup platform="windows" artifacts={grouped.windows} recommendedPlatform={recommended} />
         <PlatformGroup platform="macos" artifacts={grouped.macos} recommendedPlatform={recommended} />
         <PlatformGroup platform="linux" artifacts={grouped.linux} recommendedPlatform={recommended} />
@@ -280,26 +295,37 @@ export function DownloadsPage() {
             <p className="font-mono text-xs font-medium uppercase tracking-[0.24em] text-cyan-400/70">
               Mobile interview
             </p>
-            <h2 className="mt-2 text-xl font-semibold tracking-tight text-white">Android / phone copilot</h2>
+            <h2 className="mt-2 text-xl font-semibold tracking-tight text-white">Android interview app</h2>
             <p className="mt-3 max-w-2xl text-sm leading-relaxed text-zinc-400">
-              Open the mobile interview app in Chrome on your phone — paste your resume, start a session, and
-              VeilAssist listens, transcribes, and generates answers when you finish speaking. Install to home
-              screen for an app-like experience (PWA).
+              Download the APK and install it on your phone — not a browser tab. Paste your resume, start a
+              session, and VeilAssist listens, transcribes, and generates answers when you finish speaking.
             </p>
             <div className="mt-5 flex flex-wrap gap-3">
-              <Link to="/app" className="inline-flex items-center rounded-xl bg-blue-600 px-5 py-3 text-sm font-semibold text-white no-underline hover:bg-blue-500">
-                Open mobile interview →
-              </Link>
               <a
-                href="/manifest.webmanifest"
-                className={ghostBtnClass}
+                href={SITE.downloadAndroidApkBetaUrl}
+                className="inline-flex items-center rounded-xl bg-blue-600 px-5 py-3 text-sm font-semibold text-white no-underline hover:bg-blue-500"
+                download="VeilAssist-Interview.apk"
               >
-                PWA manifest
+                Download Android APK
+              </a>
+              <a
+                href="https://github.com/Shlok0095/VeilAssist/releases/download/latest-stag/VeilAssist-Interview.apk"
+                className={ghostBtnClass}
+                target="_blank"
+                rel="noreferrer"
+              >
+                GitHub direct link
               </a>
             </div>
+            <ol className="mt-5 list-decimal space-y-2 pl-5 text-sm text-zinc-400">
+              <li>Tap <strong className="text-zinc-300">Download Android APK</strong> on your phone.</li>
+              <li>Open the downloaded file and allow install from this source if Android asks.</li>
+              <li>Open <strong className="text-zinc-300">VeilAssist Interview</strong> and grant microphone permission.</li>
+            </ol>
             <p className="mt-4 text-xs text-zinc-500">
-              Requires microphone permission. AI answers use NVIDIA NIM on the server — set{' '}
-              <code className="text-zinc-400">NVIDIA_API_KEY</code> in Vercel env for production.
+              Beta builds publish to the rolling <code className="text-zinc-400">latest-stag</code> release.
+              AI answers use NVIDIA NIM on the server — set <code className="text-zinc-400">NVIDIA_API_KEY</code> in
+              Vercel env for production.
             </p>
           </div>
         </ScrollReveal>

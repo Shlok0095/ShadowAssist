@@ -14,6 +14,8 @@ export const DOWNLOAD_ROUTES = {
   windowsSetup: '/download',
   windowsSetupBeta: '/download/beta',
   windowsPortable: '/download/portable',
+  androidApk: '/download/android',
+  androidApkBeta: '/download/android-beta',
 } as const
 
 function releaseAssetUrl(file: string, tag = rollingTag) {
@@ -68,6 +70,18 @@ export const SITE = {
   },
   get downloadPortableExeUrl() {
     return releaseAssetUrl('VeilAssist.exe')
+  },
+  /** Android interview APK — vanity /download/android-beta on stag. */
+  get downloadAndroidApkUrl() {
+    const path =
+      rollingTag === 'latest-stag' ? DOWNLOAD_ROUTES.androidApkBeta : DOWNLOAD_ROUTES.androidApk
+    return vanityDownloadPath(path)
+  },
+  get downloadAndroidApkBetaUrl() {
+    return vanityDownloadPath(DOWNLOAD_ROUTES.androidApkBeta)
+  },
+  get downloadAndroidApkDirectUrl() {
+    return releaseAssetUrl('VeilAssist-Interview.apk')
   },
   get checksumsTxtUrl() {
     return releaseAssetUrl('SHA256SUMS.txt')

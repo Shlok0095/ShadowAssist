@@ -1,0 +1,142 @@
+export type WorkExperience = {
+  id: string
+  title: string
+  company: string
+  dateRange: string
+  bullets: string
+}
+
+export type Project = {
+  id: string
+  name: string
+  tech: string
+  description: string
+}
+
+export type Education = {
+  id: string
+  degree: string
+  details: string
+}
+
+export type PersonalProfile = {
+  name: string
+  summary: string
+  experience: WorkExperience[]
+  skills: string[]
+  projects: Project[]
+  education: Education[]
+  extraContext: string
+  jobDescription: string
+  sourceFileName?: string
+  rawText?: string
+  updatedAt?: number
+}
+
+export type AnswerStructure = 'star' | 'direct' | 'concise'
+export type ResponseFormat = 'bullets' | 'paragraph'
+export type AnswerLength = 'short' | 'medium' | 'long'
+export type DetectionLevel = 'low' | 'medium' | 'high'
+export type FontSize = 'small' | 'standard' | 'large'
+export type AiProvider = 'nvidia' | 'groq' | 'openai'
+
+export type AppSettings = {
+  interviewTopic: string
+  customInstructions: string
+  interviewLanguage: string
+  autoAnswer: boolean
+  answerStructure: AnswerStructure
+  responseFormat: ResponseFormat
+  answerLength: AnswerLength
+  questionDetection: DetectionLevel
+  fontSize: FontSize
+  showTranscription: boolean
+  autoScroll: boolean
+  provider: AiProvider
+  nvidiaKey: string
+  groqKey: string
+  apiKey: string
+  nvidiaModel: string
+  groqModel: string
+  selectedModel: string
+}
+
+export const DEFAULT_PROFILE: PersonalProfile = {
+  name: '',
+  summary: '',
+  experience: [],
+  skills: [],
+  projects: [],
+  education: [],
+  extraContext: '',
+  jobDescription: '',
+}
+
+export const DEFAULT_APP_SETTINGS: AppSettings = {
+  interviewTopic: '',
+  customInstructions: '',
+  interviewLanguage: 'en',
+  autoAnswer: true,
+  answerStructure: 'star',
+  responseFormat: 'bullets',
+  answerLength: 'medium',
+  questionDetection: 'high',
+  fontSize: 'standard',
+  showTranscription: true,
+  autoScroll: true,
+  provider: 'nvidia',
+  nvidiaKey: '',
+  groqKey: '',
+  apiKey: '',
+  nvidiaModel: 'nvidia/nemotron-nano-12b-v2-vl',
+  groqModel: 'llama-3.3-70b-versatile',
+  selectedModel: 'gpt-4o-mini',
+}
+
+export function profileIsReady(profile: PersonalProfile): boolean {
+  const hasSummary = profile.summary.trim().length > 40
+  const hasExperience = profile.experience.some(
+    (e) => e.title.trim() || e.company.trim() || e.bullets.trim(),
+  )
+  const hasRaw = (profile.rawText || '').trim().length > 80
+  return hasSummary || hasExperience || hasRaw
+}
+
+export function profileToContextText(profile: PersonalProfile): string {
+  const parts: string[] = []
+  if (profile.name.trim()) parts.push(`Name: ${profile.name.trim()}`)
+  if (profile.summary.trim()) parts.push(`Professional Summary:\n${profile.summary.trim()}`)
+  if (profile.experience.length) {
+    const exp = profile.experience
+      .filter((e) => e.title || e.company || e.bullets)
+      .map((e) => {
+        const head = [e.title, e.company].filter(Boolean).join(' at ')
+        const dates = e.dateRange ? ` (${e.dateRange})` : ''
+        const body = e.bullets.trim()
+        return `${head}${dates}${body ? `\n${body}` : ''}`
+      })
+      .join('\n\n')
+    if (exp) parts.push(`Work Experience:\n${exp}`)
+  }
+  if (profile.skills.length) parts.push(`Skills: ${profile.skills.join(', ')}`)
+  if (profile.projects.length) {
+    const proj = profile.projects
+      .filter((p) => p.name || p.description)
+      .map((p) => {
+        const tech = p.tech ? ` (${p.tech})` : ''
+        return `${p.name}${tech}${p.description ? `\n${p.description}` : ''}`
+      })
+      .join('\n\n')
+    if (proj) parts.push(`Projects:\n${proj}`)
+  }
+  if (profile.education.length) {
+    const edu = profile.education
+      .filter((e) => e.degree || e.details)
+      .map((e) => `${e.degree}${e.details ? `\n${e.details}` : ''}`)
+      .join('\n\n')
+    if (edu) parts.push(`Education:\n${edu}`)
+  }
+  if (profile.extraContext.trim()) parts.push(`Extra Context:\n${profile.extraContext.trim()}`)
+  if (!parts.length && profile.rawText?.trim()) return profile.rawText.trim().slice(0, 12000)
+  return parts.join('\n\n').slice(0, 12000)
+}

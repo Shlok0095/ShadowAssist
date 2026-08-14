@@ -1,90 +1,51 @@
-export type SessionPhase = 'setup' | 'ready' | 'listening' | 'generating' | 'error'
+import type { AppSettings, PersonalProfile } from './profileTypes'
+import { profileToContextText } from './profileTypes'
+import { getActiveApiKey, getActiveModel } from './profileStorage'
 
-export type InterviewSettings = {
-  showTranscription: boolean
-  autoScroll: boolean
-  autoAnswer: boolean
-}
+export type SessionPhase = 'home' | 'interview' | 'error'
 
-export const DEFAULT_SETTINGS: InterviewSettings = {
-  showTranscription: true,
-  autoScroll: true,
-  autoAnswer: true,
-}
-
-const STORAGE_RESUME = 'veilassist.mobile.resume'
-const STORAGE_JD = 'veilassist.mobile.jd'
-const STORAGE_SETTINGS = 'veilassist.mobile.settings'
-
-export function loadResume(): string {
-  try {
-    return localStorage.getItem(STORAGE_RESUME) || ''
-  } catch {
-    return ''
-  }
-}
-
-export function saveResume(text: string) {
-  try {
-    localStorage.setItem(STORAGE_RESUME, text)
-  } catch {
-    /* ignore */
-  }
-}
-
-export function loadJobDescription(): string {
-  try {
-    return localStorage.getItem(STORAGE_JD) || ''
-  } catch {
-    return ''
-  }
-}
-
-export function saveJobDescription(text: string) {
-  try {
-    localStorage.setItem(STORAGE_JD, text)
-  } catch {
-    /* ignore */
-  }
-}
-
-export function loadSettings(): InterviewSettings {
-  try {
-    const raw = localStorage.getItem(STORAGE_SETTINGS)
-    if (!raw) return { ...DEFAULT_SETTINGS }
-    const parsed = JSON.parse(raw)
-    return {
-      showTranscription: parsed.showTranscription !== false,
-      autoScroll: parsed.autoScroll !== false,
-      autoAnswer: parsed.autoAnswer !== false,
-    }
-  } catch {
-    return { ...DEFAULT_SETTINGS }
-  }
-}
-
-export function saveSettings(settings: InterviewSettings) {
-  try {
-    localStorage.setItem(STORAGE_SETTINGS, JSON.stringify(settings))
-  } catch {
-    /* ignore */
-  }
-}
+export type InterviewRuntimeSettings = Pick<
+  AppSettings,
+  'showTranscription' | 'autoScroll' | 'autoAnswer' | 'questionDetection'
+>
 
 export async function requestInterviewAnswer(params: {
   question: string
-  resume: string
-  jobDescription: string
+  profile: PersonalProfile
+  settings: AppSettings
   think: boolean
+  source?: 'manual_input' | 'transcript'
 }): Promise<string> {
-  const res = await fetch('/api/interview/chat', {
+  const origin = String(import.meta.env.VITE_API_ORIGIN || '').replace(/\/$/, '')
+  const chatUrl =
+    origin
+      ? `${origin}/api/interview/chat`
+      : import.meta.env.VITE_MOBILE_APK
+        ? 'https://veilassist.vercel.app/api/interview/chat'
+        : '/api/interview/chat'
+
+  const apiKey = getActiveApiKey(params.settings)
+  const model = getActiveModel(params.settings)
+  const profileText = profileToContextText(params.profile)
+  const jobDescription = params.profile.jobDescription || params.settings.interviewTopic
+
+  const res = await fetch(chatUrl, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({
       question: params.question,
-      resume: params.resume,
-      jobDescription: params.jobDescription,
+      profileText,
+      jobDescription,
+      interviewTopic: params.settings.interviewTopic,
+      customInstructions: params.settings.customInstructions,
+      answerStructure: params.settings.answerStructure,
+      responseFormat: params.settings.responseFormat,
+      answerLength: params.settings.answerLength,
+      provider: params.settings.provider,
+      apiKey,
+      model,
       think: params.think,
+      source: params.source || 'manual_input',
     }),
   })
   const data = await res.json().catch(() => ({}))
@@ -96,13 +57,20 @@ export async function requestInterviewAnswer(params: {
 
 export function speechRecognitionAvailable(): boolean {
   if (typeof window === 'undefined') return false
-  return !!(window.SpeechRecognition || (window as unknown as { webkitSpeechRecognition?: typeof SpeechRecognition }).webkitSpeechRecognition)
+  const w = window as Window & {
+    SpeechRecognition?: new () => SpeechRecognition
+    webkitSpeechRecognition?: new () => SpeechRecognition
+  }
+  return !!(w.SpeechRecognition || w.webkitSpeechRecognition)
 }
 
 export function createSpeechRecognition(): SpeechRecognition {
-  const Ctor =
-    window.SpeechRecognition ||
-    (window as unknown as { webkitSpeechRecognition: typeof SpeechRecognition }).webkitSpeechRecognition
+  const w = window as Window & {
+    SpeechRecognition?: new () => SpeechRecognition
+    webkitSpeechRecognition?: new () => SpeechRecognition
+  }
+  const Ctor = w.SpeechRecognition || w.webkitSpeechRecognition
+  if (!Ctor) throw new Error('Speech recognition is not supported on this device')
   const recognition = new Ctor()
   recognition.continuous = true
   recognition.interimResults = true

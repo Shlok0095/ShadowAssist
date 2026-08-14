@@ -1,3 +1,5 @@
 .vercel
 .env
 .env.local
+dist-mobile
+release-android

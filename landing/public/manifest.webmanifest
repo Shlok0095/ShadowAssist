@@ -1,12 +1,11 @@
 {
-  "name": "VeilAssist Interview",
+  "name": "VeilAssist",
   "short_name": "VeilAssist",
-  "description": "Live AI interview copilot — listen, transcribe, and get answer suggestions.",
-  "start_url": "/app",
-  "display": "standalone",
+  "description": "Live AI meeting copilot for interviews and calls.",
+  "start_url": "/",
+  "display": "browser",
   "background_color": "#0a0a0b",
   "theme_color": "#0a0a0b",
-  "orientation": "portrait",
   "icons": [
     {
       "src": "/logo.png",

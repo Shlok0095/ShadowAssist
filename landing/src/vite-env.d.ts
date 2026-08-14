@@ -33,6 +33,8 @@ interface ImportMetaEnv {
   readonly VITE_BASE_PATH?: string
   readonly VITE_SITE_ORIGIN?: string
   readonly VITE_DOWNLOAD_SETUP_URL?: string
+  readonly VITE_API_ORIGIN?: string
+  readonly VITE_MOBILE_APK?: string
 }
 
 interface ImportMeta {

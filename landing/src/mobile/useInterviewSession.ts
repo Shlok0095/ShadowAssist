@@ -1,41 +1,31 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
+import { minCharsForDetection } from './answerRouting'
+import type { AppSettings, PersonalProfile } from './profileTypes'
+import { profileIsReady } from './profileTypes'
+import { getActiveApiKey } from './profileStorage'
 import {
   createSpeechRecognition,
-  loadJobDescription,
-  loadResume,
-  loadSettings,
   requestInterviewAnswer,
-  saveSettings,
   speechRecognitionAvailable,
-  type InterviewSettings,
   type SessionPhase,
 } from './interviewTypes'
 
-export function useInterviewSession() {
-  const [phase, setPhase] = useState<SessionPhase>('setup')
-  const [resume, setResume] = useState(() => loadResume())
-  const [jobDescription, setJobDescription] = useState(() => loadJobDescription())
-  const [settings, setSettings] = useState<InterviewSettings>(() => loadSettings())
+export function useInterviewSession(profile: PersonalProfile, settings: AppSettings) {
+  const [phase, setPhase] = useState<SessionPhase>('home')
   const [transcript, setTranscript] = useState('')
   const [interimTranscript, setInterimTranscript] = useState('')
   const [answer, setAnswer] = useState('')
   const [thinkMode, setThinkMode] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [sessionActive, setSessionActive] = useState(false)
+  const [starting, setStarting] = useState(false)
+  const [isGenerating, setIsGenerating] = useState(false)
 
   const recognitionRef = useRef<SpeechRecognition | null>(null)
   const generatingRef = useRef(false)
   const lastFinalRef = useRef('')
   const transcriptRef = useRef('')
   const answerEndRef = useRef<HTMLDivElement | null>(null)
-
-  const updateSettings = useCallback((patch: Partial<InterviewSettings>) => {
-    setSettings((prev) => {
-      const next = { ...prev, ...patch }
-      saveSettings(next)
-      return next
-    })
-  }, [])
 
   const scrollAnswer = useCallback(() => {
     if (!settings.autoScroll) return
@@ -45,32 +35,37 @@ export function useInterviewSession() {
   }, [settings.autoScroll])
 
   const generateFromText = useCallback(
-    async (question: string, opts?: { manual?: boolean }) => {
+    async (question: string, opts?: { manual?: boolean; source?: 'manual_input' | 'transcript' }) => {
       const q = String(question || '').trim()
       if (!q || generatingRef.current) return
+      if (!getActiveApiKey(settings)) {
+        setError('Add your API key in Settings → AI Provider.')
+        return
+      }
       generatingRef.current = true
-      setPhase('generating')
+      setIsGenerating(true)
       setError(null)
       try {
         const text = await requestInterviewAnswer({
           question: q,
-          resume,
-          jobDescription,
+          profile,
+          settings,
           think: thinkMode,
+          source: opts?.source || 'manual_input',
         })
         setAnswer(text)
-        setPhase('listening')
         scrollAnswer()
       } catch (e) {
         const msg = e instanceof Error ? e.message : 'Generation failed'
         setError(msg)
-        setPhase(sessionActive ? 'listening' : 'ready')
         if (!opts?.manual) console.warn('[interview]', msg)
       } finally {
         generatingRef.current = false
+        setIsGenerating(false)
+        setStarting(false)
       }
     },
-    [resume, jobDescription, thinkMode, sessionActive, scrollAnswer],
+    [profile, settings, thinkMode, scrollAnswer],
   )
 
   const stopRecognition = useCallback(() => {
@@ -91,14 +86,14 @@ export function useInterviewSession() {
   const startRecognition = useCallback(() => {
     stopRecognition()
     if (!speechRecognitionAvailable()) {
-      setError('Speech recognition is not supported in this browser. Use Chrome on Android.')
-      setPhase('error')
+      setError('Speech recognition unavailable. Type questions in the bar below.')
       return
     }
 
     try {
       const recognition = createSpeechRecognition()
       recognitionRef.current = recognition
+      const minChars = minCharsForDetection(settings.questionDetection)
 
       recognition.onresult = (event: SpeechRecognitionEvent) => {
         let interim = ''
@@ -115,8 +110,8 @@ export function useInterviewSession() {
           setTranscript(merged)
           setInterimTranscript('')
           lastFinalRef.current = finalChunk.trim()
-          if (settings.autoAnswer) {
-            void generateFromText(finalChunk.trim())
+          if (settings.autoAnswer && finalChunk.trim().length >= minChars) {
+            void generateFromText(finalChunk.trim(), { source: 'transcript' })
           }
         }
       }
@@ -137,35 +132,39 @@ export function useInterviewSession() {
       }
 
       recognition.start()
-      setPhase('listening')
     } catch (e) {
       setError(e instanceof Error ? e.message : 'Speech recognition failed to start')
-      setPhase('error')
     }
-  }, [stopRecognition, settings.autoAnswer, generateFromText, sessionActive])
+  }, [stopRecognition, settings.autoAnswer, settings.questionDetection, generateFromText, sessionActive])
 
   const startSession = useCallback(() => {
-    if (!resume.trim()) {
-      setError('Add your resume before starting.')
-      setPhase('setup')
+    if (!profileIsReady(profile)) {
+      setError('Add your resume in Settings → Personal Info first.')
+      return
+    }
+    if (!getActiveApiKey(settings)) {
+      setError('Add your API key in Settings → AI Provider.')
       return
     }
     setError(null)
     setSessionActive(true)
+    setStarting(true)
     setTranscript('')
     transcriptRef.current = ''
     setInterimTranscript('')
     setAnswer('')
     lastFinalRef.current = ''
-    setPhase('ready')
+    setPhase('interview')
     startRecognition()
-  }, [resume, startRecognition])
+    setTimeout(() => setStarting(false), 1200)
+  }, [profile, settings, startRecognition])
 
   const stopSession = useCallback(() => {
     setSessionActive(false)
     stopRecognition()
     setInterimTranscript('')
-    setPhase('setup')
+    setStarting(false)
+    setPhase('home')
   }, [stopRecognition])
 
   const assistNow = useCallback(() => {
@@ -174,7 +173,7 @@ export function useInterviewSession() {
       setError('No speech detected yet. Speak a question, then tap Assist.')
       return
     }
-    void generateFromText(q, { manual: true })
+    void generateFromText(q, { manual: true, source: 'transcript' })
   }, [transcript, interimTranscript, generateFromText])
 
   const newQuestion = useCallback(() => {
@@ -193,7 +192,7 @@ export function useInterviewSession() {
       if (!q) return
       setTranscript(q)
       setInterimTranscript('')
-      void generateFromText(q, { manual: true })
+      void generateFromText(q, { manual: true, source: 'manual_input' })
     },
     [generateFromText],
   )
@@ -207,24 +206,19 @@ export function useInterviewSession() {
 
   return {
     phase,
-    resume,
-    setResume,
-    jobDescription,
-    setJobDescription,
-    settings,
-    updateSettings,
     transcript: displayTranscript,
     answer,
     thinkMode,
     setThinkMode,
     error,
     sessionActive,
+    starting,
     startSession,
     stopSession,
     assistNow,
     newQuestion,
     sendTypedQuestion,
     answerEndRef,
-    isGenerating: phase === 'generating',
+    isGenerating,
   }
 }

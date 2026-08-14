@@ -1,39 +1,167 @@
-// Vercel serverless — proxies NVIDIA NIM chat (key stays server-side).
-// Set NVIDIA_API_KEY in Vercel project env (never in client code).
+// Vercel serverless — BYOK chat proxy with profile-aware routing (mirrors desktop answerPlanner).
 
-const NVIDIA_BASE = 'https://integrate.api.nvidia.com/v1'
-const DEFAULT_MODEL = 'nvidia/nemotron-nano-12b-v2-vl'
+const PROVIDERS = {
+  nvidia: {
+    base: 'https://integrate.api.nvidia.com/v1',
+    defaultModel: 'nvidia/nemotron-nano-12b-v2-vl',
+  },
+  groq: {
+    base: 'https://api.groq.com/openai/v1',
+    defaultModel: 'llama-3.3-70b-versatile',
+  },
+  openai: {
+    base: 'https://api.openai.com/v1',
+    defaultModel: 'gpt-4o-mini',
+  },
+}
 
-function buildSystemPrompt(resume, jobDescription) {
-  const resumeBlock = String(resume || '').trim()
-  const jdBlock = String(jobDescription || '').trim()
-  let profile = ''
-  if (resumeBlock) profile += `\n## RESUME / BACKGROUND\n${resumeBlock.slice(0, 6000)}`
-  if (jdBlock) profile += `\n\n## JOB DESCRIPTION\n${jdBlock.slice(0, 4000)}`
+const CODING_RE =
+  /\b(algorithm|leetcode|complexity|big\s*o|implement\s+(a|the|this)?\s*function|whiteboard|system design|debug|compile error|time complexity|space complexity|binary search|dynamic programming|dfs|bfs|linked list|hash map|recursion)\b/i
 
-  return `You are VeilAssist, a private interview copilot on the user's phone.
-The user is in a live job interview. They heard a question (transcribed from speech).
-Give the DIRECT ANSWER they should speak — first person, natural, confident.
-Do NOT introduce yourself as an AI. Do NOT coach from outside ("the interviewer asked...").
-Use STAR briefly for behavioral questions (max 4 short sentences).
-Keep answers under 180 words unless technical depth is required.
-Ground personal experience ONLY in the resume below — never invent employers or dates.
-${profile}
+const TECHNICAL_EXPLANATION_RE =
+  /\b(explain|what(?:'s| is| are)|describe|how does|how do|define|difference between|compare)\b/i
+const TECHNICAL_ACTION_RE = /\b(write|implement|code|debug|fix|solve)\b/i
+const TECHNICAL_SUBJECT_RE =
+  /\b(transformers?|attention|neural network|machine learning|deep learning|model architecture|software architecture|distributed system|database|sql|nosql|api|rest|graphql|grpc|microservice|cache|redis|kafka|docker|kubernetes|cloud|aws|azure|gcp|http|tcp|udp|dns|oauth|jwt|cors|encryption|hashing|thread|process|concurrency|deadlock|mutex|semaphore|event loop|promise|async|react|node\.?js|python|java|javascript|typescript|data structure|algorithm|binary search|recursion|complexity)\b/i
 
-If the question is general knowledge (definitions, architecture), answer clearly from expertise while staying in candidate voice when appropriate.`
+const CANDIDATE_EXPERIENCE_RE =
+  /\b(tell me about yourself|introduce yourself|walk me through your (background|experience|resume|cv|career)|tell me (about )?your (experience|background|resume|cv|career|work|projects?|skills?)|describe your (experience|background|resume|career)|what(?:'s| is) your (experience|background|strength|weakness)|why (should|would) (we|they) hire you|have you (ever )?(used|worked|built|led|done)|did you (use|work|build|lead)|your experience (with|in|using)|experience with .{0,40}\b(you|your|i|my)\b|\byour\b.{0,30}\b(experience|background|resume|cv|projects?|skills?)\b|\bmy\b.{0,30}\b(experience|background|resume|cv|projects?)\b)/i
+
+const BEHAVIORAL_RE =
+  /\b(tell me about a time|star method|behavioral|conflict with|leadership example|weakness|strength|challenging (project|situation)|how did you handle)\b/i
+
+const JD_FIT_RE =
+  /\b(job description|fit for (the|this) role|why (should|would) (we|they) hire|am i (a )?good fit|match (the|this) (role|jd|job)|gap (analysis|against)|how (do|does) my (resume|background|experience) (fit|match))\b/i
+
+const JD_FACT_RE =
+  /\b((this|the) (jd|job description|role|position)|what does (this|the) (role|jd|job)|does (the|this) (jd|job|role)|requirements? (for|of|in) (this|the) (role|jd|job)|qualifications? (for|of|in) (this|the)|job description (say|mention|require|list)|top skills for (this|the) role)\b/i
+
+const IDENTITY_RE =
+  /\b(what('s| is) your name|who are you|introduce yourself|tell me about yourself|walk me through your background|tell me your experience)\b/i
+
+const DEFINITIONAL_RE =
+  /^(?:ok(?:ay)?[,.]?\s*|so[,.]?\s*|hey[,.]?\s*|please\s+|can you\s+|could you\s+|quick\s+)?(?:what(?:'s| is| are| does| do)|who(?:'s| is| are)|where(?:'s| is| are)|when(?:'s| is| was| were)|which|define|explain|describe|tell me (?:about|what)|how does|how do|difference between|compare)\b/i
+
+function isCandidateExperienceQuestion(question) {
+  const q = String(question || '')
+  if (!q.trim()) return false
+  return CANDIDATE_EXPERIENCE_RE.test(q) || IDENTITY_RE.test(q) || BEHAVIORAL_RE.test(q)
+}
+
+function isTechnicalConceptQuestion(question) {
+  const q = String(question || '')
+  if (isCandidateExperienceQuestion(q)) return false
+  return TECHNICAL_EXPLANATION_RE.test(q) && TECHNICAL_SUBJECT_RE.test(q) && !TECHNICAL_ACTION_RE.test(q)
+}
+
+function isGeneralKnowledgeQuestion(question) {
+  const q = String(question || '').trim()
+  if (!q || isCandidateExperienceQuestion(q) || JD_FIT_RE.test(q) || JD_FACT_RE.test(q)) return false
+  if (CODING_RE.test(q) || TECHNICAL_ACTION_RE.test(q)) return false
+  if (isTechnicalConceptQuestion(q)) return true
+  return DEFINITIONAL_RE.test(q)
+}
+
+function routeQuestion(question, hasProfile, hasJd, source = 'manual_input') {
+  const q = String(question || '').trim()
+  let useResume = false
+  let useJd = false
+  let answerContract = 'interview_detailed'
+
+  if (CODING_RE.test(q)) {
+    answerContract = 'coding_answer'
+  } else if (IDENTITY_RE.test(q) && hasProfile) {
+    useResume = true
+  } else if (JD_FIT_RE.test(q) && (hasJd || hasProfile)) {
+    useResume = hasProfile
+    useJd = hasJd
+  } else if (JD_FACT_RE.test(q) && hasJd && !isCandidateExperienceQuestion(q)) {
+    useJd = true
+  } else if ((BEHAVIORAL_RE.test(q) || isCandidateExperienceQuestion(q)) && hasProfile) {
+    useResume = true
+  } else if (isTechnicalConceptQuestion(q) || isGeneralKnowledgeQuestion(q)) {
+    answerContract = 'general_assistant'
+  } else if (hasProfile) {
+    useResume = true
+  }
+
+  return { useResume, useJd, answerContract }
+}
+
+function buildSystemPrompt({
+  profileText,
+  jobDescription,
+  interviewTopic,
+  customInstructions,
+  answerStructure,
+  responseFormat,
+  answerLength,
+  useResume,
+  useJd,
+  answerContract,
+}) {
+  const parts = [
+    'You are VeilAssist, a private interview copilot on the user\'s phone.',
+    'The user is in a live job interview. Give the DIRECT ANSWER they should speak — first person, natural, confident.',
+    'Do NOT introduce yourself as an AI. Do NOT coach from outside ("the interviewer asked...").',
+  ]
+
+  if (answerContract === 'coding_answer') {
+    parts.push(
+      'This is a coding/implementation question. Give clear technical steps or pseudocode.',
+      'Do NOT invent personal work history — use general engineering knowledge.',
+    )
+  } else if (answerContract === 'general_assistant' || answerContract === 'technical_explanation') {
+    parts.push(
+      'This question is general knowledge or a technical concept — NOT about the candidate\'s personal résumé.',
+      'Answer from world knowledge. Do not claim personal experience the user did not provide.',
+    )
+  } else {
+    parts.push(
+      'For questions about the candidate\'s background, experience, projects, or fit — ground answers ONLY in the profile below.',
+      'Never invent employers, dates, or achievements not in the profile.',
+      'For unrelated general questions, answer from expertise without fabricating personal history.',
+    )
+  }
+
+  if (answerStructure === 'star') {
+    parts.push('Use STAR (Situation, Task, Action, Result) for behavioral questions — keep it natural, max 4 short sentences.')
+  } else if (answerStructure === 'concise') {
+    parts.push('Be very concise — one or two sentences unless depth is required.')
+  }
+
+  if (responseFormat === 'bullets') {
+    parts.push('Format the answer as short bullet points the candidate can scan quickly.')
+  } else {
+    parts.push('Format as a short spoken paragraph.')
+  }
+
+  if (answerLength === 'short') parts.push('Target under 80 words.')
+  else if (answerLength === 'long') parts.push('Up to 250 words if technical depth is needed.')
+  else parts.push('Target under 180 words.')
+
+  if (interviewTopic?.trim()) {
+    parts.push(`Interview focus / role topic: ${interviewTopic.trim().slice(0, 500)}`)
+  }
+
+  if (customInstructions?.trim()) {
+    parts.push(`Custom instructions: ${customInstructions.trim().slice(0, 2000)}`)
+  }
+
+  if (useResume && profileText?.trim()) {
+    parts.push(`\n## CANDIDATE PROFILE (use for personal/behavioral questions only)\n${profileText.trim().slice(0, 8000)}`)
+  }
+
+  if (useJd && jobDescription?.trim()) {
+    parts.push(`\n## JOB DESCRIPTION\n${jobDescription.trim().slice(0, 4000)}`)
+  }
+
+  return parts.join('\n')
 }
 
 export default async function handler(req, res) {
   if (req.method !== 'POST') {
     res.status(405).json({ error: 'Method not allowed' })
-    return
-  }
-
-  const apiKey = process.env.NVIDIA_API_KEY
-  if (!apiKey) {
-    res.status(503).json({
-      error: 'NVIDIA_API_KEY is not configured on the server. Add it in Vercel → Settings → Environment Variables.',
-    })
     return
   }
 
@@ -45,13 +173,51 @@ export default async function handler(req, res) {
       return
     }
 
-    const resume = body.resume || ''
-    const jobDescription = body.jobDescription || ''
+    const provider = String(body.provider || 'nvidia').toLowerCase()
+    const providerCfg = PROVIDERS[provider]
+    if (!providerCfg) {
+      res.status(400).json({ error: 'Unsupported provider' })
+      return
+    }
+
+    const apiKey = String(body.apiKey || '').trim() || process.env.NVIDIA_API_KEY || ''
+    if (!apiKey) {
+      res.status(400).json({
+        error: 'Add your API key in Settings → AI Provider (or configure NVIDIA_API_KEY on server).',
+      })
+      return
+    }
+
+    const profileText = String(body.profileText || body.resume || '').trim()
+    const jobDescription = String(body.jobDescription || '').trim()
+    const interviewTopic = String(body.interviewTopic || '').trim()
+    const customInstructions = String(body.customInstructions || '').trim()
+    const answerStructure = body.answerStructure || 'star'
+    const responseFormat = body.responseFormat || 'bullets'
+    const answerLength = body.answerLength || 'medium'
     const think = body.think === true
-    const model = String(process.env.NVIDIA_CHAT_MODEL || DEFAULT_MODEL).trim()
+    const source = body.source || 'manual_input'
+    const model = String(body.model || providerCfg.defaultModel).trim()
+
+    const hasProfile = profileText.length > 40
+    const hasJd = jobDescription.length > 20
+    const route = routeQuestion(question, hasProfile, hasJd, source)
+
+    const systemPrompt = buildSystemPrompt({
+      profileText,
+      jobDescription,
+      interviewTopic,
+      customInstructions,
+      answerStructure,
+      responseFormat,
+      answerLength,
+      useResume: route.useResume,
+      useJd: route.useJd,
+      answerContract: route.answerContract,
+    })
 
     const messages = [
-      { role: 'system', content: buildSystemPrompt(resume, jobDescription) },
+      { role: 'system', content: systemPrompt },
       {
         role: 'user',
         content: think
@@ -63,7 +229,7 @@ export default async function handler(req, res) {
     const payload = {
       model,
       messages,
-      max_tokens: think ? 2200 : 1400,
+      max_tokens: think ? 2200 : answerLength === 'long' ? 1800 : answerLength === 'short' ? 600 : 1400,
       temperature: 0,
       top_p: 0.7,
       stream: false,
@@ -73,7 +239,7 @@ export default async function handler(req, res) {
       payload.chat_template_kwargs = { enable_thinking: false }
     }
 
-    const upstream = await fetch(`${NVIDIA_BASE}/chat/completions`, {
+    const upstream = await fetch(`${providerCfg.base}/chat/completions`, {
       method: 'POST',
       headers: {
         Authorization: `Bearer ${apiKey}`,
@@ -85,7 +251,7 @@ export default async function handler(req, res) {
     const text = await upstream.text()
     if (!upstream.ok) {
       res.status(upstream.status).json({
-        error: `NVIDIA API error (${upstream.status})`,
+        error: `Provider API error (${upstream.status})`,
         detail: text.slice(0, 500),
       })
       return
@@ -98,7 +264,15 @@ export default async function handler(req, res) {
       return
     }
 
-    res.status(200).json({ answer, model })
+    res.status(200).json({
+      answer,
+      model,
+      route: {
+        useResume: route.useResume,
+        useJd: route.useJd,
+        answerContract: route.answerContract,
+      },
+    })
   } catch (err) {
     res.status(500).json({ error: err?.message || 'Chat request failed' })
   }

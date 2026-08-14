@@ -15,7 +15,7 @@
  * No secrets are involved: the GitHub Releases API is public for public repos.
  */
 
-export type DownloadPlatform = 'windows' | 'macos' | 'linux'
+export type DownloadPlatform = 'windows' | 'macos' | 'linux' | 'android'
 export type DownloadKind = 'installer' | 'portable' | 'archive'
 
 export interface DownloadArtifact {
@@ -89,6 +89,9 @@ function classify(name: string): {
   }
   if (lower.endsWith('.deb') || lower.endsWith('.rpm')) {
     return { platform: 'linux', arch, kind: 'installer', version }
+  }
+  if (lower.endsWith('.apk')) {
+    return { platform: 'android', arch, kind: 'installer', version }
   }
   return null
 }
@@ -170,6 +173,7 @@ export async function fetchChannel(owner: string, repo: string, tag: string): Pr
 
 export function detectPlatform(): DownloadPlatform | null {
   const ua = typeof navigator !== 'undefined' ? navigator.userAgent : ''
+  if (/android/i.test(ua)) return 'android'
   if (/windows/i.test(ua) || /win32/i.test(ua)) return 'windows'
   if (/macintosh|mac os x|macintel|macppc/i.test(ua)) return 'macos'
   if (/linux|xf86|x11/i.test(ua)) return 'linux'
@@ -207,6 +211,7 @@ export const PLATFORM_LABELS: Record<DownloadPlatform, string> = {
   windows: 'Windows',
   macos: 'macOS',
   linux: 'Linux',
+  android: 'Android',
 }
 
 /**
@@ -286,6 +291,17 @@ export const FALLBACK_CHANNEL: ReleaseChannel = {
       size: 138822562,
       releasedAt: '2026-08-09T20:13:22Z',
       downloadUrl: 'https://github.com/Shlok0095/VeilAssist/releases/download/latest-stag/VeilAssist-linux.deb',
+      checksum: null,
+    },
+    {
+      fileName: 'VeilAssist-Interview.apk',
+      platform: 'android',
+      arch: null,
+      kind: 'installer',
+      version: null,
+      size: null,
+      releasedAt: '2026-08-09T20:13:22Z',
+      downloadUrl: 'https://github.com/Shlok0095/VeilAssist/releases/download/latest-stag/VeilAssist-Interview.apk',
       checksum: null,
     },
   ],
