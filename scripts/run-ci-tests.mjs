@@ -22,6 +22,7 @@ const plainTests = [
   'scripts/test-overlay-mouse-capture.mjs',
   'scripts/test-playbook-context.mjs',
   'scripts/verify-background-process-config.cjs',
+  'scripts/verify-capture-protection-config.cjs',
 ]
 
 const nodeTestFiles = [
@@ -33,6 +34,7 @@ const nodeTestFiles = [
   'scripts/test-rolling-transcript.cjs',
   'scripts/test-transcript-consume.cjs',
   'scripts/test-transcript-lifecycle.cjs',
+  'scripts/test-capture-protection-policy.cjs',
 ]
 
 function run(args) {

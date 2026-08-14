@@ -3,6 +3,12 @@
 import React from 'react'
 import { SettingsPage, SettingsSection } from './SettingsComponents'
 
+const FEATURE_CARDS = [
+  { label: 'Capture privacy', desc: 'Optional hide from software screen capture (Windows, best-effort)' },
+  { label: 'AI-powered', desc: 'Answers from your chosen LLM provider' },
+  { label: 'Private', desc: 'Audio & screenshots never stored on disk by default' },
+]
+
 export default function AboutSettingsPanel({ logoSrc, appVersion }) {
   return (
     <SettingsPage title="About" description="VeilAssist — private AI overlay for meetings and interviews.">
@@ -28,11 +34,7 @@ export default function AboutSettingsPanel({ logoSrc, appVersion }) {
           ) : null}
         </div>
         <div className="grid grid-cols-1 gap-3 border-t pt-5 sm:grid-cols-3" style={{ borderColor: 'var(--border-subtle)' }}>
-          {[
-            { label: 'Undetectable', desc: 'Hidden from screen capture & shares' },
-            { label: 'AI-powered', desc: 'Answers from your chosen LLM provider' },
-            { label: 'Private', desc: 'Audio & screenshots never stored on disk' },
-          ].map((item) => (
+          {FEATURE_CARDS.map((item) => (
             <div
               key={item.label}
               className="rounded-lg border px-4 py-3 text-center"

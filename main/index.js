@@ -946,7 +946,7 @@ function syncOverlayVisibilityToRenderer() {
 
 /** Windows that must follow Stealth (content protection). Never include meeting toast or future summary window. */
 function getStealthManagedWindows() {
-  return [overlayWindow, settingsWindow, consentWindow, onboardingWindow, globalChatWindow].filter(
+  return [overlayWindow, settingsWindow, consentWindow, onboardingWindow, globalChatWindow, launcherWindow].filter(
     (w) => w && !w.isDestroyed(),
   )
 }

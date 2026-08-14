@@ -14,6 +14,7 @@ import {
   SettingsSection,
   ToggleSwitch,
 } from './SettingsComponents'
+import PrivacyDisclaimerPanel from './PrivacyDisclaimerPanel'
 import { useBrand } from '../shared/branding'
 
 export default function DisplaySettingsPanel({
@@ -77,11 +78,12 @@ export default function DisplaySettingsPanel({
           <ToggleSwitch checked={doNotSaveMeetingsEnabled} onChange={onDoNotSaveMeetingsChange} />
         </SettingsRow>
         <SettingsRow
-          label="Hide from screen capture"
-          hint="Content protection — harder to capture in screen shares and recordings."
+          label="Hide from screen capture (Invisible)"
+          hint="Uses Windows capture-exclusion APIs on VeilAssist windows only — best-effort, not guaranteed. See limits below."
         >
           <ToggleSwitch checked={stealthModeUi} onChange={onStealthModeChange} />
         </SettingsRow>
+        <PrivacyDisclaimerPanel />
       </SettingsSection>
 
       <SettingsSection title="Diagnostics">
