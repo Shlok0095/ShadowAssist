@@ -324,8 +324,8 @@ export function DownloadsPage() {
             </ol>
             <p className="mt-4 text-xs text-zinc-500">
               Beta builds publish to the rolling <code className="text-zinc-400">latest-stag</code> release.
-              AI answers use NVIDIA NIM on the server — set <code className="text-zinc-400">NVIDIA_API_KEY</code> in
-              Vercel env for production.
+              The button downloads the APK file directly once CI has published it (first build may take ~15 minutes after push).
+              Bring your own API key in the app — same as the desktop overlay.
             </p>
           </div>
         </ScrollReveal>

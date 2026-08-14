@@ -9,7 +9,7 @@
     "build": "vite build && node scripts/postbuild.cjs",
     "build:mobile": "vite build --config vite.mobile.config.ts && node scripts/prepare-mobile-dist.cjs",
     "cap:sync": "cap sync android",
-    "build:android-apk": "npm run build:mobile && cap sync android && cd android && node -e \"require('child_process').execSync(process.platform==='win32'?'gradlew.bat assembleDebug':'./gradlew assembleDebug',{stdio:'inherit'})\" && node scripts/copy-android-apk.cjs",
+    "build:android-apk": "npm run build:mobile && cap sync android && node scripts/build-android-apk.cjs",
     "preview": "vite preview",
     "verify": "npm run typecheck && npm run build"
   },
