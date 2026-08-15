@@ -44,3 +44,18 @@ export function isPlausibleInterviewUtterance(text: string): boolean {
   if (REQUEST_HINT.test(t)) return true
   return words.length >= 8
 }
+
+/**
+ * Stricter gate for hands-free auto-answer — only after the speaker has likely finished.
+ * Blocks mid-sentence fragments like "marks with SAP" while the user is still talking.
+ */
+export function isUtteranceReadyForAutoAnswer(text: string): boolean {
+  if (!isPlausibleInterviewUtterance(text)) return false
+  const t = String(text || '').trim()
+  const words = t.split(/\s+/).filter(Boolean)
+  if (t.length < 18 && words.length < 5) return false
+  if (words.length < 5 && !/\?/.test(t) && !QUESTION_HINT.test(t) && !REQUEST_HINT.test(t)) {
+    return false
+  }
+  return true
+}

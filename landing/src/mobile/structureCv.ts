@@ -24,8 +24,26 @@ Rules:
 - Do not include a separate "extra context" field — the user adds that manually in the app.
 - Use empty strings or empty arrays when a section is missing.`
 
+const NVIDIA_CV_MODEL = 'nvidia/llama-3.1-nemotron-nano-vl-8b-v1'
+const CV_REQUEST_TIMEOUT_MS = 90000
+
 function uid(): string {
   return `${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}`
+}
+
+async function withTimeout<T>(promise: Promise<T>, ms: number): Promise<T> {
+  return new Promise<T>((resolve, reject) => {
+    const timer = setTimeout(() => reject(new Error('CV extraction timed out')), ms)
+    promise
+      .then((v) => {
+        clearTimeout(timer)
+        resolve(v)
+      })
+      .catch((e) => {
+        clearTimeout(timer)
+        reject(e)
+      })
+  })
 }
 
 type RawStructured = {
@@ -94,7 +112,7 @@ async function structureCvDirect(
 
   const model =
     settings.provider === 'nvidia'
-      ? 'nvidia/nemotron-mini-4b-instruct'
+      ? NVIDIA_CV_MODEL
       : getActiveModel(settings)
   const base = getChatBaseUrl(settings, settings.provider)
   const clipped = rawText.slice(0, 12000)
@@ -124,28 +142,48 @@ async function structureCvDirect(
     payload.response_format = { type: 'json_object' }
   }
 
-  const controller = new AbortController()
-  const timeout = window.setTimeout(() => controller.abort(), 90000)
+  const headers: Record<string, string> = { ...nvidiaChatHeaders(apiKey) }
+  if (settings.provider === 'openrouter') {
+    headers['HTTP-Referer'] = 'https://veilassist.vercel.app'
+    headers['X-Title'] = 'VeilAssist Interview'
+  }
+
+  const postOnce = async (activeModel: string) => {
+    const body = { ...payload, model: activeModel }
+    return withTimeout(
+      mobileApiPost(`${base}/chat/completions`, headers, body as Record<string, unknown>),
+      CV_REQUEST_TIMEOUT_MS,
+    )
+  }
 
   let res: { status: number; text: string; ok: boolean }
   try {
-    res = await mobileApiPost(`${base}/chat/completions`, nvidiaChatHeaders(apiKey), payload as Record<string, unknown>)
+    res = await postOnce(model)
+    if (
+      !res.ok &&
+      settings.provider === 'nvidia' &&
+      model !== NVIDIA_CV_MODEL &&
+      (res.status >= 500 || res.status === 404)
+    ) {
+      res = await postOnce(NVIDIA_CV_MODEL)
+    }
+    if (!res.ok && res.status >= 500) {
+      res = await postOnce(settings.provider === 'nvidia' ? NVIDIA_CV_MODEL : model)
+    }
   } catch (e) {
     const msg = e instanceof Error ? e.message : String(e)
-    if (/abort/i.test(msg)) {
+    if (/timed out/i.test(msg)) {
       throw new Error('CV extraction timed out — try a shorter PDF or switch AI provider.')
     }
     if (isLikelyCorsOrNetworkError(msg) && settings.provider === 'nvidia') {
       throw new Error(
-        'NVIDIA NIM blocked by app WebView CORS. Update to APK 1.2.1+ or use Groq for CV extraction.',
+        'NVIDIA NIM unreachable from the app. Reinstall the latest APK or use Groq for CV extraction.',
       )
     }
     if (isLikelyCorsOrNetworkError(msg)) {
       throw new Error(`Could not reach ${settings.provider} API for CV extraction. Check connection and API key.`)
     }
     throw e
-  } finally {
-    window.clearTimeout(timeout)
   }
 
   const text = res.text
