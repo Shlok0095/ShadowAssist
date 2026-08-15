@@ -9,6 +9,7 @@ import {
   getProviderApiKey,
   getProviderModel,
 } from './providerRegistry'
+import { normalizeSttProvider } from './sttRegistry'
 
 const STORAGE_PROFILE = 'veilassist.mobile.profile.v1'
 const STORAGE_SETTINGS = 'veilassist.mobile.appSettings.v1'
@@ -47,7 +48,13 @@ export function saveProfile(profile: PersonalProfile) {
 }
 
 export function loadAppSettings(): AppSettings {
-  return readJson<AppSettings>(STORAGE_SETTINGS, DEFAULT_APP_SETTINGS)
+  const parsed = readJson<AppSettings>(STORAGE_SETTINGS, DEFAULT_APP_SETTINGS)
+  return {
+    ...DEFAULT_APP_SETTINGS,
+    ...parsed,
+    sttProvider: normalizeSttProvider(parsed.sttProvider),
+    colorScheme: parsed.colorScheme === 'light' ? 'light' : 'dark',
+  }
 }
 
 export function saveAppSettings(settings: AppSettings) {

@@ -70,6 +70,8 @@ export async function requestInterviewAnswer(params: {
   source?: 'manual_input' | 'transcript'
   turnHistory?: SessionTurn[]
   signal?: AbortSignal
+  onDelta?: (chunk: string) => void
+  imageDataUrl?: string
 }): Promise<string> {
   if (isMobileApk()) {
     return requestInterviewAnswerDirect(params)

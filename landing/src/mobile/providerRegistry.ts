@@ -186,6 +186,7 @@ export function providerKeyConfigured(settings: AppSettings, id: AiProviderId): 
 
 export function speechLangFromSettings(lang: MicListenLanguage): string {
   if (lang === 'hi') return 'hi-IN'
+  // en-IN handles Indian/international English accents better than en-US on Android Web Speech.
   if (lang === 'en_hi_hinglish') return 'en-IN'
-  return 'en-US'
+  return 'en-IN'
 }

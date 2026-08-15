@@ -2,9 +2,9 @@ import { float32ToWavBlob } from './audioConvert'
 import { resampleF32 } from './pcmStreamCapture'
 
 const TARGET_RATE = 16000
-const SILENCE_RMS = 0.012
-const MIN_SPEECH_MS = 500
-const SILENCE_END_MS = 2000
+const SILENCE_RMS = 0.011
+const MIN_SPEECH_MS = 400
+const SILENCE_END_MS = 1200
 const MAX_UTTERANCE_MS = 20000
 
 function rms(samples: Float32Array): number {

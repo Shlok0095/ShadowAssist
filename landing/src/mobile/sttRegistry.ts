@@ -1,14 +1,14 @@
 import type { AppSettings } from './profileTypes'
-import type { MicListenLanguage } from './providerRegistry'
-import {
-  DEEPGRAM_MODELS,
-  GROQ_WHISPER_MODELS,
-  NVIDIA_PARAKEET_MODELS,
-} from './modelCatalog'
 
-export type SttProviderId = AppSettings['sttProvider']
+export const GROQ_WHISPER_MODELS = ['whisper-large-v3-turbo', 'whisper-large-v3']
+export const NVIDIA_PARAKEET_MODELS = [
+  'nvidia/parakeet-1.1b-rnnt-multilingual-asr',
+  'nvidia/parakeet-0.6b-ctc-en-us',
+]
 
 export const NVIDIA_NIM_FUNCTION_ID = '71203149-d3b7-4460-8231-1be2543a1fca'
+
+export type SttProviderId = AppSettings['sttProvider']
 
 export const STT_PROVIDER_META: Array<{
   id: SttProviderId
@@ -22,115 +22,64 @@ export const STT_PROVIDER_META: Array<{
     id: 'nvidia',
     label: 'NVIDIA Parakeet',
     badge: 'FAST',
-    desc: 'Parakeet RNNT multilingual ASR — same NIM as desktop (low latency).',
+    desc: 'Parakeet RNNT — direct gRPC streaming on Android (same as Windows overlay).',
     keyField: 'nvidiaKey',
     docs: 'https://build.nvidia.com/',
-  },
-  {
-    id: 'deepgram',
-    label: 'Deepgram',
-    badge: 'NOVA',
-    desc: 'Nova-3 — sub-300ms streaming latency; fastest REST model for live chunks.',
-    keyField: 'deepgramKey',
-    docs: 'https://console.deepgram.com/',
   },
   {
     id: 'groq',
     label: 'Groq Whisper',
     badge: 'WHISPER',
-    desc: 'Whisper large models on Groq.',
+    desc: 'Whisper large models on Groq — batch transcription with VAD.',
     keyField: 'groqKey',
     docs: 'https://console.groq.com/keys',
   },
-  {
-    id: 'openai',
-    label: 'OpenAI Whisper',
-    badge: 'WHISPER',
-    desc: 'Whisper-1 batch transcription.',
-    keyField: 'apiKey',
-    docs: 'https://platform.openai.com/api-keys',
-  },
 ]
 
-const WHISPER_PRIMERS: Record<MicListenLanguage, string> = {
-  en: 'English interview speech with international accents. Question about experience and skills.',
+const WHISPER_PRIMERS: Record<string, string> = {
   hi: 'ठीक है, तो इस सवाल का जवाब देते हैं।',
-  en_hi_hinglish: 'English and Hindi mixed interview speech. Question about experience.',
+  en_hi_hinglish: 'English and Hindi mixed interview speech.',
 }
 
-export function nvidiaLanguageCode(lang: MicListenLanguage): string {
-  // `multi` handles English with international accents better than en-US
+export function nvidiaLanguageCode(lang: AppSettings['micListenLanguage']): string {
   if (lang === 'en' || lang === 'en_hi_hinglish') return 'multi'
   if (lang === 'hi') return 'hi-IN'
   return 'multi'
 }
 
-export function deepgramQueryParams(settings: AppSettings): URLSearchParams {
-  const model = getSttModel(settings)
-  const lang = settings.micListenLanguage
-  const language =
-    lang === 'hi' ? 'hi' : lang === 'en_hi_hinglish' ? 'multi' : 'en'
-  const params = new URLSearchParams({
-    model,
-    language,
-    punctuate: 'true',
-    smart_format: 'false',
-    filler_words: 'false',
-  })
-  return params
-}
-
-/** Deepgram live WebSocket — interim results + endpointing (Natively-style). */
-export function deepgramLiveQueryParams(settings: AppSettings): URLSearchParams {
-  const base = deepgramQueryParams(settings)
-  base.set('encoding', 'linear16')
-  base.set('sample_rate', '16000')
-  base.set('channels', '1')
-  base.set('interim_results', 'true')
-  base.set('endpointing', '400')
-  base.set('utterance_end_ms', '1200')
-  base.set('vad_events', 'true')
-  return base
-}
-
-export function whisperLangParams(lang: MicListenLanguage): {
+export function whisperLangParams(lang: AppSettings['micListenLanguage']): {
   language?: string
   prompt?: string
 } {
-  // Avoid long primers — Whisper echoes them when audio is unclear.
   if (lang === 'en') return { language: 'en' }
   if (lang === 'hi') return { language: 'hi', prompt: WHISPER_PRIMERS.hi }
-  return { prompt: WHISPER_PRIMERS.en_hi_hinglish }
+  return { language: 'en', prompt: WHISPER_PRIMERS.en_hi_hinglish }
 }
 
 export function getSttApiKey(settings: AppSettings, provider?: SttProviderId): string {
   const p = provider || settings.sttProvider
   if (p === 'nvidia') return settings.nvidiaKey.trim()
-  if (p === 'deepgram') return settings.deepgramKey.trim()
-  if (p === 'groq') return settings.groqKey.trim()
-  return settings.apiKey.trim()
+  return settings.groqKey.trim()
 }
 
 export function getSttModel(settings: AppSettings): string {
   if (settings.sttProvider === 'nvidia') {
     return settings.nvidiaWhisperModel.trim() || NVIDIA_PARAKEET_MODELS[0]
   }
-  if (settings.sttProvider === 'deepgram') {
-    return settings.deepgramModel.trim() || 'nova-3'
-  }
-  if (settings.sttProvider === 'groq') {
-    return settings.groqWhisperModel.trim() || 'whisper-large-v3-turbo'
-  }
-  return 'whisper-1'
+  return settings.groqWhisperModel.trim() || 'whisper-large-v3-turbo'
 }
 
 export function sttModelOptions(provider: SttProviderId): string[] {
   if (provider === 'nvidia') return NVIDIA_PARAKEET_MODELS
-  if (provider === 'deepgram') return DEEPGRAM_MODELS
-  if (provider === 'groq') return GROQ_WHISPER_MODELS
-  return ['whisper-1']
+  return GROQ_WHISPER_MODELS
 }
 
 export function sttKeyConfigured(settings: AppSettings, provider: SttProviderId): boolean {
   return getSttApiKey(settings, provider).length > 0
+}
+
+/** Migrate legacy saved providers (Deepgram / OpenAI Whisper) to supported STT vendors. */
+export function normalizeSttProvider(raw: unknown): SttProviderId {
+  if (raw === 'groq') return 'groq'
+  return 'nvidia'
 }

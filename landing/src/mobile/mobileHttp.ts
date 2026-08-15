@@ -15,6 +15,7 @@ export async function mobileApiPost(
   url: string,
   headers: Record<string, string>,
   body: Record<string, unknown>,
+  timeouts?: { connectTimeout?: number; readTimeout?: number },
 ): Promise<MobileHttpResponse> {
   if (Capacitor.isNativePlatform()) {
     const res = await CapacitorHttp.post({
@@ -22,6 +23,8 @@ export async function mobileApiPost(
       headers,
       data: body,
       responseType: 'text',
+      connectTimeout: timeouts?.connectTimeout ?? 20000,
+      readTimeout: timeouts?.readTimeout ?? 60000,
     })
     const text =
       typeof res.data === 'string'
@@ -36,6 +39,44 @@ export async function mobileApiPost(
     method: 'POST',
     headers,
     body: JSON.stringify(body),
+  })
+  const text = await res.text()
+  return { status: res.status, text, ok: res.ok }
+}
+
+/** Binary POST for cloud APIs — bypasses WebView CORS on APK. */
+export async function mobileApiPostBinary(
+  url: string,
+  headers: Record<string, string>,
+  bytes: Uint8Array,
+): Promise<MobileHttpResponse> {
+  if (Capacitor.isNativePlatform()) {
+    const res = await CapacitorHttp.request({
+      method: 'POST',
+      url,
+      headers,
+      data: Array.from(bytes),
+      responseType: 'text',
+      connectTimeout: 30000,
+      readTimeout: 120000,
+    })
+    const text =
+      typeof res.data === 'string'
+        ? res.data
+        : res.data != null
+          ? JSON.stringify(res.data)
+          : ''
+    return { status: res.status, text, ok: res.status >= 200 && res.status < 300 }
+  }
+
+  const body = bytes.buffer.slice(
+    bytes.byteOffset,
+    bytes.byteOffset + bytes.byteLength,
+  ) as ArrayBuffer
+  const res = await fetch(url, {
+    method: 'POST',
+    headers,
+    body,
   })
   const text = await res.text()
   return { status: res.status, text, ok: res.ok }

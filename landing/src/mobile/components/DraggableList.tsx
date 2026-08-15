@@ -1,4 +1,4 @@
-import { useRef, useState, type ReactNode } from 'react'
+import { useEffect, useRef, type PointerEvent as ReactPointerEvent, type ReactNode } from 'react'
 
 export function reorderList<T>(items: T[], fromIndex: number, toIndex: number): T[] {
   if (fromIndex === toIndex || fromIndex < 0 || toIndex < 0) return items
@@ -18,43 +18,143 @@ export function DraggableList<T extends { id: string }>({
   onReorder: (next: T[]) => void
   children: (item: T, index: number, controls: ReorderControls) => ReactNode
 }) {
-  const dragIndex = useRef<number | null>(null)
-  const [dragOverIndex, setDragOverIndex] = useState<number | null>(null)
+  const listRef = useRef<HTMLDivElement>(null)
+  const fromRef = useRef<number | null>(null)
+  const overRef = useRef<number | null>(null)
+  const ghostRef = useRef<HTMLElement | null>(null)
+  const startPtr = useRef({ x: 0, y: 0 })
+  const heightsRef = useRef<number[]>([])
+  const gapRef = useRef(8)
 
-  const move = (from: number, to: number) => {
-    onReorder(reorderList(items, from, to))
+  useEffect(() => {
+    return () => {
+      ghostRef.current?.remove()
+      ghostRef.current = null
+    }
+  }, [])
+
+  const cards = () =>
+    listRef.current
+      ? Array.from(listRef.current.querySelectorAll<HTMLElement>(':scope > .mobile-list-card'))
+      : []
+
+  const indexFromPoint = (clientY: number) => {
+    const els = cards()
+    if (!els.length) return 0
+    let best = 0
+    let bestDist = Number.POSITIVE_INFINITY
+    els.forEach((el, i) => {
+      const r = el.getBoundingClientRect()
+      const mid = r.top + r.height / 2
+      const d = Math.abs(clientY - mid)
+      if (d < bestDist) {
+        bestDist = d
+        best = i
+      }
+    })
+    return best
+  }
+
+  const clearShifts = () => {
+    cards().forEach((el) => {
+      el.style.transform = ''
+      el.style.transition = ''
+    })
+  }
+
+  const applyShifts = (from: number, over: number) => {
+    const h = heightsRef.current[from] || 0
+    const step = h + gapRef.current
+    cards().forEach((el, i) => {
+      el.style.transition = 'transform 0.16s cubic-bezier(0.2, 0, 0, 1)'
+      let y = 0
+      if (i !== from) {
+        if (from < over && i > from && i <= over) y = -step
+        if (from > over && i >= over && i < from) y = step
+      }
+      el.style.transform = y ? `translateY(${y}px)` : ''
+    })
+  }
+
+  const removeGhost = () => {
+    ghostRef.current?.remove()
+    ghostRef.current = null
+  }
+
+  const onPointerDown = (index: number) => (e: ReactPointerEvent<HTMLElement>) => {
+    if (e.pointerType === 'mouse' && e.button !== 0) return
+    const card = e.currentTarget.closest('.mobile-list-card') as HTMLElement | null
+    if (!card || !listRef.current) return
+    e.stopPropagation()
+    e.preventDefault()
+    e.currentTarget.setPointerCapture(e.pointerId)
+
+    const rect = card.getBoundingClientRect()
+    const styles = getComputedStyle(listRef.current)
+    gapRef.current = Number.parseFloat(styles.rowGap || styles.gap || '8') || 8
+    heightsRef.current = cards().map((el) => el.getBoundingClientRect().height)
+
+    const ghost = card.cloneNode(true) as HTMLElement
+    ghost.classList.add('mobile-drag-ghost')
+    ghost.style.position = 'fixed'
+    ghost.style.left = `${rect.left}px`
+    ghost.style.top = `${rect.top}px`
+    ghost.style.width = `${rect.width}px`
+    ghost.style.height = `${rect.height}px`
+    ghost.style.margin = '0'
+    ghost.style.zIndex = '500'
+    ghost.style.pointerEvents = 'none'
+    ghost.style.transform = 'none'
+    document.body.appendChild(ghost)
+    ghostRef.current = ghost
+
+    startPtr.current = { x: e.clientX, y: e.clientY }
+    fromRef.current = index
+    overRef.current = index
+    card.classList.add('is-placeholder')
+  }
+
+  const onPointerMove = (e: ReactPointerEvent<HTMLElement>) => {
+    if (fromRef.current == null) return
+    e.preventDefault()
+    const dx = e.clientX - startPtr.current.x
+    const dy = e.clientY - startPtr.current.y
+    const ghost = ghostRef.current
+    if (ghost) {
+      ghost.style.transform = `translate3d(${dx}px, ${dy}px, 0) rotate(2deg) scale(1.03)`
+    }
+    const next = indexFromPoint(e.clientY)
+    if (overRef.current !== next) {
+      overRef.current = next
+      applyShifts(fromRef.current, next)
+    }
+  }
+
+  const finishDrag = (e: ReactPointerEvent<HTMLElement>) => {
+    if (fromRef.current == null) return
+    e.stopPropagation()
+    const from = fromRef.current
+    const to = overRef.current ?? indexFromPoint(e.clientY)
+    cards()[from]?.classList.remove('is-placeholder')
+    removeGhost()
+    clearShifts()
+    fromRef.current = null
+    overRef.current = null
+    if (from !== to) onReorder(reorderList(items, from, to))
   }
 
   return (
-    <div className="mobile-draggable-list">
+    <div className="mobile-draggable-list" ref={listRef}>
       {items.map((item, index) => {
         const controls: ReorderControls = {
-          onMoveUp: index > 0 ? () => move(index, index - 1) : undefined,
-          onMoveDown: index < items.length - 1 ? () => move(index, index + 1) : undefined,
           dragHandleProps: {
-            draggable: true,
-            onDragStart: (e) => {
-              dragIndex.current = index
-              e.dataTransfer.effectAllowed = 'move'
-            },
-            onDragEnd: () => {
-              dragIndex.current = null
-              setDragOverIndex(null)
-            },
+            onPointerDown: onPointerDown(index),
+            onPointerMove,
+            onPointerUp: finishDrag,
+            onPointerCancel: finishDrag,
           },
           cardProps: {
-            onDragOver: (e) => {
-              e.preventDefault()
-              setDragOverIndex(index)
-            },
-            onDrop: (e) => {
-              e.preventDefault()
-              const from = dragIndex.current
-              if (from != null && from !== index) move(from, index)
-              dragIndex.current = null
-              setDragOverIndex(null)
-            },
-            className: dragOverIndex === index ? 'mobile-list-card drag-over' : 'mobile-list-card',
+            className: 'mobile-list-card',
           },
         }
         return children(item, index, controls)
@@ -64,46 +164,40 @@ export function DraggableList<T extends { id: string }>({
 }
 
 export type ReorderControls = {
-  onMoveUp?: () => void
-  onMoveDown?: () => void
   dragHandleProps: {
-    draggable: boolean
-    onDragStart: (e: React.DragEvent) => void
-    onDragEnd: () => void
+    onPointerDown: (e: ReactPointerEvent<HTMLElement>) => void
+    onPointerMove: (e: ReactPointerEvent<HTMLElement>) => void
+    onPointerUp: (e: ReactPointerEvent<HTMLElement>) => void
+    onPointerCancel: (e: ReactPointerEvent<HTMLElement>) => void
   }
   cardProps: {
-    onDragOver: (e: React.DragEvent) => void
-    onDrop: (e: React.DragEvent) => void
     className: string
   }
 }
 
-export function DragHandle({
-  controls,
-}: {
-  controls: ReorderControls
-}) {
+function GripIcon() {
   return (
-    <div className="mobile-drag-handle-wrap">
-      <span
-        className="mobile-drag"
-        title="Drag to reorder"
-        {...controls.dragHandleProps}
-      >
-        ⋮⋮
-      </span>
-      <div className="mobile-reorder-arrows">
-        {controls.onMoveUp ? (
-          <button type="button" className="mobile-reorder-btn" aria-label="Move up" onClick={controls.onMoveUp}>
-            ↑
-          </button>
-        ) : null}
-        {controls.onMoveDown ? (
-          <button type="button" className="mobile-reorder-btn" aria-label="Move down" onClick={controls.onMoveDown}>
-            ↓
-          </button>
-        ) : null}
-      </div>
-    </div>
+    <svg width="20" height="20" viewBox="0 0 24 24" fill="currentColor" aria-hidden>
+      <circle cx="9" cy="6" r="1.5" />
+      <circle cx="15" cy="6" r="1.5" />
+      <circle cx="9" cy="12" r="1.5" />
+      <circle cx="15" cy="12" r="1.5" />
+      <circle cx="9" cy="18" r="1.5" />
+      <circle cx="15" cy="18" r="1.5" />
+    </svg>
+  )
+}
+
+export function DragHandle({ controls }: { controls: ReorderControls }) {
+  return (
+    <button
+      type="button"
+      className="mobile-drag"
+      aria-label="Drag to reorder"
+      onClick={(e) => e.stopPropagation()}
+      {...controls.dragHandleProps}
+    >
+      <GripIcon />
+    </button>
   )
 }

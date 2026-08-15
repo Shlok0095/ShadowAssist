@@ -1,6 +1,7 @@
 import type { AppSettings } from './profileTypes'
 import { routeInterviewQuestion } from './answerRouting'
 import type { SessionTurn } from './sessionLoopTypes'
+import { isNvidiaFastChatModel } from './nvidiaChatModels'
 
 export function buildInterviewSystemPrompt(input: {
   profileText: string
@@ -86,6 +87,8 @@ export function buildChatPayload(input: {
   source?: 'manual_input' | 'transcript'
   model: string
   turnHistory?: SessionTurn[]
+  stream?: boolean
+  imageDataUrl?: string
 }) {
   const hasProfile = input.profileText.trim().length > 40
   const hasJd = input.jobDescription.trim().length > 20
@@ -117,14 +120,28 @@ export function buildChatPayload(input: {
     { role: 'assistant' as const, content: turn.answer },
   ])
 
+  const userText = input.think
+    ? `Interview question (think briefly, then answer):\n\n${input.question}`
+    : `Interview question:\n\n${input.question}`
+
+  const userContent = input.imageDataUrl
+    ? [
+        {
+          type: 'text',
+          text: input.question?.trim()
+            ? userText
+            : 'Read the interview question in this photo and give the spoken answer.',
+        },
+        { type: 'image_url', image_url: { url: input.imageDataUrl } },
+      ]
+    : userText
+
   const messages = [
     { role: 'system', content: systemPrompt },
     ...historyMessages,
     {
       role: 'user',
-      content: input.think
-        ? `Interview question (think briefly, then answer):\n\n${input.question}`
-        : `Interview question:\n\n${input.question}`,
+      content: userContent,
     },
   ]
 
@@ -136,10 +153,18 @@ export function buildChatPayload(input: {
       input.think ? 2200 : answerLength === 'long' ? 1800 : answerLength === 'short' ? 600 : 1400,
     temperature: 0,
     top_p: 0.7,
-    stream: false,
+    stream: Boolean(input.stream),
   }
 
-  if (/nemotron/i.test(input.model)) {
+  const model = String(input.model || '')
+  const nemotron = /nemotron/i.test(model)
+  const nvidiaFast = input.settings.provider === 'nvidia' && !input.think && isNvidiaFastChatModel(model)
+
+  if (nvidiaFast) {
+    payload.seed = 7
+  }
+
+  if (nemotron) {
     payload.chat_template_kwargs = { enable_thinking: input.think }
   }
 

@@ -29,7 +29,7 @@ export function loopPhaseLabel(
     case 'listening':
       return 'Listening'
     case 'generating_answer':
-      return 'Generating answer…'
+      return 'Listening'
     case 'paused':
       return 'Paused (app backgrounded)'
     case 'idle':

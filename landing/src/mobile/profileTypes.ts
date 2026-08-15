@@ -38,6 +38,7 @@ export type ResponseFormat = 'bullets' | 'paragraph'
 export type AnswerLength = 'short' | 'medium' | 'long'
 export type DetectionLevel = 'low' | 'medium' | 'high'
 export type FontSize = 'small' | 'standard' | 'large'
+export type ColorScheme = 'dark' | 'light'
 export type AiProvider =
   | 'groq'
   | 'nvidia'
@@ -47,7 +48,7 @@ export type AiProvider =
   | 'google'
   | 'deepseek'
   | 'custom'
-export type SttProvider = 'nvidia' | 'deepgram' | 'groq' | 'openai'
+export type SttProvider = 'nvidia' | 'groq'
 export type SttMode = 'device' | 'cloud'
 export type MicSensitivity = 'standard' | 'boost'
 export type MicListenLanguage = 'en' | 'hi' | 'en_hi_hinglish'
@@ -62,6 +63,7 @@ export type AppSettings = {
   answerLength: AnswerLength
   questionDetection: DetectionLevel
   fontSize: FontSize
+  colorScheme: ColorScheme
   showTranscription: boolean
   autoScroll: boolean
   provider: AiProvider
@@ -90,8 +92,6 @@ export type AppSettings = {
   groqWhisperModel: string
   nvidiaWhisperModel: string
   nvidiaNimFunctionId: string
-  deepgramKey: string
-  deepgramModel: string
   /** Keep screen on during an active interview session (wake lock). */
   keepScreenAwake: boolean
 }
@@ -117,6 +117,7 @@ export const DEFAULT_APP_SETTINGS: AppSettings = {
   answerLength: 'medium',
   questionDetection: 'high',
   fontSize: 'standard',
+  colorScheme: 'dark',
   showTranscription: true,
   autoScroll: true,
   provider: 'nvidia',
@@ -145,8 +146,6 @@ export const DEFAULT_APP_SETTINGS: AppSettings = {
   groqWhisperModel: 'whisper-large-v3-turbo',
   nvidiaWhisperModel: 'nvidia/parakeet-1.1b-rnnt-multilingual-asr',
   nvidiaNimFunctionId: '71203149-d3b7-4460-8231-1be2543a1fca',
-  deepgramKey: '',
-  deepgramModel: 'nova-3',
   keepScreenAwake: true,
 }
 

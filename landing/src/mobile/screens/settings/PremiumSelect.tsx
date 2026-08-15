@@ -1,4 +1,5 @@
 import type { ReactNode, SelectHTMLAttributes } from 'react'
+import { OutlinedSelect } from './SettingsPrimitives'
 
 export function PremiumSelect({
   label,
@@ -16,12 +17,9 @@ export function PremiumSelect({
   return (
     <div className="mobile-premium-select-wrap">
       <span className="mobile-premium-select-label">{label}</span>
-      <div className="mobile-premium-select-shell">
-        <select className="mobile-premium-select" value={value} onChange={onChange}>
-          {children}
-        </select>
-        <span className="mobile-premium-select-chevron" aria-hidden>▾</span>
-      </div>
+      <OutlinedSelect value={value} onChange={onChange}>
+        {children}
+      </OutlinedSelect>
       {hint ? <p className="mobile-field-hint">{hint}</p> : null}
     </div>
   )

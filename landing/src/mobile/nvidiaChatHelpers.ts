@@ -10,11 +10,11 @@ export function isNvidiaNimBaseUrl(baseURL: string): boolean {
 
 /** When think=false, disable Nemotron reasoning. When think=true, allow model thinking. */
 export function applyNemotronReasoning(
-  messages: Array<{ role: string; content: string }>,
+  messages: Array<{ role: string; content: string | unknown }>,
   baseURL: string,
   model: string,
   think: boolean,
-): Array<{ role: string; content: string }> {
+): Array<{ role: string; content: string | unknown }> {
   if (!isNvidiaNimBaseUrl(baseURL) || !/nemotron/i.test(model)) return messages
   if (think) return messages
 
@@ -22,7 +22,7 @@ export function applyNemotronReasoning(
   const systemIndex = next.findIndex((m) => m.role === 'system')
   if (systemIndex >= 0) {
     const content = next[systemIndex].content
-    if (!content.includes('/no_think')) {
+    if (typeof content === 'string' && !content.includes('/no_think')) {
       next[systemIndex] = { ...next[systemIndex], content: `/no_think\n${content}` }
     }
   } else {

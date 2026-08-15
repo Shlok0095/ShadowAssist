@@ -1,10 +1,51 @@
-/** Reject Whisper/ASR junk — prompt echo, primers, and near-silent hallucinations. */
+/** Reject Whisper/ASR junk — prompt echo, primers, UI status leaks, and repetition loops. */
+
 const PROMPT_ECHO = [
   'question about experience and skills',
   'english interview speech with international accents',
   'english and hindi mixed interview speech',
   'ठीक है, तो इस सवाल का जवाब देते हैं',
 ]
+
+const UI_STATUS_ECHO =
+  /\b(generating answer|generating|generation|composing|listening|transcribing|transcription|starting|reconnecting)\b/i
+
+const HALLUCINATION_PATTERNS = [
+  /^thank(s| you)[\s\W]*$/i,
+  /^thanks for (watching|listening)[\s\W]*$/i,
+  /^(bye|goodbye|okay|ok|yeah|hmm+|uh+|um+)[\s.!?]*$/i,
+  /^[\s.…,!?\-_]+$/i,
+  /^\(?music\)?$/i,
+  /^\(?applause\)?$/i,
+  /^(silence|inaudible)\b/i,
+  /^(subtitle|subtitles)\b/i,
+  /\bplease subscribe\b/i,
+  /\btranscription by\b/i,
+  /transcribe only words that are spoken/i,
+]
+
+export function isRepetitionHallucination(text: string): boolean {
+  const words = String(text || '')
+    .trim()
+    .split(/\s+/)
+    .filter(Boolean)
+  if (words.length < 6) return false
+  for (let n = 2; n <= 4; n += 1) {
+    if (words.length < n * 3) continue
+    const counts: Record<string, number> = {}
+    for (let i = 0; i <= words.length - n; i += 1) {
+      const gram = words
+        .slice(i, i + n)
+        .join(' ')
+        .toLowerCase()
+      counts[gram] = (counts[gram] || 0) + 1
+    }
+    for (const cnt of Object.values(counts)) {
+      if (cnt >= 3 && (cnt * n) / words.length > 0.55) return true
+    }
+  }
+  return false
+}
 
 export function isLikelySttGarbage(text: string): boolean {
   const t = String(text || '').trim()
@@ -18,9 +59,23 @@ export function isLikelySttGarbage(text: string): boolean {
     if (lower.length <= p.length + 12 && lower.includes(p)) return true
   }
 
-  if (/^listening\.?$/i.test(t)) return true
-  if (/\blistening\b/i.test(lower)) return true
+  if (HALLUCINATION_PATTERNS.some((re) => re.test(t))) return true
+  if (UI_STATUS_ECHO.test(lower) && lower.split(/\s+/).length <= 4) return true
+  if (/^(listening|generating|generation|composing)\.?$/i.test(t)) return true
+  if (isRepetitionHallucination(t)) return true
 
+  return false
+}
+
+/** Drop near-duplicate finals from Android Web Speech rapid restarts. */
+export function isDuplicateDeviceFinal(previous: string, incoming: string): boolean {
+  const prev = String(previous || '').trim()
+  const inc = String(incoming || '').trim()
+  if (!inc) return true
+  if (!prev) return false
+  if (inc === prev) return true
+  if (prev.startsWith(inc) && inc.length <= prev.length) return true
+  if (inc.startsWith(prev) && prev.length >= inc.length * 0.9) return false
   return false
 }
 

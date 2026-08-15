@@ -11,9 +11,10 @@ const config: CapacitorConfig = {
     allowMixedContent: true,
   },
   plugins: {
-  // Patch fetch/XHR to native HTTP — required for NVIDIA NIM (no browser CORS headers).
+    // Keep disabled: global fetch/XHR patch buffers the full response and breaks SSE streaming.
+    // NVIDIA / CORS-blocked calls use explicit CapacitorHttp.post in mobileHttp.ts instead.
     CapacitorHttp: {
-      enabled: true,
+      enabled: false,
     },
   },
 }

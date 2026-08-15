@@ -4,11 +4,14 @@ import { getActiveApiKey, getActiveModel } from './profileStorage'
 import { buildChatPayload } from './promptBuilder'
 import { getChatBaseUrl, getChatProviderMeta } from './providerRegistry'
 import { applyNemotronReasoning, nvidiaChatHeaders } from './nvidiaChatHelpers'
+import { Capacitor } from '@capacitor/core'
 import { isLikelyCorsOrNetworkError, mobileApiPost } from './mobileHttp'
+import { readOpenAiChatStream, streamOpenAiChatViaXhr } from './chatStream'
+import { nvidiaFallbackModelsFor, nvidiaVisionModelsFor } from './nvidiaChatModels'
 import type { SessionTurn } from './sessionLoopTypes'
 
-const NVIDIA_CHAT_FALLBACK = 'nvidia/llama-3.1-nemotron-nano-vl-8b-v1'
-const REQUEST_TIMEOUT_MS = 20000
+const REQUEST_TIMEOUT_MS = 45000
+const VISION_TIMEOUT_MS = 120000
 
 function isAbortError(e: unknown): boolean {
   return e instanceof DOMException && e.name === 'AbortError'
@@ -41,7 +44,7 @@ async function withTimeout<T>(promise: Promise<T>, ms: number, signal?: AbortSig
   })
 }
 
-/** Direct provider call — same as desktop app (no Vercel proxy / no CORS issues in APK). */
+/** Direct provider call with optional SSE streaming (line-by-line in UI). */
 export async function requestInterviewAnswerDirect(params: {
   question: string
   profile: PersonalProfile
@@ -50,6 +53,8 @@ export async function requestInterviewAnswerDirect(params: {
   source?: 'manual_input' | 'transcript'
   turnHistory?: SessionTurn[]
   signal?: AbortSignal
+  onDelta?: (chunk: string) => void
+  imageDataUrl?: string
 }): Promise<string> {
   const apiKey = getActiveApiKey(params.settings)
   if (!apiKey) throw new Error('Add your API key in Settings → AI Providers.')
@@ -58,6 +63,7 @@ export async function requestInterviewAnswerDirect(params: {
   const profileText = profileToContextText(params.profile)
   const jobDescription = params.profile.jobDescription || params.settings.interviewTopic
   const meta = getChatProviderMeta(params.settings.provider)
+  const useStream = Boolean(params.onDelta)
 
   const { payload, systemPrompt } = buildChatPayload({
     question: params.question,
@@ -68,10 +74,12 @@ export async function requestInterviewAnswerDirect(params: {
     source: params.source,
     model,
     turnHistory: params.turnHistory,
+    stream: useStream,
+    imageDataUrl: params.imageDataUrl,
   })
 
   if (meta.kind === 'anthropic') {
-    return requestAnthropic({
+    const answer = await requestAnthropic({
       apiKey,
       model,
       systemPrompt,
@@ -79,6 +87,8 @@ export async function requestInterviewAnswerDirect(params: {
       payload,
       signal: params.signal,
     })
+    if (params.onDelta && answer) params.onDelta(answer)
+    return answer
   }
 
   const base = getChatBaseUrl(params.settings, params.settings.provider)
@@ -91,29 +101,62 @@ export async function requestInterviewAnswerDirect(params: {
   }
 
   const messages = applyNemotronReasoning(
-    payload.messages as Array<{ role: string; content: string }>,
+    payload.messages as Array<{ role: string; content: string | unknown }>,
     base,
     model,
     params.think,
   )
 
-  const requestBody = { ...payload, messages }
+  const requestBody = { ...payload, messages, stream: useStream }
 
-  const doRequest = async (activeModel: string) => {
-    const body = {
-      ...requestBody,
-      model: activeModel,
-      messages: applyNemotronReasoning(
-        payload.messages as Array<{ role: string; content: string }>,
-        base,
-        activeModel,
-        params.think,
-      ),
+  const buildBody = (activeModel: string) => ({
+    ...requestBody,
+    model: activeModel,
+    messages: applyNemotronReasoning(
+      payload.messages as Array<{ role: string; content: string | unknown }>,
+      base,
+      activeModel,
+      params.think,
+    ),
+    stream: useStream,
+  })
+
+  const parseCompletion = (text: string): string => {
+    const data = JSON.parse(text)
+    const raw = data?.choices?.[0]?.message?.content
+    const answer = Array.isArray(raw)
+      ? raw.map((part: { text?: string }) => String(part?.text || '')).join('').trim()
+      : String(raw || '').trim()
+    if (!answer) throw new Error('Empty response from AI provider')
+    return answer
+  }
+
+  const emitAsTokens = async (
+    answer: string,
+    onDelta: (chunk: string) => void,
+    signal?: AbortSignal,
+  ) => {
+    const parts = answer.match(/\S+\s*/g) || [answer]
+    for (const part of parts) {
+      if (signal?.aborted) throw new DOMException('Aborted', 'AbortError')
+      onDelta(part)
+      await new Promise<void>((resolve) => {
+        requestAnimationFrame(() => resolve())
+      })
     }
+  }
+
+  const requestTimeout = params.imageDataUrl ? VISION_TIMEOUT_MS : REQUEST_TIMEOUT_MS
+
+  const doRequestBatch = async (activeModel: string) => {
+    const body = { ...buildBody(activeModel), stream: false }
     try {
       return await withTimeout(
-        mobileApiPost(`${base}/chat/completions`, headers, body),
-        REQUEST_TIMEOUT_MS,
+        mobileApiPost(`${base}/chat/completions`, headers, body, {
+          connectTimeout: 25000,
+          readTimeout: requestTimeout,
+        }),
+        requestTimeout,
         params.signal,
       )
     } catch (e) {
@@ -122,7 +165,7 @@ export async function requestInterviewAnswerDirect(params: {
       if (isTimeoutError(e)) throw e
       if (isLikelyCorsOrNetworkError(msg) && params.settings.provider === 'nvidia') {
         throw new Error(
-          `NVIDIA NIM blocked by browser CORS from the app shell. Reinstall the latest APK (1.2.1+) or switch to Groq in Settings → AI Providers. (${msg})`,
+          `NVIDIA NIM blocked by browser CORS from the app shell. Reinstall the latest APK or switch to Groq in Settings → AI Providers. (${msg})`,
         )
       }
       if (isLikelyCorsOrNetworkError(msg)) {
@@ -134,49 +177,108 @@ export async function requestInterviewAnswerDirect(params: {
     }
   }
 
-  let activeModel = model
-  let res: { status: number; text: string; ok: boolean }
-
-  try {
-    res = await doRequest(activeModel)
-  } catch (e) {
-    if (isTimeoutError(e)) {
-      res = await doRequest(activeModel)
-    } else {
-      throw e
+  const doRequestStream = async (activeModel: string): Promise<string> => {
+    const body = buildBody(activeModel)
+    const url = `${base}/chat/completions`
+    const onDelta = params.onDelta!
+    const streamHeaders = {
+      ...headers,
+      Accept: 'text/event-stream',
+      'Content-Type': 'application/json',
     }
-  }
 
-  if (
-    !res.ok &&
-    params.settings.provider === 'nvidia' &&
-    activeModel !== NVIDIA_CHAT_FALLBACK &&
-    (res.status >= 500 || res.status === 404)
-  ) {
-    activeModel = NVIDIA_CHAT_FALLBACK
-    res = await doRequest(activeModel)
-  }
+    const fallbackBatch = async () => {
+      const res = await doRequestBatch(activeModel)
+      if (!res.ok) {
+        let detail = res.text.slice(0, 300)
+        try {
+          const parsed = JSON.parse(res.text)
+          detail = parsed?.error?.message || parsed?.error || detail
+        } catch {
+          /* keep */
+        }
+        throw new Error(`AI provider error (${res.status}): ${detail}`)
+      }
+      const answer = parseCompletion(res.text)
+      await emitAsTokens(answer, onDelta, params.signal)
+      return answer
+    }
 
-  if (!res.ok && res.status >= 500) {
-    res = await doRequest(activeModel)
-  }
+    if (params.imageDataUrl && Capacitor.isNativePlatform()) {
+      return fallbackBatch()
+    }
 
-  const text = res.text
-  if (!res.ok) {
-    let detail = text.slice(0, 300)
     try {
-      const parsed = JSON.parse(text)
-      detail = parsed?.error?.message || parsed?.error || detail
-    } catch {
-      /* keep raw */
+      if (Capacitor.isNativePlatform()) {
+        return await streamOpenAiChatViaXhr(url, streamHeaders, body, onDelta, params.signal)
+      }
+
+      const fetchPromise = fetch(url, {
+        method: 'POST',
+        headers: streamHeaders,
+        body: JSON.stringify(body),
+        signal: params.signal,
+      })
+      const res = await withTimeout(fetchPromise, REQUEST_TIMEOUT_MS, params.signal)
+      if (!res.ok) {
+        const errText = await res.text()
+        let detail = errText.slice(0, 300)
+        try {
+          const parsed = JSON.parse(errText)
+          detail = parsed?.error?.message || parsed?.error || detail
+        } catch {
+          /* keep */
+        }
+        throw new Error(`AI provider error (${res.status}): ${detail}`)
+      }
+      if (!res.body) throw new Error('Empty stream from AI provider')
+      return await readOpenAiChatStream(res.body, onDelta, params.signal)
+    } catch (e) {
+      if (isAbortError(e)) throw e
+      const msg = e instanceof Error ? e.message : String(e)
+      if (!isLikelyCorsOrNetworkError(msg) && !isTimeoutError(e)) throw e
+      return fallbackBatch()
     }
-    throw new Error(`AI provider error (${res.status}): ${detail}`)
   }
 
-  const data = JSON.parse(text)
-  const answer = data?.choices?.[0]?.message?.content?.trim() || ''
-  if (!answer) throw new Error('Empty response from AI provider')
-  return answer
+  let activeModel = model
+  const tryModels =
+    params.settings.provider === 'nvidia'
+      ? params.imageDataUrl
+        ? nvidiaVisionModelsFor(activeModel)
+        : [activeModel, ...nvidiaFallbackModelsFor(activeModel)]
+      : [activeModel]
+  if (tryModels[0]) activeModel = tryModels[0]
+
+  const runWithModel = async (m: string): Promise<string> => {
+    if (useStream) return await doRequestStream(m)
+    const res = await doRequestBatch(m)
+    if (!res.ok) {
+      let detail = res.text.slice(0, 300)
+      try {
+        const parsed = JSON.parse(res.text)
+        detail = parsed?.error?.message || parsed?.error || detail
+      } catch {
+        /* keep */
+      }
+      throw new Error(`AI provider error (${res.status}): ${detail}`)
+    }
+    return parseCompletion(res.text)
+  }
+
+  let lastError: unknown = null
+  for (const candidate of tryModels) {
+    try {
+      activeModel = candidate
+      const answer = await runWithModel(candidate)
+      if (answer) return answer
+    } catch (err) {
+      lastError = err
+      if (isAbortError(err)) throw err
+    }
+  }
+  if (lastError) throw lastError
+  throw new Error('Empty response from AI provider')
 }
 
 /** Minimal chat request to validate API key before session starts. */

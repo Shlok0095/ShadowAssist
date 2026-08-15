@@ -1,20 +1,25 @@
 import type { AppSettings } from './profileTypes'
 import { ensureWav16k } from './audioConvert'
 import {
-  deepgramQueryParams,
   getSttApiKey,
   getSttModel,
   nvidiaLanguageCode,
   NVIDIA_NIM_FUNCTION_ID,
   whisperLangParams,
 } from './sttRegistry'
-import { mobileApiPost, type MobileHttpResponse } from './mobileHttp'
+import { isLikelyCorsOrNetworkError, mobileApiPost, type MobileHttpResponse } from './mobileHttp'
+import { nvidiaNativeSttAvailable, transcribeWavNative } from './nvidiaNativeStt'
+import { Capacitor } from '@capacitor/core'
 
-function transcribeProxyUrl(): string {
+function transcribeProxyUrls(): string[] {
+  const urls: string[] = []
   const origin = String(import.meta.env.VITE_API_ORIGIN || '').replace(/\/$/, '')
-  if (origin) return `${origin}/api/interview/transcribe`
-  if (import.meta.env.VITE_MOBILE_APK) return 'https://veilassist.vercel.app/api/interview/transcribe'
-  return '/api/interview/transcribe'
+  if (origin) urls.push(`${origin}/api/interview/transcribe`)
+  if (import.meta.env.VITE_MOBILE_APK) {
+    urls.push('https://veilassist.vercel.app/api/interview/transcribe')
+  }
+  urls.push('/api/interview/transcribe')
+  return [...new Set(urls)]
 }
 
 async function parseTranscriptBody(res: MobileHttpResponse): Promise<string> {
@@ -43,13 +48,17 @@ async function parseTranscriptResponse(res: Response): Promise<string> {
   }
 }
 
-async function transcribeNvidiaProxy(settings: AppSettings, wavBlob: Blob, apiKey: string): Promise<string> {
+async function transcribeNvidiaProxy(
+  settings: AppSettings,
+  wavBlob: Blob,
+  apiKey: string,
+  proxyUrl: string,
+): Promise<string> {
   const arr = new Uint8Array(await wavBlob.arrayBuffer())
   let binary = ''
   for (let i = 0; i < arr.length; i += 1) binary += String.fromCharCode(arr[i])
   const audioBase64 = btoa(binary)
   const functionId = settings.nvidiaNimFunctionId?.trim() || NVIDIA_NIM_FUNCTION_ID
-  const proxyUrl = transcribeProxyUrl()
   const body = {
     provider: 'nvidia',
     apiKey,
@@ -59,52 +68,56 @@ async function transcribeNvidiaProxy(settings: AppSettings, wavBlob: Blob, apiKe
     audioBase64,
   }
 
-  try {
-    const proxyRes = await mobileApiPost(proxyUrl, { 'Content-Type': 'application/json' }, body)
-    return await parseTranscriptBody(proxyRes)
-  } catch (err) {
-    const msg = err instanceof Error ? err.message : String(err)
-    throw new Error(
-      `NVIDIA Parakeet STT could not reach ${proxyUrl} (${msg}). Parakeet requires the gRPC transcribe API on your site host.`,
-    )
-  }
+  const proxyRes = await mobileApiPost(proxyUrl, { 'Content-Type': 'application/json' }, body)
+  return await parseTranscriptBody(proxyRes)
 }
 
 async function transcribeNvidia(settings: AppSettings, wavBlob: Blob): Promise<string> {
   const apiKey = getSttApiKey(settings, 'nvidia')
   if (!apiKey) throw new Error('Add NVIDIA API key in Audio → NVIDIA Parakeet.')
 
-  // Parakeet ASR on NVCF is gRPC-only — browsers/APK use our Node transcribe proxy.
-  return transcribeNvidiaProxy(settings, wavBlob, apiKey)
-}
+  if (nvidiaNativeSttAvailable()) {
+    try {
+      return await transcribeWavNative(settings, wavBlob)
+    } catch (nativeErr) {
+      const msg = nativeErr instanceof Error ? nativeErr.message : String(nativeErr)
+      console.warn('[stt] NVIDIA native gRPC failed, trying proxy fallback:', msg)
+    }
+  }
 
-async function transcribeDeepgram(settings: AppSettings, wavBlob: Blob): Promise<string> {
-  const apiKey = getSttApiKey(settings, 'deepgram')
-  if (!apiKey) throw new Error('Add Deepgram API key in Audio → Deepgram.')
+  const errors: string[] = []
+  for (const url of transcribeProxyUrls()) {
+    try {
+      return await transcribeNvidiaProxy(settings, wavBlob, apiKey, url)
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : String(err)
+      errors.push(`${url}: ${msg}`)
+      if (!/404|not found/i.test(msg)) break
+    }
+  }
 
-  const params = deepgramQueryParams(settings)
-  const res = await fetch(`https://api.deepgram.com/v1/listen?${params}`, {
-    method: 'POST',
-    headers: {
-      Authorization: `Token ${apiKey}`,
-      'Content-Type': 'audio/wav',
-    },
-    body: wavBlob,
-  })
-  const text = await res.text()
-  if (!res.ok) throw new Error(`Deepgram failed (${res.status}): ${text.slice(0, 200)}`)
-  const json = JSON.parse(text)
-  return String(json?.results?.channels?.[0]?.alternatives?.[0]?.transcript || '').trim()
+  if (settings.groqKey.trim()) {
+    try {
+      return await transcribeWhisper(settings, wavBlob, 'https://api.groq.com/openai/v1')
+    } catch (groqErr) {
+      const msg = groqErr instanceof Error ? groqErr.message : String(groqErr)
+      errors.push(`groq-fallback: ${msg}`)
+    }
+  }
+
+  const hint = Capacitor.getPlatform() === 'android'
+    ? 'Native NVIDIA gRPC failed. Check API key and network.'
+    : 'NVIDIA Parakeet needs gRPC proxy or native bridge.'
+  throw new Error(`${hint} ${errors[0] || ''}`.trim())
 }
 
 async function transcribeWhisper(
   settings: AppSettings,
   wavBlob: Blob,
   base: string,
-  provider: 'groq' | 'openai',
 ): Promise<string> {
-  const apiKey = getSttApiKey(settings, provider)
-  if (!apiKey) throw new Error(`Add ${provider === 'groq' ? 'Groq' : 'OpenAI'} API key.`)
+  const apiKey = getSttApiKey(settings, 'groq')
+  if (!apiKey) throw new Error('Add Groq API key in Audio → Groq Whisper.')
 
   const lang = whisperLangParams(settings.micListenLanguage)
   const form = new FormData()
@@ -136,13 +149,7 @@ export async function transcribeAudioBlob(
       const provider = settings.sttProvider
 
       if (provider === 'groq') {
-        return transcribeWhisper(settings, wav, 'https://api.groq.com/openai/v1', 'groq')
-      }
-      if (provider === 'openai') {
-        return transcribeWhisper(settings, wav, 'https://api.openai.com/v1', 'openai')
-      }
-      if (provider === 'deepgram') {
-        return transcribeDeepgram(settings, wav)
+        return transcribeWhisper(settings, wav, 'https://api.groq.com/openai/v1')
       }
       if (provider === 'nvidia') {
         return transcribeNvidia(settings, wav)
@@ -150,6 +157,7 @@ export async function transcribeAudioBlob(
 
       throw new Error('Unknown STT provider')
     } catch (e) {
+      if (remaining > 0 && !isLikelyCorsOrNetworkError(String(e))) return run(remaining - 1)
       if (remaining > 0) return run(remaining - 1)
       throw e
     }

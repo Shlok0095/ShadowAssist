@@ -5,6 +5,7 @@ import { getActiveApiKey, getActiveModel } from './profileStorage'
 import { getChatBaseUrl } from './providerRegistry'
 import { applyNemotronReasoning, nvidiaChatHeaders } from './nvidiaChatHelpers'
 import { isLikelyCorsOrNetworkError, mobileApiPost } from './mobileHttp'
+import { NVIDIA_CV_MODEL, NVIDIA_CV_MAX_OUTPUT_TOKENS, resolveNvidiaCvCredentials } from './nvidiaCv'
 
 const CV_SYSTEM_PROMPT = `You extract resume/CV text into structured JSON for an interview assistant.
 Return ONLY valid JSON (no markdown fences) matching this schema:
@@ -24,8 +25,8 @@ Rules:
 - Do not include a separate "extra context" field — the user adds that manually in the app.
 - Use empty strings or empty arrays when a section is missing.`
 
-const NVIDIA_CV_MODEL = 'nvidia/llama-3.1-nemotron-nano-vl-8b-v1'
 const CV_REQUEST_TIMEOUT_MS = 90000
+const CV_MAX_INPUT_CHARS = 12000
 
 function uid(): string {
   return `${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}`
@@ -102,20 +103,33 @@ function stripJsonFence(text: string): string {
   return raw
 }
 
-async function structureCvDirect(
+function parseCvResponseBody(res: { status: number; text: string; ok: boolean }): RawStructured {
+  if (!res.ok) {
+    throw new Error(`CV extraction failed (${res.status}): ${res.text.slice(0, 300)}`)
+  }
+  let data: { choices?: Array<{ message?: { content?: string } }> }
+  try {
+    data = JSON.parse(res.text)
+  } catch {
+    throw new Error(`CV extraction returned non-JSON HTTP body: ${res.text.slice(0, 200)}`)
+  }
+  const content = data?.choices?.[0]?.message?.content?.trim() || ''
+  if (!content) throw new Error('Empty CV extraction response from NVIDIA NIM')
+  try {
+    return JSON.parse(stripJsonFence(content)) as RawStructured
+  } catch {
+    throw new Error(`CV model returned invalid JSON: ${content.slice(0, 200)}`)
+  }
+}
+
+async function structureCvViaNvidia(
   rawText: string,
-  settings: AppSettings,
+  creds: NonNullable<ReturnType<typeof resolveNvidiaCvCredentials>>,
   sourceFileName?: string,
 ): Promise<PersonalProfile> {
-  const apiKey = getActiveApiKey(settings)
-  if (!apiKey) throw new Error('API key required for deep CV extraction')
-
-  const model =
-    settings.provider === 'nvidia'
-      ? NVIDIA_CV_MODEL
-      : getActiveModel(settings)
-  const base = getChatBaseUrl(settings, settings.provider)
-  const clipped = rawText.slice(0, 12000)
+  const clipped = rawText.slice(0, CV_MAX_INPUT_CHARS)
+  const base = creds.baseUrl
+  const model = creds.model
 
   const payload: Record<string, unknown> = {
     model,
@@ -128,14 +142,67 @@ async function structureCvDirect(
       model,
       false,
     ),
-    max_tokens: 4000,
+    max_tokens: NVIDIA_CV_MAX_OUTPUT_TOKENS,
     temperature: 0,
     top_p: 0.7,
     stream: false,
+    response_format: { type: 'json_object' },
   }
-
   if (/nemotron/i.test(model)) {
     payload.chat_template_kwargs = { enable_thinking: false }
+  }
+
+  const headers = { ...nvidiaChatHeaders(creds.apiKey) }
+
+  const postOnce = async (activeModel: string) =>
+    withTimeout(
+      mobileApiPost(`${base}/chat/completions`, headers, { ...payload, model: activeModel }),
+      CV_REQUEST_TIMEOUT_MS,
+    )
+
+  try {
+    let res = await postOnce(model)
+    if (!res.ok && (res.status >= 500 || res.status === 404)) {
+      res = await postOnce(NVIDIA_CV_MODEL)
+    }
+    const parsed = parseCvResponseBody(res)
+    return mapLlmProfile(parsed, rawText, sourceFileName)
+  } catch (e) {
+    const msg = e instanceof Error ? e.message : String(e)
+    if (/timed out/i.test(msg)) {
+      throw new Error('NVIDIA CV extraction timed out — try a shorter PDF.')
+    }
+    if (isLikelyCorsOrNetworkError(msg)) {
+      throw new Error(
+        `NVIDIA NIM unreachable from the app (${msg}). Install APK 1.2.1+ with CapacitorHttp, or check internet.`,
+      )
+    }
+    throw e
+  }
+}
+
+async function structureCvViaActiveProvider(
+  rawText: string,
+  settings: AppSettings,
+  sourceFileName?: string,
+): Promise<PersonalProfile> {
+  const apiKey = getActiveApiKey(settings)
+  if (!apiKey) throw new Error('API key required for deep CV extraction')
+
+  const model = getActiveModel(settings)
+  const base = getChatBaseUrl(settings, settings.provider)
+  const clipped = rawText.slice(0, CV_MAX_INPUT_CHARS)
+
+  const payload: Record<string, unknown> = {
+    model,
+    messages: [
+      { role: 'system', content: CV_SYSTEM_PROMPT },
+      { role: 'user', content: `Extract structured profile from this CV/resume text:\n\n${clipped}` },
+    ],
+    max_tokens: NVIDIA_CV_MAX_OUTPUT_TOKENS,
+    temperature: 0,
+    top_p: 0.7,
+    stream: false,
   }
 
   if (settings.provider === 'openai' || settings.provider === 'groq') {
@@ -148,55 +215,24 @@ async function structureCvDirect(
     headers['X-Title'] = 'VeilAssist Interview'
   }
 
-  const postOnce = async (activeModel: string) => {
-    const body = { ...payload, model: activeModel }
-    return withTimeout(
-      mobileApiPost(`${base}/chat/completions`, headers, body as Record<string, unknown>),
-      CV_REQUEST_TIMEOUT_MS,
-    )
-  }
-
-  let res: { status: number; text: string; ok: boolean }
-  try {
-    res = await postOnce(model)
-    if (
-      !res.ok &&
-      settings.provider === 'nvidia' &&
-      model !== NVIDIA_CV_MODEL &&
-      (res.status >= 500 || res.status === 404)
-    ) {
-      res = await postOnce(NVIDIA_CV_MODEL)
-    }
-    if (!res.ok && res.status >= 500) {
-      res = await postOnce(settings.provider === 'nvidia' ? NVIDIA_CV_MODEL : model)
-    }
-  } catch (e) {
-    const msg = e instanceof Error ? e.message : String(e)
-    if (/timed out/i.test(msg)) {
-      throw new Error('CV extraction timed out — try a shorter PDF or switch AI provider.')
-    }
-    if (isLikelyCorsOrNetworkError(msg) && settings.provider === 'nvidia') {
-      throw new Error(
-        'NVIDIA NIM unreachable from the app. Reinstall the latest APK or use Groq for CV extraction.',
-      )
-    }
-    if (isLikelyCorsOrNetworkError(msg)) {
-      throw new Error(`Could not reach ${settings.provider} API for CV extraction. Check connection and API key.`)
-    }
-    throw e
-  }
-
-  const text = res.text
-  if (!res.ok) {
-    throw new Error(`CV extraction failed (${res.status}): ${text.slice(0, 200)}`)
-  }
-
-  const data = JSON.parse(text)
-  const content = data?.choices?.[0]?.message?.content?.trim() || ''
-  if (!content) throw new Error('Empty CV extraction response')
-
-  const parsed = JSON.parse(stripJsonFence(content)) as RawStructured
+  const res = await withTimeout(
+    mobileApiPost(`${base}/chat/completions`, headers, payload as Record<string, unknown>),
+    CV_REQUEST_TIMEOUT_MS,
+  )
+  const parsed = parseCvResponseBody(res)
   return mapLlmProfile(parsed, rawText, sourceFileName)
+}
+
+async function structureCvDirect(
+  rawText: string,
+  settings: AppSettings,
+  sourceFileName?: string,
+): Promise<PersonalProfile> {
+  const nvidia = resolveNvidiaCvCredentials(settings)
+  if (nvidia) {
+    return structureCvViaNvidia(rawText, nvidia, sourceFileName)
+  }
+  return structureCvViaActiveProvider(rawText, settings, sourceFileName)
 }
 
 export async function structureCvWithLlm(
@@ -211,7 +247,8 @@ export async function structureCvWithLlm(
   const origin = String(import.meta.env.VITE_API_ORIGIN || '').replace(/\/$/, '')
   const url = origin ? `${origin}/api/interview/structure-cv` : '/api/interview/structure-cv'
 
-  const apiKey = getActiveApiKey(settings)
+  const nvidia = resolveNvidiaCvCredentials(settings)
+  const apiKey = nvidia?.apiKey || getActiveApiKey(settings)
   if (!apiKey) throw new Error('API key required for deep CV extraction')
 
   const res = await fetch(url, {
@@ -219,9 +256,9 @@ export async function structureCvWithLlm(
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({
       rawText,
-      provider: settings.provider,
+      provider: nvidia ? 'nvidia' : settings.provider,
       apiKey,
-      model: getActiveModel(settings),
+      model: nvidia ? nvidia.model : getActiveModel(settings),
     }),
   })
 

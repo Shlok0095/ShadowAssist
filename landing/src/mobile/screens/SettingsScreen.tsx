@@ -2,7 +2,13 @@ import type { AppSettings } from '../profileTypes'
 import { ScreenHeader } from '../components/MobileUi'
 import { AiProvidersSection } from './settings/AiProvidersSection'
 import { AudioSettingsSection } from './settings/AudioSettingsSection'
-import { Segmented, Toggle } from './settings/SettingsPrimitives'
+import {
+  OutlinedSelect,
+  Segmented,
+  SettingToggleRow,
+  SettingsIcons,
+  SettingsLeading,
+} from './settings/SettingsPrimitives'
 
 export function SettingsScreen({
   settings,
@@ -21,10 +27,10 @@ export function SettingsScreen({
 
       <div className="mobile-screen-body">
         <section className="mobile-settings-group">
-          <p className="mobile-settings-group-label">INTERVIEW</p>
+          <p className="mobile-settings-group-label">Interview</p>
           <div className="mobile-settings-card">
             <label className="mobile-field">
-              <span>Interview Topic</span>
+              <span>Interview topic</span>
               <input
                 value={settings.interviewTopic}
                 onChange={(e) => onChange({ interviewTopic: e.target.value })}
@@ -32,7 +38,7 @@ export function SettingsScreen({
               />
             </label>
             <label className="mobile-field">
-              <span>Custom Instructions</span>
+              <span>Custom instructions</span>
               <textarea
                 rows={3}
                 value={settings.customInstructions}
@@ -44,14 +50,12 @@ export function SettingsScreen({
         </section>
 
         <section className="mobile-settings-group">
-          <p className="mobile-settings-group-label">PERSONALIZATION</p>
+          <p className="mobile-settings-group-label">Personalization</p>
           <div className="mobile-settings-card">
             <button type="button" className="mobile-settings-link" onClick={onOpenPersonalInfo}>
-              <div>
-                <span className="mobile-settings-row-label">Personal Info</span>
-                <span className="mobile-settings-row-hint">Your background for personalized answers.</span>
-              </div>
-              <span>›</span>
+              <SettingsLeading>{SettingsIcons.person}</SettingsLeading>
+              <span className="mobile-settings-row-label">Personal info</span>
+              <span className="mobile-settings-chevron">{SettingsIcons.chevron}</span>
             </button>
           </div>
         </section>
@@ -60,20 +64,17 @@ export function SettingsScreen({
         <AudioSettingsSection settings={settings} onChange={onChange} />
 
         <section className="mobile-settings-group">
-          <p className="mobile-settings-group-label">AI RESPONSES</p>
-          <div className="mobile-settings-card space-y-3">
-            <div className="mobile-settings-row">
-              <div className="mobile-settings-row-text">
-                <span className="mobile-settings-row-label">Auto-answer questions</span>
-                <span className="mobile-settings-row-hint">
-                  Generate answers automatically when questions are detected.
-                </span>
-              </div>
-              <Toggle on={settings.autoAnswer} onChange={(v) => onChange({ autoAnswer: v })} />
-            </div>
+          <p className="mobile-settings-group-label">AI responses</p>
+          <div className="mobile-settings-card mobile-settings-stack">
+            <SettingToggleRow
+              icon={SettingsIcons.spark}
+              label="Auto-answer"
+              on={settings.autoAnswer}
+              onChange={(v) => onChange({ autoAnswer: v })}
+            />
             <label className="mobile-field">
-              <span>Answer Structure</span>
-              <select
+              <span>Answer structure</span>
+              <OutlinedSelect
                 value={settings.answerStructure}
                 onChange={(e) =>
                   onChange({ answerStructure: e.target.value as AppSettings['answerStructure'] })
@@ -82,11 +83,11 @@ export function SettingsScreen({
                 <option value="star">STAR: Situation, Task, Action, Result</option>
                 <option value="direct">Direct answer</option>
                 <option value="concise">Concise</option>
-              </select>
+              </OutlinedSelect>
             </label>
             <label className="mobile-field">
-              <span>Response Format</span>
-              <select
+              <span>Response format</span>
+              <OutlinedSelect
                 value={settings.responseFormat}
                 onChange={(e) =>
                   onChange({ responseFormat: e.target.value as AppSettings['responseFormat'] })
@@ -94,10 +95,10 @@ export function SettingsScreen({
               >
                 <option value="bullets">Bullet points</option>
                 <option value="paragraph">Paragraph</option>
-              </select>
+              </OutlinedSelect>
             </label>
             <div className="mobile-field">
-              <span>Answer Length</span>
+              <span>Answer length</span>
               <Segmented
                 value={settings.answerLength}
                 options={[
@@ -109,7 +110,7 @@ export function SettingsScreen({
               />
             </div>
             <div className="mobile-field">
-              <span>Question Detection</span>
+              <span>Question detection</span>
               <Segmented
                 value={settings.questionDetection}
                 options={[
@@ -124,23 +125,37 @@ export function SettingsScreen({
         </section>
 
         <section className="mobile-settings-group">
-          <p className="mobile-settings-group-label">DISPLAY</p>
-          <div className="mobile-settings-card">
-            <label className="mobile-field">
-              <span>Font Size</span>
-              <select
-                value={settings.fontSize}
-                onChange={(e) => onChange({ fontSize: e.target.value as AppSettings['fontSize'] })}
-              >
-                <option value="small">Small</option>
-                <option value="standard">Standard</option>
-                <option value="large">Large</option>
-              </select>
-            </label>
-            <div className="mobile-settings-row">
-              <span className="mobile-settings-row-label">Auto-scroll answers</span>
-              <Toggle on={settings.autoScroll} onChange={(v) => onChange({ autoScroll: v })} />
+          <p className="mobile-settings-group-label">Appearance</p>
+          <div className="mobile-settings-card mobile-settings-stack">
+            <div className="mobile-field">
+              <span>Theme</span>
+              <Segmented
+                value={settings.colorScheme}
+                options={[
+                  { value: 'dark', label: 'Dark' },
+                  { value: 'light', label: 'Light' },
+                ]}
+                onChange={(v) => onChange({ colorScheme: v })}
+              />
             </div>
+            <div className="mobile-field">
+              <span>Font size</span>
+              <Segmented
+                value={settings.fontSize}
+                options={[
+                  { value: 'small', label: 'Small' },
+                  { value: 'standard', label: 'Standard' },
+                  { value: 'large', label: 'Large' },
+                ]}
+                onChange={(v) => onChange({ fontSize: v })}
+              />
+            </div>
+            <SettingToggleRow
+              icon={SettingsIcons.scroll}
+              label="Auto-scroll answers"
+              on={settings.autoScroll}
+              onChange={(v) => onChange({ autoScroll: v })}
+            />
           </div>
         </section>
       </div>
