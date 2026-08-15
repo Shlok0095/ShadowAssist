@@ -1,8 +1,10 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { minCharsForDetection } from './answerRouting'
 import { transcribeAudioBlob } from './cloudStt'
-import { startPcmWavCapture } from './pcmCapture'
-import { isLikelySttGarbage } from './sttGarbage'
+import { connectDeepgramLive, type DeepgramLiveHandle } from './deepgramLiveStt'
+import { startPcmStreamCapture } from './pcmStreamCapture'
+import { isLikelySttGarbage, isPlausibleInterviewUtterance } from './sttGarbage'
+import { startUtteranceVadCapture } from './utteranceVadCapture'
 import type { AppSettings, PersonalProfile } from './profileTypes'
 import { profileIsReady, profileToContextText } from './profileTypes'
 import { getActiveApiKey, loadProfile } from './profileStorage'
@@ -16,7 +18,6 @@ import {
 } from './interviewTypes'
 
 const SESSION_WARMUP_MS = 6000
-const CLOUD_CHUNK_MS = 2000
 const MIN_AUDIO_BYTES = 800
 
 function effectiveMinChars(settings: AppSettings): number {
@@ -39,7 +40,9 @@ export function useInterviewSession(profile: PersonalProfile, settings: AppSetti
   const [listeningStatus, setListeningStatus] = useState('')
 
   const recognitionRef = useRef<SpeechRecognition | null>(null)
-  const pcmCaptureRef = useRef<{ stop: () => void } | null>(null)
+  const deepgramLiveRef = useRef<DeepgramLiveHandle | null>(null)
+  const pcmStreamRef = useRef<{ stop: () => void } | null>(null)
+  const utteranceVadRef = useRef<{ stop: () => void } | null>(null)
   const mediaStreamRef = useRef<MediaStream | null>(null)
   const transcribeQueueRef = useRef<Blob[]>([])
   const transcribeBusyRef = useRef(false)
@@ -62,9 +65,9 @@ export function useInterviewSession(profile: PersonalProfile, settings: AppSetti
   }, [])
 
   const appendTranscript = useCallback(
-    (chunk: string, opts?: { autoAnswer?: boolean }) => {
+    (chunk: string, opts?: { autoAnswer?: boolean; utteranceComplete?: boolean }) => {
       const piece = String(chunk || '').trim()
-      if (!piece) return
+      if (!piece || isLikelySttGarbage(piece)) return
       const merged = `${transcriptRef.current} ${piece}`.trim()
       transcriptRef.current = merged
       setTranscript(merged)
@@ -73,15 +76,16 @@ export function useInterviewSession(profile: PersonalProfile, settings: AppSetti
       lastFinalRef.current = piece
       const s = settingsRef.current
       const warmedUp = Date.now() - sessionStartedAtRef.current >= SESSION_WARMUP_MS
-      if (
+      const canAuto =
         opts?.autoAnswer &&
+        opts?.utteranceComplete &&
         warmedUp &&
         sttHealthyRef.current &&
         s.autoAnswer &&
-        piece.length >= effectiveMinChars(s) &&
-        !isLikelySttGarbage(piece)
-      ) {
-        void generateFromTextRef.current?.(piece, { source: 'transcript' })
+        merged.length >= effectiveMinChars(s) &&
+        isPlausibleInterviewUtterance(merged)
+      if (canAuto) {
+        void generateFromTextRef.current?.(merged, { source: 'transcript' })
       }
     },
     [],
@@ -143,7 +147,7 @@ export function useInterviewSession(profile: PersonalProfile, settings: AppSetti
           continue
         }
         sttHealthyRef.current = true
-        appendTranscript(text, { autoAnswer: true })
+        appendTranscript(text, { autoAnswer: true, utteranceComplete: true })
       } catch (e) {
         const msg = e instanceof Error ? e.message : 'Cloud transcription failed'
         console.warn('[stt]', msg)
@@ -151,7 +155,7 @@ export function useInterviewSession(profile: PersonalProfile, settings: AppSetti
       }
     }
     transcribeBusyRef.current = false
-    setListeningStatus('')
+    setListeningStatus('Listening…')
   }, [appendTranscript])
 
   const enqueueAudioChunk = useCallback(
@@ -165,9 +169,12 @@ export function useInterviewSession(profile: PersonalProfile, settings: AppSetti
 
   const stopCloudCapture = useCallback(() => {
     transcribeQueueRef.current = []
-    const pcm = pcmCaptureRef.current
-    pcmCaptureRef.current = null
-    if (pcm) pcm.stop()
+    deepgramLiveRef.current?.stop()
+    deepgramLiveRef.current = null
+    pcmStreamRef.current?.stop()
+    pcmStreamRef.current = null
+    utteranceVadRef.current?.stop()
+    utteranceVadRef.current = null
     const stream = mediaStreamRef.current
     mediaStreamRef.current = null
     if (stream) stream.getTracks().forEach((t) => t.stop())
@@ -188,6 +195,7 @@ export function useInterviewSession(profile: PersonalProfile, settings: AppSetti
       }
     }
     setListeningStatus('')
+    setInterimTranscript('')
   }, [stopCloudCapture])
 
   const startCloudCapture = useCallback(async () => {
@@ -201,20 +209,39 @@ export function useInterviewSession(profile: PersonalProfile, settings: AppSetti
         },
       })
       mediaStreamRef.current = stream
-      pcmCaptureRef.current = startPcmWavCapture(
-        stream,
-        CLOUD_CHUNK_MS,
-        (wav) => {
-          if (wav.size < MIN_AUDIO_BYTES) return
-          setInterimTranscript('Listening…')
-          enqueueAudioChunk(wav)
-        },
-      )
+      const provider = settingsRef.current.sttProvider
       setListeningStatus('Listening…')
+
+      if (provider === 'deepgram') {
+        const live = await connectDeepgramLive(settingsRef.current, {
+          onInterim: (text) => {
+            if (text) setInterimTranscript(text)
+          },
+          onUtterance: (text) => {
+            if (!text || isLikelySttGarbage(text)) return
+            sttHealthyRef.current = true
+            const plausible = isPlausibleInterviewUtterance(text)
+            appendTranscript(text, {
+              autoAnswer: plausible,
+              utteranceComplete: true,
+            })
+          },
+          onError: (msg) => setError(msg),
+        })
+        deepgramLiveRef.current = live
+        pcmStreamRef.current = startPcmStreamCapture(stream, (samples, rate) => {
+          live.sendPcm(samples, rate)
+        })
+        return
+      }
+
+      utteranceVadRef.current = startUtteranceVadCapture(stream, (wav) => {
+        enqueueAudioChunk(wav)
+      })
     } catch (e) {
       setError(e instanceof Error ? e.message : 'Microphone permission denied')
     }
-  }, [enqueueAudioChunk, stopCloudCapture])
+  }, [enqueueAudioChunk, stopCloudCapture, appendTranscript])
 
   const startDeviceRecognition = useCallback(() => {
     if (!speechRecognitionAvailable()) {
@@ -238,13 +265,18 @@ export function useInterviewSession(profile: PersonalProfile, settings: AppSetti
         }
         if (interim) setInterimTranscript(interim.trim())
         if (finalChunk.trim()) {
-          appendTranscript(finalChunk.trim())
+          appendTranscript(finalChunk.trim(), { utteranceComplete: true })
           const s = settingsRef.current
           const warmedUp = Date.now() - sessionStartedAtRef.current >= SESSION_WARMUP_MS
-          if (warmedUp && s.autoAnswer && sttHealthyRef.current && finalChunk.trim().length >= minChars) {
-            if (!isLikelySttGarbage(finalChunk.trim())) {
-              void generateFromText(finalChunk.trim(), { source: 'transcript' })
-            }
+          const merged = `${transcriptRef.current}`.trim()
+          if (
+            warmedUp &&
+            s.autoAnswer &&
+            sttHealthyRef.current &&
+            merged.length >= minChars &&
+            isPlausibleInterviewUtterance(merged)
+          ) {
+            void generateFromText(merged, { source: 'transcript' })
           }
         }
       }
@@ -266,6 +298,7 @@ export function useInterviewSession(profile: PersonalProfile, settings: AppSetti
 
       recognition.start()
       setListeningStatus('Listening…')
+      sttHealthyRef.current = true
     } catch (e) {
       setError(e instanceof Error ? e.message : 'Speech recognition failed to start')
     }
@@ -339,8 +372,8 @@ export function useInterviewSession(profile: PersonalProfile, settings: AppSetti
   }, [stopRecognition])
 
   const assistNow = useCallback(() => {
-    const q = `${transcript} ${interimTranscript}`.trim() || lastFinalRef.current
-    if (!q) {
+    const q = transcriptRef.current.trim() || `${transcript} ${interimTranscript}`.trim()
+    if (!q || isLikelySttGarbage(q)) {
       setError('No speech detected yet. Speak a question, then tap Assist.')
       return
     }
@@ -364,6 +397,7 @@ export function useInterviewSession(profile: PersonalProfile, settings: AppSetti
       const q = text.trim()
       if (!q) return
       setTranscript(q)
+      transcriptRef.current = q
       setInterimTranscript('')
       void generateFromText(q, { manual: true, source: 'manual_input' })
     },

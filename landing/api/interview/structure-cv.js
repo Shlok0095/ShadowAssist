@@ -5,7 +5,7 @@ import { handleCorsPreflight } from './_cors.js'
 const PROVIDERS = {
   nvidia: {
     base: 'https://integrate.api.nvidia.com/v1',
-    defaultModel: 'nvidia/nemotron-nano-12b-v2-vl',
+    defaultModel: 'nvidia/llama-3.1-nemotron-nano-vl-8b-v1',
   },
   groq: {
     base: 'https://api.groq.com/openai/v1',

@@ -91,9 +91,12 @@ async function structureCvDirect(
   const apiKey = getActiveApiKey(settings)
   if (!apiKey) throw new Error('API key required for deep CV extraction')
 
-  const model = getActiveModel(settings)
+  const model =
+    settings.provider === 'nvidia'
+      ? 'nvidia/nemotron-mini-4b-instruct'
+      : getActiveModel(settings)
   const base = getChatBaseUrl(settings, settings.provider)
-  const clipped = rawText.slice(0, 14000)
+  const clipped = rawText.slice(0, 12000)
 
   const payload: Record<string, unknown> = {
     model,
@@ -120,19 +123,28 @@ async function structureCvDirect(
     payload.response_format = { type: 'json_object' }
   }
 
+  const controller = new AbortController()
+  const timeout = window.setTimeout(() => controller.abort(), 90000)
+
   let res: Response
   try {
     res = await fetch(`${base}/chat/completions`, {
       method: 'POST',
       headers: nvidiaChatHeaders(apiKey),
       body: JSON.stringify(payload),
+      signal: controller.signal,
     })
   } catch (e) {
     const msg = e instanceof Error ? e.message : String(e)
+    if (/abort/i.test(msg)) {
+      throw new Error('CV extraction timed out — try a shorter PDF or switch AI provider.')
+    }
     if (/failed to fetch|network|load/i.test(msg)) {
       throw new Error(`Could not reach ${settings.provider} API for CV extraction. Check connection and API key.`)
     }
     throw e
+  } finally {
+    window.clearTimeout(timeout)
   }
 
   const text = await res.text()

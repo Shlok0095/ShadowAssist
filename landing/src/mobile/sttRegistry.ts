@@ -74,11 +74,23 @@ export function deepgramQueryParams(settings: AppSettings): URLSearchParams {
     model,
     language,
     punctuate: 'true',
-    // smart_format adds REST latency; punctuate alone is enough for interviews.
     smart_format: 'false',
     filler_words: 'false',
   })
   return params
+}
+
+/** Deepgram live WebSocket — interim results + endpointing (Natively-style). */
+export function deepgramLiveQueryParams(settings: AppSettings): URLSearchParams {
+  const base = deepgramQueryParams(settings)
+  base.set('encoding', 'linear16')
+  base.set('sample_rate', '16000')
+  base.set('channels', '1')
+  base.set('interim_results', 'true')
+  base.set('endpointing', '400')
+  base.set('utterance_end_ms', '1200')
+  base.set('vad_events', 'true')
+  return base
 }
 
 export function whisperLangParams(lang: MicListenLanguage): {

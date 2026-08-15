@@ -19,6 +19,24 @@ export function isLikelySttGarbage(text: string): boolean {
   }
 
   if (/^listening\.?$/i.test(t)) return true
+  if (/\blistening\b/i.test(lower)) return true
 
   return false
+}
+
+const QUESTION_HINT =
+  /\?|^(can|could|would|will|tell|what|how|why|who|when|where|describe|explain|walk me|do you|have you|are you|is there)\b/i
+
+/** Gate auto-answer — reject garbage partial STT and non-questions. */
+export function isPlausibleInterviewUtterance(text: string): boolean {
+  if (isLikelySttGarbage(text)) return false
+  const t = String(text || '').trim()
+  const words = t.split(/\s+/).filter(Boolean)
+  if (words.length < 4) return false
+
+  const veryShort = words.filter((w) => w.replace(/[^a-zA-Z]/g, '').length <= 2).length
+  if (veryShort > Math.ceil(words.length * 0.45)) return false
+
+  if (QUESTION_HINT.test(t)) return true
+  return words.length >= 10
 }
