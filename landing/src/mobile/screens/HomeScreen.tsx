@@ -1,3 +1,5 @@
+import { brandLogo } from '../brandAssets'
+
 export function HomeScreen({
   onStart,
   onOpenSettings,
@@ -13,7 +15,7 @@ export function HomeScreen({
     <div className="mobile-home">
       <header className="mobile-home-header">
         <div className="flex items-center gap-2">
-          <img src="./logo.png" alt="VeilAssist" className="mobile-interview-logo" />
+          <img src={brandLogo} alt="VeilAssist" className="mobile-interview-logo" />
           <span className="text-sm font-semibold text-white/85">VeilAssist</span>
         </div>
         <button type="button" className="mobile-interview-icon-btn" aria-label="Settings" onClick={onOpenSettings}>

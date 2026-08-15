@@ -45,12 +45,12 @@
     },
     {
       "source": "/download/android-beta",
-      "destination": "https://github.com/Shlok0095/VeilAssist/releases/download/latest-stag/VeilAssist-Interview.apk",
+      "destination": "/downloads/VeilAssist-Interview.apk",
       "permanent": false
     },
     {
       "source": "/download/android",
-      "destination": "https://github.com/Shlok0095/VeilAssist/releases/download/latest/VeilAssist-Interview.apk",
+      "destination": "/downloads/VeilAssist-Interview.apk",
       "permanent": false
     }
   ]

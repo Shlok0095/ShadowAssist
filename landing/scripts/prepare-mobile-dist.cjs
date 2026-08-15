@@ -11,4 +11,12 @@ if (!fs.existsSync(mobileHtml)) {
 }
 
 fs.copyFileSync(mobileHtml, indexHtml)
+
+const publicDir = path.join(__dirname, '..', 'public')
+for (const name of ['logo.png', 'favicon.png', 'manifest.webmanifest']) {
+  const src = path.join(publicDir, name)
+  const dest = path.join(dir, name)
+  if (fs.existsSync(src)) fs.copyFileSync(src, dest)
+}
+
 console.log('[prepare-mobile-dist] dist-mobile/index.html ready for Capacitor')

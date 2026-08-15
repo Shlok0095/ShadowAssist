@@ -381,8 +381,11 @@
 }
 
 .mobile-interview-logo {
-  height: 22px;
-  width: auto;
+  height: 28px;
+  width: 28px;
+  object-fit: contain;
+  border-radius: 6px;
+  flex-shrink: 0;
 }
 
 /* Home + settings + personal info screens */

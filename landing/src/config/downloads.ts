@@ -1,7 +1,5 @@
 /**
  * Release artifact discovery for the download center.
- *
- * Production behavior (dynamic):
  *   The page fetches the public GitHub Releases API for the rolling channels
  *   (`latest-stag`, and `latest` when present) and renders exactly the assets
  *   that exist on those releases — no hardcoded platform lists. New CI builds
@@ -14,6 +12,8 @@
  *
  * No secrets are involved: the GitHub Releases API is public for public repos.
  */
+
+import { SITE } from './site'
 
 export type DownloadPlatform = 'windows' | 'macos' | 'linux' | 'android'
 export type DownloadKind = 'installer' | 'portable' | 'archive'
@@ -168,7 +168,24 @@ export async function fetchChannel(owner: string, repo: string, tag: string): Pr
   if (!res.ok) return null
   const raw = (await res.json()) as RawRelease
   const channel = channelFromRelease(raw)
-  return channel.artifacts.length > 0 ? channel : null
+  return channel.artifacts.length > 0 ? applySiteAndroidApk(channel) : null
+}
+
+/** Site-hosted interview APK (Capacitor build) — fresher than stale GitHub release assets. */
+export const SITE_ANDROID_APK_SIZE = 56152966
+
+export function applySiteAndroidApk(channel: ReleaseChannel): ReleaseChannel {
+  return {
+    ...channel,
+    artifacts: channel.artifacts.map((a) => {
+      if (a.platform !== 'android' || !a.fileName.toLowerCase().endsWith('.apk')) return a
+      return {
+        ...a,
+        downloadUrl: SITE.downloadAndroidApkSiteUrl,
+        size: SITE_ANDROID_APK_SIZE,
+      }
+    }),
+  }
 }
 
 export function detectPlatform(): DownloadPlatform | null {
@@ -220,7 +237,7 @@ export const PLATFORM_LABELS: Record<DownloadPlatform, string> = {
  * page never shows an empty state. Refresh when the artifact naming scheme
  * changes — not on every release.
  */
-export const FALLBACK_CHANNEL: ReleaseChannel = {
+export const FALLBACK_CHANNEL: ReleaseChannel = applySiteAndroidApk({
   tag: 'latest-stag',
   name: 'VeilAssist — latest-stag',
   prerelease: true,
@@ -299,11 +316,11 @@ export const FALLBACK_CHANNEL: ReleaseChannel = {
       arch: null,
       kind: 'installer',
       version: null,
-      size: null,
+      size: SITE_ANDROID_APK_SIZE,
       releasedAt: '2026-08-09T20:13:22Z',
-      downloadUrl: 'https://github.com/Shlok0095/VeilAssist/releases/download/latest-stag/VeilAssist-Interview.apk',
+      downloadUrl: SITE.downloadAndroidApkSiteUrl,
       checksum: null,
     },
   ],
   checksumsUrl: 'https://github.com/Shlok0095/VeilAssist/releases/download/latest-stag/SHA256SUMS.txt',
-}
+})

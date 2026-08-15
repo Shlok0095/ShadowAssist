@@ -8,8 +8,9 @@
     "typecheck": "tsc --noEmit",
     "build": "vite build && node scripts/postbuild.cjs",
     "build:mobile": "vite build --config vite.mobile.config.ts && node scripts/prepare-mobile-dist.cjs",
+    "generate:android-icons": "node scripts/generate-android-icons.cjs",
     "cap:sync": "cap sync android",
-    "build:android-apk": "npm run build:mobile && cap sync android && node scripts/build-android-apk.cjs",
+    "build:android-apk": "npm run build:mobile && node scripts/generate-android-icons.cjs && cap sync android && node scripts/build-android-apk.cjs",
     "preview": "vite preview",
     "verify": "npm run typecheck && npm run build"
   },
