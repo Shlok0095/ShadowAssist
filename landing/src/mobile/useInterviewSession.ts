@@ -1,6 +1,8 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { minCharsForDetection } from './answerRouting'
 import { transcribeAudioBlob } from './cloudStt'
+import { startPcmWavCapture } from './pcmCapture'
+import { isLikelySttGarbage } from './sttGarbage'
 import type { AppSettings, PersonalProfile } from './profileTypes'
 import { profileIsReady, profileToContextText } from './profileTypes'
 import { getActiveApiKey, loadProfile } from './profileStorage'
@@ -13,9 +15,9 @@ import {
   type SessionPhase,
 } from './interviewTypes'
 
-const SESSION_WARMUP_MS = 3500
+const SESSION_WARMUP_MS = 6000
 const CLOUD_CHUNK_MS = 2000
-const MIN_AUDIO_BYTES = 300
+const MIN_AUDIO_BYTES = 800
 
 function effectiveMinChars(settings: AppSettings): number {
   const base = minCharsForDetection(settings.questionDetection)
@@ -37,7 +39,7 @@ export function useInterviewSession(profile: PersonalProfile, settings: AppSetti
   const [listeningStatus, setListeningStatus] = useState('')
 
   const recognitionRef = useRef<SpeechRecognition | null>(null)
-  const mediaRecorderRef = useRef<MediaRecorder | null>(null)
+  const pcmCaptureRef = useRef<{ stop: () => void } | null>(null)
   const mediaStreamRef = useRef<MediaStream | null>(null)
   const transcribeQueueRef = useRef<Blob[]>([])
   const transcribeBusyRef = useRef(false)
@@ -48,6 +50,7 @@ export function useInterviewSession(profile: PersonalProfile, settings: AppSetti
   const settingsRef = useRef(settings)
   const profileRef = useRef(profile)
   const sessionStartedAtRef = useRef(0)
+  const sttHealthyRef = useRef(false)
   settingsRef.current = settings
   profileRef.current = profile
 
@@ -73,8 +76,10 @@ export function useInterviewSession(profile: PersonalProfile, settings: AppSetti
       if (
         opts?.autoAnswer &&
         warmedUp &&
+        sttHealthyRef.current &&
         s.autoAnswer &&
-        piece.length >= effectiveMinChars(s)
+        piece.length >= effectiveMinChars(s) &&
+        !isLikelySttGarbage(piece)
       ) {
         void generateFromTextRef.current?.(piece, { source: 'transcript' })
       }
@@ -133,6 +138,11 @@ export function useInterviewSession(profile: PersonalProfile, settings: AppSetti
       setListeningStatus('Transcribing…')
       try {
         const text = await transcribeAudioBlob(settingsRef.current, blob)
+        if (!text || isLikelySttGarbage(text)) {
+          console.warn('[stt] skipped junk/empty transcript')
+          continue
+        }
+        sttHealthyRef.current = true
         appendTranscript(text, { autoAnswer: true })
       } catch (e) {
         const msg = e instanceof Error ? e.message : 'Cloud transcription failed'
@@ -155,15 +165,9 @@ export function useInterviewSession(profile: PersonalProfile, settings: AppSetti
 
   const stopCloudCapture = useCallback(() => {
     transcribeQueueRef.current = []
-    const recorder = mediaRecorderRef.current
-    mediaRecorderRef.current = null
-    if (recorder && recorder.state !== 'inactive') {
-      try {
-        recorder.stop()
-      } catch {
-        /* ignore */
-      }
-    }
+    const pcm = pcmCaptureRef.current
+    pcmCaptureRef.current = null
+    if (pcm) pcm.stop()
     const stream = mediaStreamRef.current
     mediaStreamRef.current = null
     if (stream) stream.getTracks().forEach((t) => t.stop())
@@ -197,20 +201,15 @@ export function useInterviewSession(profile: PersonalProfile, settings: AppSetti
         },
       })
       mediaStreamRef.current = stream
-      const mime = MediaRecorder.isTypeSupported('audio/webm;codecs=opus')
-        ? 'audio/webm;codecs=opus'
-        : 'audio/webm'
-      const recorder = new MediaRecorder(stream, { mimeType: mime })
-      mediaRecorderRef.current = recorder
-
-      recorder.ondataavailable = (event) => {
-        if (!event.data || event.data.size < MIN_AUDIO_BYTES) return
-        setInterimTranscript('Listening…')
-        enqueueAudioChunk(event.data)
-      }
-
-      recorder.onerror = () => setError('Microphone recording error.')
-      recorder.start(CLOUD_CHUNK_MS)
+      pcmCaptureRef.current = startPcmWavCapture(
+        stream,
+        CLOUD_CHUNK_MS,
+        (wav) => {
+          if (wav.size < MIN_AUDIO_BYTES) return
+          setInterimTranscript('Listening…')
+          enqueueAudioChunk(wav)
+        },
+      )
       setListeningStatus('Listening…')
     } catch (e) {
       setError(e instanceof Error ? e.message : 'Microphone permission denied')
@@ -242,8 +241,10 @@ export function useInterviewSession(profile: PersonalProfile, settings: AppSetti
           appendTranscript(finalChunk.trim())
           const s = settingsRef.current
           const warmedUp = Date.now() - sessionStartedAtRef.current >= SESSION_WARMUP_MS
-          if (warmedUp && s.autoAnswer && finalChunk.trim().length >= minChars) {
-            void generateFromText(finalChunk.trim(), { source: 'transcript' })
+          if (warmedUp && s.autoAnswer && sttHealthyRef.current && finalChunk.trim().length >= minChars) {
+            if (!isLikelySttGarbage(finalChunk.trim())) {
+              void generateFromText(finalChunk.trim(), { source: 'transcript' })
+            }
           }
         }
       }
@@ -312,14 +313,20 @@ export function useInterviewSession(profile: PersonalProfile, settings: AppSetti
     setInterimTranscript('')
     setAnswer('')
     lastFinalRef.current = ''
+    sttHealthyRef.current = false
     sessionStartedAtRef.current = Date.now()
     setPhase('interview')
 
     window.setTimeout(() => {
       startRecognition()
+      setStartingMessage('Calibrating microphone…')
+    }, 400)
+
+    window.setTimeout(() => {
       setStartingMessage('Listening for questions…')
-      window.setTimeout(() => setStarting(false), 800)
-    }, 600)
+    }, 2200)
+
+    window.setTimeout(() => setStarting(false), SESSION_WARMUP_MS)
   }, [settings, startRecognition])
 
   const stopSession = useCallback(() => {
@@ -347,6 +354,7 @@ export function useInterviewSession(profile: PersonalProfile, settings: AppSetti
     setAnswer('')
     lastFinalRef.current = ''
     setError(null)
+    sttHealthyRef.current = false
     sessionStartedAtRef.current = Date.now()
     if (sessionActive && settingsRef.current.audioEnabled) startRecognition()
   }, [sessionActive, startRecognition])

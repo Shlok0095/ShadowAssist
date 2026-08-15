@@ -116,7 +116,7 @@ async function structureCvDirect(
     payload.chat_template_kwargs = { enable_thinking: false }
   }
 
-  if (settings.provider === 'openai' || settings.provider === 'groq' || settings.provider === 'nvidia') {
+  if (settings.provider === 'openai' || settings.provider === 'groq') {
     payload.response_format = { type: 'json_object' }
   }
 

@@ -1,5 +1,7 @@
 import type { AppSettings } from '../../profileTypes'
+import { CHAT_MODEL_CATALOG } from '../../modelCatalog'
 import { CHAT_PROVIDER_ORDER, CHAT_PROVIDERS, providerKeyConfigured } from '../../providerRegistry'
+import { loadAppSettings } from '../../profileStorage'
 import { syncChatModels } from '../../modelSync'
 import { ModelSelect } from './ModelSelect'
 import { PremiumSelect } from './PremiumSelect'
@@ -88,10 +90,10 @@ export function AiProvidersSection({
             <span>Model</span>
             <ModelSelect
               value={modelValue}
-              options={[meta.defaultModel]}
+              options={CHAT_MODEL_CATALOG[meta.id] || [meta.defaultModel]}
               placeholder={meta.defaultModel}
               onChange={(m) => onChange({ [meta.modelField]: m } as Partial<AppSettings>)}
-              onSync={() => syncChatModels(meta.id, settings)}
+              onSync={() => syncChatModels(meta.id, loadAppSettings())}
             />
           </label>
         </div>

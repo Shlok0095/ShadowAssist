@@ -83,6 +83,10 @@ export type ModelSyncResult = {
   error?: string
 }
 
+function isMobileApk(): boolean {
+  return Boolean(import.meta.env.VITE_MOBILE_APK)
+}
+
 export async function syncChatModels(
   provider: AiProviderId,
   settings: AppSettings,
@@ -90,6 +94,14 @@ export async function syncChatModels(
   const staticList = CHAT_MODEL_CATALOG[provider] || []
   const saved = getProviderModel(settings, provider)
   const key = getProviderApiKey(settings, provider)
+
+  // NVIDIA NIM model list is huge; on APK use curated list (avoids mobile fetch failures).
+  if (provider === 'nvidia' && isMobileApk()) {
+    return {
+      models: mergeModels([], staticList, saved),
+      source: 'static',
+    }
+  }
 
   try {
     if (provider === 'openrouter') {

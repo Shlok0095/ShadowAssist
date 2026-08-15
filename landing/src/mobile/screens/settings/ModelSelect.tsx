@@ -11,7 +11,7 @@ export function ModelSelect({
   options: string[]
   placeholder: string
   onChange: (model: string) => void
-  onSync?: () => Promise<{ models: string[]; error?: string }>
+  onSync?: () => Promise<{ models: string[]; source?: 'api' | 'static'; error?: string }>
 }) {
   const [list, setList] = useState<string[]>(options)
   const [syncing, setSyncing] = useState(false)
@@ -30,7 +30,9 @@ export function ModelSelect({
     try {
       const result = await onSync()
       if (result.models.length) setList(result.models)
-      setSyncNote(result.error || 'Models synced')
+      if (result.error) setSyncNote(result.error)
+      else if (result.source === 'api') setSyncNote('Models synced from API')
+      else setSyncNote('Using built-in model list')
     } catch (e) {
       setSyncNote(e instanceof Error ? e.message : 'Sync failed')
     } finally {

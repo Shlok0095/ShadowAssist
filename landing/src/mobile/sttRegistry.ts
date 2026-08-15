@@ -85,10 +85,10 @@ export function whisperLangParams(lang: MicListenLanguage): {
   language?: string
   prompt?: string
 } {
-  const primer = WHISPER_PRIMERS[lang] || WHISPER_PRIMERS.en
-  if (lang === 'en') return { language: 'en', prompt: primer }
-  if (lang === 'hi') return { language: 'hi', prompt: primer }
-  return { prompt: primer }
+  // Avoid long primers — Whisper echoes them when audio is unclear.
+  if (lang === 'en') return { language: 'en' }
+  if (lang === 'hi') return { language: 'hi', prompt: WHISPER_PRIMERS.hi }
+  return { prompt: WHISPER_PRIMERS.en_hi_hinglish }
 }
 
 export function getSttApiKey(settings: AppSettings, provider?: SttProviderId): string {

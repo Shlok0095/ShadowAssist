@@ -1,8 +1,25 @@
 /** Convert recorded webm/opus blob to 16 kHz mono WAV for ASR vendors. */
+export function float32ToWavBlob(samples: Float32Array, sampleRate: number): Blob {
+  const pcm = new Int16Array(samples.length)
+  for (let i = 0; i < samples.length; i += 1) {
+    const s = Math.max(-1, Math.min(1, samples[i]))
+    pcm[i] = s < 0 ? s * 0x8000 : s * 0x7fff
+  }
+  return new Blob([encodeWav(pcm, sampleRate)], { type: 'audio/wav' })
+}
+
+export async function ensureWav16k(blob: Blob): Promise<Blob> {
+  if (blob.type.includes('wav')) return blob
+  return blobToWav16k(blob)
+}
+
 export async function blobToWav16k(blob: Blob): Promise<Blob> {
   const ctx = new AudioContext()
   try {
     const buffer = await blob.arrayBuffer()
+    if (buffer.byteLength < 8) {
+      throw new Error('Audio chunk too small to decode')
+    }
     const decoded = await ctx.decodeAudioData(buffer.slice(0))
     const targetRate = 16000
     const duration = decoded.duration
@@ -22,6 +39,12 @@ export async function blobToWav16k(blob: Blob): Promise<Blob> {
     }
     const wav = encodeWav(samples, targetRate)
     return new Blob([wav], { type: 'audio/wav' })
+  } catch (e) {
+    const msg = e instanceof Error ? e.message : String(e)
+    if (/decode|corrupt|unsupported/i.test(msg)) {
+      throw new Error('Unable to decode audio data')
+    }
+    throw e
   } finally {
     await ctx.close()
   }

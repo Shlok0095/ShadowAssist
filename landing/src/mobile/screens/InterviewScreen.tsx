@@ -104,9 +104,11 @@ export function InterviewScreen({
 
         {!session.answer && !session.isGenerating && !session.starting ? (
           <div>
-            <h2 className="mobile-interview-hero-title">Ready to assist</h2>
+            <h2 className="mobile-interview-hero-title">
+              {session.listeningStatus ? 'Listening…' : 'Ready to assist'}
+            </h2>
             <p className="mobile-interview-hero-sub">
-              Questions will be detected automatically. Tap &quot;Assist&quot; anytime for immediate help.
+              Speak your interview question. Answers appear after speech is transcribed — not before.
             </p>
           </div>
         ) : null}
