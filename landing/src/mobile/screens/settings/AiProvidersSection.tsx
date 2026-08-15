@@ -93,7 +93,11 @@ export function AiProvidersSection({
               options={CHAT_MODEL_CATALOG[meta.id] || [meta.defaultModel]}
               placeholder={meta.defaultModel}
               onChange={(m) => onChange({ [meta.modelField]: m } as Partial<AppSettings>)}
-              onSync={() => syncChatModels(meta.id, loadAppSettings())}
+              onSync={
+                import.meta.env.VITE_MOBILE_APK
+                  ? undefined
+                  : () => syncChatModels(meta.id, loadAppSettings())
+              }
             />
           </label>
         </div>

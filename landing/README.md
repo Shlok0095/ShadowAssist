@@ -52,4 +52,4 @@ Live URL pattern: `https://<user>.github.io/<repo>/`
 
 Download routes are configured in `src/config/site.ts`. Production uses the `latest` release channel and the beta route uses `latest-stag`.
 
-For Vercel, set the project Root Directory to `landing` and allow imports from outside it so the build can read the root logo, legal text, and user guide.
+For Vercel, set the project Root Directory to `landing` **or** keep the repository root and use the repo-level `vercel.json` (which builds `landing/` and registers `/api/*` serverless functions from `api/`).

@@ -14,6 +14,7 @@
  */
 
 import { SITE } from './site'
+import { SITE_ANDROID_APK_MANIFEST } from './apkManifest.generated'
 
 export type DownloadPlatform = 'windows' | 'macos' | 'linux' | 'android'
 export type DownloadKind = 'installer' | 'portable' | 'archive'
@@ -171,10 +172,11 @@ export async function fetchChannel(owner: string, repo: string, tag: string): Pr
   return channel.artifacts.length > 0 ? applySiteAndroidApk(channel) : null
 }
 
-/** Site-hosted interview APK (Capacitor build) — fresher than stale GitHub release assets. */
-export const SITE_ANDROID_APK_SIZE = 92469807
-
+/** Site-hosted interview APK metadata (see apkManifest.generated.ts). */
 export function applySiteAndroidApk(channel: ReleaseChannel): ReleaseChannel {
+  const apkVersion = SITE_ANDROID_APK_MANIFEST.version
+  const apkSize = SITE_ANDROID_APK_MANIFEST.size > 0 ? SITE_ANDROID_APK_MANIFEST.size : null
+
   return {
     ...channel,
     artifacts: channel.artifacts.map((a) => {
@@ -182,7 +184,9 @@ export function applySiteAndroidApk(channel: ReleaseChannel): ReleaseChannel {
       return {
         ...a,
         downloadUrl: SITE.downloadAndroidApkSiteUrl,
-        size: SITE_ANDROID_APK_SIZE,
+        version: apkVersion || a.version,
+        size: apkSize ?? a.size,
+        releasedAt: SITE_ANDROID_APK_MANIFEST.builtAt || a.releasedAt,
       }
     }),
   }
@@ -315,9 +319,9 @@ export const FALLBACK_CHANNEL: ReleaseChannel = applySiteAndroidApk({
       platform: 'android',
       arch: null,
       kind: 'installer',
-      version: null,
-      size: SITE_ANDROID_APK_SIZE,
-      releasedAt: '2026-08-09T20:13:22Z',
+      version: SITE_ANDROID_APK_MANIFEST.version,
+      size: SITE_ANDROID_APK_MANIFEST.size > 0 ? SITE_ANDROID_APK_MANIFEST.size : null,
+      releasedAt: SITE_ANDROID_APK_MANIFEST.builtAt,
       downloadUrl: SITE.downloadAndroidApkSiteUrl,
       checksum: null,
     },

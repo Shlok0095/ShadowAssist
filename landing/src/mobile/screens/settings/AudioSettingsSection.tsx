@@ -87,7 +87,7 @@ export function AudioSettingsSection({
             onChange={(v) => onChange({ sttMode: v })}
           />
           <span className="mobile-field-hint">
-            On-device is free (phone speech engine). Cloud uses NVIDIA Parakeet, Deepgram, or Whisper.
+            On-device uses your phone&apos;s speech engine (recommended). Cloud uses NVIDIA Parakeet, Deepgram, or Whisper.
           </span>
         </div>
 

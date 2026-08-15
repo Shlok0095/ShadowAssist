@@ -138,7 +138,7 @@ export const DEFAULT_APP_SETTINGS: AppSettings = {
   audioEnabled: true,
   micSensitivity: 'standard',
   micListenLanguage: 'en',
-  sttMode: 'cloud',
+  sttMode: 'device',
   sttProvider: 'nvidia',
   groqWhisperModel: 'whisper-large-v3-turbo',
   nvidiaWhisperModel: 'nvidia/parakeet-1.1b-rnnt-multilingual-asr',

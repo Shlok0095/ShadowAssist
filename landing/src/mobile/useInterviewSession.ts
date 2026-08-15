@@ -5,6 +5,7 @@ import { connectDeepgramLive, type DeepgramLiveHandle } from './deepgramLiveStt'
 import { startPcmStreamCapture } from './pcmStreamCapture'
 import { isLikelySttGarbage, isPlausibleInterviewUtterance } from './sttGarbage'
 import { startUtteranceVadCapture } from './utteranceVadCapture'
+import { mergeCumulativeFinal } from './transcriptMerge'
 import type { AppSettings, PersonalProfile } from './profileTypes'
 import { profileIsReady, profileToContextText } from './profileTypes'
 import { getActiveApiKey, loadProfile } from './profileStorage'
@@ -17,7 +18,8 @@ import {
   type SessionPhase,
 } from './interviewTypes'
 
-const SESSION_WARMUP_MS = 6000
+const SESSION_WARMUP_MS = 1500
+const AUTO_ANSWER_DELAY_MS = 1400
 const MIN_AUDIO_BYTES = 800
 
 function effectiveMinChars(settings: AppSettings): number {
@@ -47,9 +49,10 @@ export function useInterviewSession(profile: PersonalProfile, settings: AppSetti
   const transcribeQueueRef = useRef<Blob[]>([])
   const transcribeBusyRef = useRef(false)
   const generatingRef = useRef(false)
-  const lastFinalRef = useRef('')
+  const lastDeviceFinalRef = useRef('')
   const transcriptRef = useRef('')
   const answerEndRef = useRef<HTMLDivElement | null>(null)
+  const autoAnswerTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
   const settingsRef = useRef(settings)
   const profileRef = useRef(profile)
   const sessionStartedAtRef = useRef(0)
@@ -64,36 +67,52 @@ export function useInterviewSession(profile: PersonalProfile, settings: AppSetti
     })
   }, [])
 
-  const appendTranscript = useCallback(
-    (chunk: string, opts?: { autoAnswer?: boolean; utteranceComplete?: boolean }) => {
-      const piece = String(chunk || '').trim()
-      if (!piece || isLikelySttGarbage(piece)) return
-      const merged = `${transcriptRef.current} ${piece}`.trim()
-      transcriptRef.current = merged
-      setTranscript(merged)
-      setInterimTranscript('')
-      setListeningStatus('')
-      lastFinalRef.current = piece
-      const s = settingsRef.current
-      const warmedUp = Date.now() - sessionStartedAtRef.current >= SESSION_WARMUP_MS
-      const canAuto =
-        opts?.autoAnswer &&
-        opts?.utteranceComplete &&
-        warmedUp &&
-        sttHealthyRef.current &&
-        s.autoAnswer &&
-        merged.length >= effectiveMinChars(s) &&
-        isPlausibleInterviewUtterance(merged)
-      if (canAuto) {
-        void generateFromTextRef.current?.(merged, { source: 'transcript' })
-      }
-    },
-    [],
-  )
+  const clearAutoAnswerTimer = useCallback(() => {
+    if (autoAnswerTimerRef.current) {
+      clearTimeout(autoAnswerTimerRef.current)
+      autoAnswerTimerRef.current = null
+    }
+  }, [])
 
   const generateFromTextRef = useRef<
     (q: string, opts?: { manual?: boolean; source?: 'manual_input' | 'transcript' }) => Promise<void>
   >()
+
+  const scheduleAutoAnswer = useCallback(() => {
+    clearAutoAnswerTimer()
+    autoAnswerTimerRef.current = setTimeout(() => {
+      autoAnswerTimerRef.current = null
+      const merged = transcriptRef.current.trim()
+      const s = settingsRef.current
+      const warmedUp = Date.now() - sessionStartedAtRef.current >= SESSION_WARMUP_MS
+      if (
+        !warmedUp ||
+        !sttHealthyRef.current ||
+        !s.autoAnswer ||
+        generatingRef.current ||
+        merged.length < effectiveMinChars(s) ||
+        !isPlausibleInterviewUtterance(merged)
+      ) {
+        return
+      }
+      void generateFromTextRef.current?.(merged, { source: 'transcript' })
+    }, AUTO_ANSWER_DELAY_MS)
+  }, [clearAutoAnswerTimer])
+
+  /** Replace current utterance text (no rolling append). */
+  const setUtteranceTranscript = useCallback(
+    (text: string, opts?: { scheduleAnswer?: boolean }) => {
+      const piece = String(text || '').trim()
+      if (!piece || isLikelySttGarbage(piece)) return
+      transcriptRef.current = piece
+      setTranscript(piece)
+      setInterimTranscript('')
+      setListeningStatus('')
+      sttHealthyRef.current = true
+      if (opts?.scheduleAnswer) scheduleAutoAnswer()
+    },
+    [scheduleAutoAnswer],
+  )
 
   const generateFromText = useCallback(
     async (question: string, opts?: { manual?: boolean; source?: 'manual_input' | 'transcript' }) => {
@@ -105,6 +124,7 @@ export function useInterviewSession(profile: PersonalProfile, settings: AppSetti
         setError('Add your API key in Settings → AI Providers.')
         return
       }
+      clearAutoAnswerTimer()
       generatingRef.current = true
       setIsGenerating(true)
       setError(null)
@@ -129,7 +149,7 @@ export function useInterviewSession(profile: PersonalProfile, settings: AppSetti
         setStarting(false)
       }
     },
-    [thinkMode, scrollAnswer],
+    [thinkMode, scrollAnswer, clearAutoAnswerTimer],
   )
   generateFromTextRef.current = generateFromText
 
@@ -146,8 +166,7 @@ export function useInterviewSession(profile: PersonalProfile, settings: AppSetti
           console.warn('[stt] skipped junk/empty transcript')
           continue
         }
-        sttHealthyRef.current = true
-        appendTranscript(text, { autoAnswer: true, utteranceComplete: true })
+        setUtteranceTranscript(text, { scheduleAnswer: true })
       } catch (e) {
         const msg = e instanceof Error ? e.message : 'Cloud transcription failed'
         console.warn('[stt]', msg)
@@ -156,7 +175,7 @@ export function useInterviewSession(profile: PersonalProfile, settings: AppSetti
     }
     transcribeBusyRef.current = false
     setListeningStatus('Listening…')
-  }, [appendTranscript])
+  }, [setUtteranceTranscript])
 
   const enqueueAudioChunk = useCallback(
     (blob: Blob) => {
@@ -181,6 +200,7 @@ export function useInterviewSession(profile: PersonalProfile, settings: AppSetti
   }, [])
 
   const stopRecognition = useCallback(() => {
+    clearAutoAnswerTimer()
     stopCloudCapture()
     const rec = recognitionRef.current
     recognitionRef.current = null
@@ -196,7 +216,7 @@ export function useInterviewSession(profile: PersonalProfile, settings: AppSetti
     }
     setListeningStatus('')
     setInterimTranscript('')
-  }, [stopCloudCapture])
+  }, [stopCloudCapture, clearAutoAnswerTimer])
 
   const startCloudCapture = useCallback(async () => {
     stopCloudCapture()
@@ -215,16 +235,11 @@ export function useInterviewSession(profile: PersonalProfile, settings: AppSetti
       if (provider === 'deepgram') {
         const live = await connectDeepgramLive(settingsRef.current, {
           onInterim: (text) => {
-            if (text) setInterimTranscript(text)
+            setInterimTranscript(text)
           },
           onUtterance: (text) => {
             if (!text || isLikelySttGarbage(text)) return
-            sttHealthyRef.current = true
-            const plausible = isPlausibleInterviewUtterance(text)
-            appendTranscript(text, {
-              autoAnswer: plausible,
-              utteranceComplete: true,
-            })
+            setUtteranceTranscript(text, { scheduleAnswer: true })
           },
           onError: (msg) => setError(msg),
         })
@@ -241,7 +256,7 @@ export function useInterviewSession(profile: PersonalProfile, settings: AppSetti
     } catch (e) {
       setError(e instanceof Error ? e.message : 'Microphone permission denied')
     }
-  }, [enqueueAudioChunk, stopCloudCapture, appendTranscript])
+  }, [enqueueAudioChunk, stopCloudCapture, setUtteranceTranscript])
 
   const startDeviceRecognition = useCallback(() => {
     if (!speechRecognitionAvailable()) {
@@ -253,7 +268,7 @@ export function useInterviewSession(profile: PersonalProfile, settings: AppSetti
       const lang = speechLangFromSettings(settingsRef.current.micListenLanguage)
       const recognition = createSpeechRecognition(lang)
       recognitionRef.current = recognition
-      const minChars = effectiveMinChars(settingsRef.current)
+      lastDeviceFinalRef.current = ''
 
       recognition.onresult = (event: SpeechRecognitionEvent) => {
         let interim = ''
@@ -263,21 +278,21 @@ export function useInterviewSession(profile: PersonalProfile, settings: AppSetti
           if (event.results[i].isFinal) finalChunk += piece
           else interim += piece
         }
-        if (interim) setInterimTranscript(interim.trim())
+
+        if (interim.trim()) {
+          setInterimTranscript(interim.trim())
+        } else if (!finalChunk.trim()) {
+          setInterimTranscript('')
+        }
+
         if (finalChunk.trim()) {
-          appendTranscript(finalChunk.trim(), { utteranceComplete: true })
-          const s = settingsRef.current
-          const warmedUp = Date.now() - sessionStartedAtRef.current >= SESSION_WARMUP_MS
-          const merged = `${transcriptRef.current}`.trim()
-          if (
-            warmedUp &&
-            s.autoAnswer &&
-            sttHealthyRef.current &&
-            merged.length >= minChars &&
-            isPlausibleInterviewUtterance(merged)
-          ) {
-            void generateFromText(merged, { source: 'transcript' })
-          }
+          const merged = mergeCumulativeFinal(transcriptRef.current, finalChunk.trim())
+          lastDeviceFinalRef.current = finalChunk.trim()
+          transcriptRef.current = merged
+          setTranscript(merged)
+          setInterimTranscript('')
+          sttHealthyRef.current = true
+          scheduleAutoAnswer()
         }
       }
 
@@ -302,7 +317,7 @@ export function useInterviewSession(profile: PersonalProfile, settings: AppSetti
     } catch (e) {
       setError(e instanceof Error ? e.message : 'Speech recognition failed to start')
     }
-  }, [appendTranscript, generateFromText, sessionActive])
+  }, [scheduleAutoAnswer, sessionActive])
 
   const startRecognition = useCallback(() => {
     stopRecognition()
@@ -331,6 +346,10 @@ export function useInterviewSession(profile: PersonalProfile, settings: AppSetti
       setError(`Add your ${settings.sttProvider} API key in Settings → Audio.`)
       return
     }
+    if (settings.sttMode === 'device' && !speechRecognitionAvailable()) {
+      setError('On-device speech recognition is not available on this phone. Switch to Cloud API in Settings → Audio.')
+      return
+    }
 
     const profilePreview = profileToContextText(freshProfile).slice(0, 80)
     setError(null)
@@ -345,19 +364,15 @@ export function useInterviewSession(profile: PersonalProfile, settings: AppSetti
     transcriptRef.current = ''
     setInterimTranscript('')
     setAnswer('')
-    lastFinalRef.current = ''
+    lastDeviceFinalRef.current = ''
     sttHealthyRef.current = false
     sessionStartedAtRef.current = Date.now()
     setPhase('interview')
 
     window.setTimeout(() => {
       startRecognition()
-      setStartingMessage('Calibrating microphone…')
-    }, 400)
-
-    window.setTimeout(() => {
       setStartingMessage('Listening for questions…')
-    }, 2200)
+    }, 400)
 
     window.setTimeout(() => setStarting(false), SESSION_WARMUP_MS)
   }, [settings, startRecognition])
@@ -381,16 +396,17 @@ export function useInterviewSession(profile: PersonalProfile, settings: AppSetti
   }, [transcript, interimTranscript, generateFromText])
 
   const newQuestion = useCallback(() => {
+    clearAutoAnswerTimer()
     setTranscript('')
     transcriptRef.current = ''
     setInterimTranscript('')
     setAnswer('')
-    lastFinalRef.current = ''
+    lastDeviceFinalRef.current = ''
     setError(null)
-    sttHealthyRef.current = false
+    sttHealthyRef.current = settingsRef.current.sttMode === 'device'
     sessionStartedAtRef.current = Date.now()
     if (sessionActive && settingsRef.current.audioEnabled) startRecognition()
-  }, [sessionActive, startRecognition])
+  }, [sessionActive, startRecognition, clearAutoAnswerTimer])
 
   const sendTypedQuestion = useCallback(
     (text: string) => {
@@ -411,11 +427,22 @@ export function useInterviewSession(profile: PersonalProfile, settings: AppSetti
   }, [profile])
 
   useEffect(() => {
-    return () => stopRecognition()
-  }, [stopRecognition])
+    return () => {
+      clearAutoAnswerTimer()
+      stopRecognition()
+    }
+  }, [stopRecognition, clearAutoAnswerTimer])
 
-  const displayTranscript =
-    `${transcript}${interimTranscript ? (transcript ? ' ' : '') + interimTranscript : ''}`.trim()
+  const displayTranscript = (() => {
+    const committed = transcript.trim()
+    const interim = interimTranscript.trim()
+    if (!interim) return committed
+    if (!committed) return interim
+    if (interim.startsWith(committed) || committed.startsWith(interim)) {
+      return interim.length >= committed.length ? interim : committed
+    }
+    return `${committed} ${interim}`.trim()
+  })()
 
   return {
     phase,

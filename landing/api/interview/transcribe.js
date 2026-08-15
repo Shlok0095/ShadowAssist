@@ -31,7 +31,9 @@ export default async function handler(req, res) {
     }
 
     const audioBuf = Buffer.from(audioBase64, 'base64')
-    const language = String(body.language || 'multi').trim()
+    const rawLanguage = String(body.language || 'multi').trim()
+    const language =
+      rawLanguage === 'en' || rawLanguage === 'en-US' ? 'multi' : rawLanguage
     const functionId = String(body.functionId || DEFAULT_FUNCTION_ID).trim()
 
     const text = await transcribeWavGrpc({

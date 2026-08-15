@@ -1,8 +1,8 @@
 {
-  "installCommand": "npm ci",
-  "buildCommand": "npm run build",
-  "outputDirectory": "dist",
-  "framework": "vite",
+  "$schema": "https://openapi.vercel.sh/vercel.json",
+  "installCommand": "npm ci --prefix landing",
+  "buildCommand": "npm run build --prefix landing",
+  "outputDirectory": "landing/dist",
   "env": {
     "VITE_SITE_ORIGIN": "https://veilassist.vercel.app",
     "VITE_ROLLING_TAG": "latest"
@@ -10,7 +10,7 @@
   "functions": {
     "api/**/*.js": {
       "maxDuration": 60,
-      "includeFiles": "api/**"
+      "includeFiles": "landing/api/**"
     }
   },
   "rewrites": [

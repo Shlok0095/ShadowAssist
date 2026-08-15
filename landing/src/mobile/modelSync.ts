@@ -93,15 +93,16 @@ export async function syncChatModels(
 ): Promise<ModelSyncResult> {
   const staticList = CHAT_MODEL_CATALOG[provider] || []
   const saved = getProviderModel(settings, provider)
-  const key = getProviderApiKey(settings, provider)
 
-  // NVIDIA NIM model list is huge; on APK use curated list (avoids mobile fetch failures).
-  if (provider === 'nvidia' && isMobileApk()) {
+  // Mobile APK: curated per-vendor lists only (no remote model sync).
+  if (isMobileApk()) {
     return {
       models: mergeModels([], staticList, saved),
       source: 'static',
     }
   }
+
+  const key = getProviderApiKey(settings, provider)
 
   try {
     if (provider === 'openrouter') {

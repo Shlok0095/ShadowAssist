@@ -76,6 +76,8 @@ jobs:
           body: |
             Automated Android interview APK from **${{ github.ref_name }}** @ [`${{ github.sha }}`](${{ github.server_url }}/${{ github.repository }}/commit/${{ github.sha }}).
 
+            **Version:** see `landing/public/downloads/apk-manifest.json` on this commit.
+
             | Asset | Use |
             |------|-----|
             | **VeilAssist-Interview.apk** | Android interview app (install on phone) |

@@ -1,37 +1,24 @@
-/** Static chat model fallbacks — mirrors desktop lib/chatModelCatalog.json (trimmed). */
+/** Static chat models per vendor — curated for mobile (no API sync). */
 export const CHAT_MODEL_CATALOG: Record<string, string[]> = {
-  groq: ['llama-3.3-70b-versatile', 'qwen/qwen3.6-27b', 'meta-llama/llama-4-scout-17b-16e-instruct'],
+  groq: ['llama-3.3-70b-versatile', 'qwen/qwen3.6-27b'],
   nvidia: [
     'nvidia/llama-3.1-nemotron-nano-vl-8b-v1',
     'nvidia/nemotron-mini-4b-instruct',
-    'nvidia/nemotron-nano-12b-v2-vl',
-    'meta/llama-3.2-11b-vision-instruct',
     'meta/llama-4-scout-17b-16e-instruct',
   ],
   openrouter: [
     'nvidia/nemotron-nano-12b-v2-vl:free',
     'meta-llama/llama-4-scout',
-    'google/gemma-3-27b-it:free',
   ],
-  openai: ['gpt-4o-mini', 'gpt-4o', 'gpt-4.1-mini', 'o4-mini'],
-  anthropic: [
-    'claude-sonnet-4-20250514',
-    'claude-3-5-haiku-20241022',
-    'claude-sonnet-4-6',
-  ],
-  google: ['gemini-2.0-flash', 'gemini-2.5-flash', 'gemini-2.0-flash-lite'],
+  openai: ['gpt-4o-mini', 'gpt-4o'],
+  anthropic: ['claude-sonnet-4-20250514', 'claude-3-5-haiku-20241022'],
+  google: ['gemini-2.0-flash', 'gemini-2.5-flash'],
   deepseek: ['deepseek-chat', 'deepseek-reasoner'],
   custom: ['gpt-4o', 'gpt-4o-mini'],
 }
 
-export const DEEPGRAM_MODELS = [
-  'nova-3',
-  'nova-3-general',
-  'nova-2-conversationalai',
-  'nova-2-general',
-  'nova-2',
-]
-export const GROQ_WHISPER_MODELS = ['whisper-large-v3', 'whisper-large-v3-turbo']
+export const DEEPGRAM_MODELS = ['nova-3', 'nova-2-general']
+export const GROQ_WHISPER_MODELS = ['whisper-large-v3-turbo', 'whisper-large-v3']
 export const NVIDIA_PARAKEET_MODELS = [
   'nvidia/parakeet-1.1b-rnnt-multilingual-asr',
   'nvidia/parakeet-0.6b-ctc-en-us',
