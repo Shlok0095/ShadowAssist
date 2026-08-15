@@ -15,8 +15,11 @@
     "verify": "npm run typecheck && npm run build"
   },
   "dependencies": {
+    "@capacitor-community/keep-awake": "^7.1.0",
     "@capacitor/android": "^7.2.0",
+    "@capacitor/app": "^7.1.2",
     "@capacitor/core": "^7.2.0",
+    "@capacitor/local-notifications": "^7.0.7",
     "@grpc/grpc-js": "^1.14.4",
     "@grpc/proto-loader": "^0.7.15",
     "framer-motion": "^11.15.0",

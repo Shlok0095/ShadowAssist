@@ -4,11 +4,15 @@ import { deepgramLiveQueryParams, getSttApiKey } from './sttRegistry'
 
 const TARGET_RATE = 16000
 const MIN_SEND_BYTES = 3200
+const MAX_RECONNECT_ATTEMPTS = 5
+const RECONNECT_BASE_MS = 800
 
 export type DeepgramLiveCallbacks = {
   onInterim: (text: string) => void
   onUtterance: (text: string) => void
   onError: (message: string) => void
+  onReconnecting?: () => void
+  onReconnected?: () => void
 }
 
 export type DeepgramLiveHandle = {
@@ -26,13 +30,15 @@ export function connectDeepgramLive(
   const params = deepgramLiveQueryParams(settings)
   const url = `wss://api.deepgram.com/v1/listen?${params}`
 
-  let ws: WebSocket
+  let ws: WebSocket | null = null
   let stopped = false
+  let reconnectAttempts = 0
   let utteranceParts: string[] = []
   let lastInterim = ''
   const pending: Int16Array[] = []
   let pendingBytes = 0
   let keepalive: ReturnType<typeof setInterval> | null = null
+  let reconnectTimer: ReturnType<typeof setTimeout> | null = null
 
   const flushSend = () => {
     if (!ws || ws.readyState !== WebSocket.OPEN || !pending.length) return
@@ -56,82 +62,136 @@ export function connectDeepgramLive(
     if (text) callbacks.onUtterance(text)
   }
 
-  return new Promise((resolve, reject) => {
+  const onMessage = (event: MessageEvent) => {
+    try {
+      const msg = JSON.parse(String(event.data || '{}'))
+      if (msg.type === 'UtteranceEnd') {
+        finalizeUtterance(lastInterim)
+        return
+      }
+      const alt = msg?.channel?.alternatives?.[0]
+      const text = String(alt?.transcript || '').trim()
+      if (!text) return
+
+      if (msg.is_final) {
+        utteranceParts.push(text)
+        lastInterim = ''
+        callbacks.onInterim(utteranceParts.join(' ').trim())
+        if (msg.speech_final) finalizeUtterance()
+      } else {
+        lastInterim = text
+        callbacks.onInterim([...utteranceParts, text].join(' ').trim())
+      }
+    } catch {
+      /* ignore malformed */
+    }
+  }
+
+  const cleanupWs = () => {
+    if (keepalive) clearInterval(keepalive)
+    keepalive = null
+    ws = null
+  }
+
+  const scheduleReconnect = () => {
+    if (stopped || reconnectAttempts >= MAX_RECONNECT_ATTEMPTS) {
+      callbacks.onError('Deepgram connection lost — tap New Question to retry')
+      return
+    }
+    reconnectAttempts += 1
+    callbacks.onReconnecting?.()
+    const delay = RECONNECT_BASE_MS * 2 ** (reconnectAttempts - 1)
+    reconnectTimer = setTimeout(() => {
+      reconnectTimer = null
+      connectSocket(false)
+    }, delay)
+  }
+
+  const connectSocket = (isInitial: boolean) => {
+    if (stopped) return
+
     try {
       ws = new WebSocket(url, ['token', apiKey])
-    } catch (e) {
-      reject(e instanceof Error ? e : new Error('WebSocket failed'))
+    } catch {
+      if (isInitial) throw new Error('WebSocket failed')
+      scheduleReconnect()
       return
     }
 
     ws.onopen = () => {
+      reconnectAttempts = 0
+      callbacks.onReconnected?.()
       keepalive = setInterval(() => {
         try {
-          if (ws.readyState === WebSocket.OPEN) {
+          if (ws && ws.readyState === WebSocket.OPEN) {
             ws.send(JSON.stringify({ type: 'KeepAlive' }))
           }
         } catch {
           /* ignore */
         }
       }, 8000)
-
-      resolve({
-        stop: () => {
-          stopped = true
-          if (keepalive) clearInterval(keepalive)
-          try {
-            if (ws.readyState === WebSocket.OPEN) {
-              ws.send(JSON.stringify({ type: 'CloseStream' }))
-            }
-            ws.close()
-          } catch {
-            /* ignore */
-          }
-        },
-        sendPcm: (samples, sampleRate) => {
-          if (stopped || ws.readyState !== WebSocket.OPEN) return
-          const f32 =
-            sampleRate === TARGET_RATE ? samples : resampleF32(samples, sampleRate, TARGET_RATE)
-          const lin = float32ToLinear16(f32)
-          pending.push(lin)
-          pendingBytes += lin.byteLength
-          if (pendingBytes >= MIN_SEND_BYTES) flushSend()
-        },
-      })
+      if (isInitial) initialResolve?.(handle)
     }
 
     ws.onerror = () => {
-      callbacks.onError('Deepgram connection error')
-      reject(new Error('Deepgram WebSocket error'))
-    }
-
-    ws.onmessage = (event) => {
-      try {
-        const msg = JSON.parse(String(event.data || '{}'))
-        if (msg.type === 'UtteranceEnd') {
-          finalizeUtterance(lastInterim)
-          return
-        }
-        const alt = msg?.channel?.alternatives?.[0]
-        const text = String(alt?.transcript || '').trim()
-        if (!text) return
-
-        if (msg.is_final) {
-          utteranceParts.push(text)
-          lastInterim = ''
-          callbacks.onInterim(utteranceParts.join(' ').trim())
-          if (msg.speech_final) finalizeUtterance()
-        } else {
-          lastInterim = text
-          callbacks.onInterim([...utteranceParts, text].join(' ').trim())
-        }
-      } catch {
-        /* ignore malformed */
+      if (isInitial && !initialResolved) {
+        callbacks.onError('Deepgram connection error')
+        initialReject?.(new Error('Deepgram WebSocket error'))
+      } else if (!stopped) {
+        callbacks.onError('Deepgram connection error')
       }
     }
 
+    ws.onmessage = onMessage
+
     ws.onclose = () => {
-      if (keepalive) clearInterval(keepalive)
+      cleanupWs()
+      if (!stopped) scheduleReconnect()
     }
+  }
+
+  let initialResolved = false
+  let initialResolve: ((h: DeepgramLiveHandle) => void) | null = null
+  let initialReject: ((e: Error) => void) | null = null
+
+  const handle: DeepgramLiveHandle = {
+    stop: () => {
+      stopped = true
+      if (reconnectTimer) clearTimeout(reconnectTimer)
+      try {
+        if (ws && ws.readyState === WebSocket.OPEN) {
+          ws.send(JSON.stringify({ type: 'CloseStream' }))
+          ws.close()
+        }
+      } catch {
+        /* ignore */
+      }
+      cleanupWs()
+    },
+    sendPcm: (samples, sampleRate) => {
+      if (stopped || !ws || ws.readyState !== WebSocket.OPEN) return
+      const f32 =
+        sampleRate === TARGET_RATE ? samples : resampleF32(samples, sampleRate, TARGET_RATE)
+      const lin = float32ToLinear16(f32)
+      pending.push(lin)
+      pendingBytes += lin.byteLength
+      if (pendingBytes >= MIN_SEND_BYTES) flushSend()
+    },
+  }
+
+  return new Promise((resolve, reject) => {
+    initialResolve = (h) => {
+      if (!initialResolved) {
+        initialResolved = true
+        resolve(h)
+      }
+    }
+    initialReject = (e) => {
+      if (!initialResolved) {
+        initialResolved = true
+        reject(e)
+      }
+    }
+    connectSocket(true)
   })
 }

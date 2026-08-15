@@ -427,6 +427,39 @@
   flex-shrink: 0;
 }
 
+.mobile-interview-status-strip {
+  margin: 0 16px 8px;
+  padding: 8px 12px;
+  border-radius: 8px;
+  background: rgba(255, 255, 255, 0.06);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  font-size: 13px;
+  color: rgba(255, 255, 255, 0.75);
+  flex-shrink: 0;
+}
+
+.mobile-interview-status-retry {
+  background: none;
+  border: none;
+  color: #fbbf24;
+  font-size: 13px;
+  padding: 0;
+  text-align: left;
+  cursor: pointer;
+}
+
+.mobile-interview-transcript-edit {
+  width: 100%;
+  min-height: 72px;
+  background: rgba(0, 0, 0, 0.25);
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  border-radius: 8px;
+  color: inherit;
+  font: inherit;
+  padding: 8px;
+  resize: vertical;
+}
+
 .mobile-error-dismiss {
   border: none;
   background: transparent;

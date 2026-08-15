@@ -20,6 +20,7 @@ export function InterviewScreen({
 }) {
   const [typed, setTyped] = useState('')
   const [settingsOpen, setSettingsOpen] = useState(false)
+  const [editText, setEditText] = useState('')
   const transcriptEndRef = useRef<HTMLDivElement | null>(null)
 
   const showTranscriptPanel = settings.showTranscription
@@ -28,6 +29,15 @@ export function InterviewScreen({
     if (!settings.autoScroll || !showTranscriptPanel) return
     transcriptEndRef.current?.scrollIntoView({ behavior: 'smooth', block: 'end' })
   }, [session.transcript, settings.autoScroll, showTranscriptPanel])
+
+  useEffect(() => {
+    if (session.transcriptEditing) setEditText(session.transcript)
+  }, [session.transcriptEditing, session.transcript])
+
+  const statusText =
+    session.statusLabel ||
+    session.listeningStatus ||
+    (session.loopPhase === 'listening' ? 'Listening' : '')
 
   return (
     <>
@@ -48,6 +58,18 @@ export function InterviewScreen({
           ☰
         </button>
       </header>
+
+      {statusText ? (
+        <div className="mobile-interview-status-strip" role="status">
+          {session.answerFailed ? (
+            <button type="button" className="mobile-interview-status-retry" onClick={session.retryFailedAnswer}>
+              {statusText}
+            </button>
+          ) : (
+            <span>{statusText}</span>
+          )}
+        </div>
+      ) : null}
 
       {settingsOpen ? (
         <div className="mobile-interview-settings-pop">
@@ -105,7 +127,7 @@ export function InterviewScreen({
         {!session.answer && !session.isGenerating && !session.starting ? (
           <div>
             <h2 className="mobile-interview-hero-title">
-              {session.listeningStatus ? 'Listening…' : 'Ready to assist'}
+              {session.loopPhase === 'listening' ? 'Listening…' : 'Ready to assist'}
             </h2>
             <p className="mobile-interview-hero-sub">
               Speak your interview question. Answers appear after speech is transcribed — not before.
@@ -136,9 +158,32 @@ export function InterviewScreen({
               {session.listeningStatus || ''}
             </span>
           </div>
-          <div className="mobile-interview-transcript-body">
-            {session.transcript || 'Transcription will appear here…'}
-            <div ref={transcriptEndRef} />
+          <div
+            className="mobile-interview-transcript-body"
+            onClick={() => {
+              if (!session.isGenerating) session.setTranscriptEditing(true)
+            }}
+            role="button"
+            tabIndex={0}
+            onKeyDown={(e) => {
+              if (e.key === 'Enter' && !session.isGenerating) session.setTranscriptEditing(true)
+            }}
+          >
+            {session.transcriptEditing ? (
+              <textarea
+                className="mobile-interview-transcript-edit"
+                value={editText}
+                onChange={(e) => setEditText(e.target.value)}
+                onBlur={() => session.setTranscriptManual(editText)}
+                rows={3}
+                aria-label="Edit transcription"
+              />
+            ) : (
+              <>
+                {session.transcript || 'Tap to edit transcription…'}
+                <div ref={transcriptEndRef} />
+              </>
+            )}
           </div>
         </div>
       ) : null}

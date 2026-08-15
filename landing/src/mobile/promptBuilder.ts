@@ -1,5 +1,6 @@
 import type { AppSettings } from './profileTypes'
 import { routeInterviewQuestion } from './answerRouting'
+import type { SessionTurn } from './sessionLoopTypes'
 
 export function buildInterviewSystemPrompt(input: {
   profileText: string
@@ -84,6 +85,7 @@ export function buildChatPayload(input: {
   think: boolean
   source?: 'manual_input' | 'transcript'
   model: string
+  turnHistory?: SessionTurn[]
 }) {
   const hasProfile = input.profileText.trim().length > 40
   const hasJd = input.jobDescription.trim().length > 20
@@ -107,8 +109,17 @@ export function buildChatPayload(input: {
     answerContract: route.answerContract,
   })
 
+  const historyMessages = (input.turnHistory || []).flatMap((turn) => [
+    {
+      role: 'user' as const,
+      content: `Interview question:\n\n${turn.question}`,
+    },
+    { role: 'assistant' as const, content: turn.answer },
+  ])
+
   const messages = [
     { role: 'system', content: systemPrompt },
+    ...historyMessages,
     {
       role: 'user',
       content: input.think

@@ -1,7 +1,8 @@
 import type { AppSettings, PersonalProfile } from './profileTypes'
 import { profileToContextText } from './profileTypes'
 import { getActiveApiKey, getActiveModel } from './profileStorage'
-import { requestInterviewAnswerDirect } from './providerChat'
+import { requestInterviewAnswerDirect, validateProviderKeyDirect } from './providerChat'
+import type { SessionTurn } from './sessionLoopTypes'
 
 export type SessionPhase = 'home' | 'interview' | 'error'
 
@@ -20,6 +21,7 @@ async function requestViaProxy(params: {
   settings: AppSettings
   think: boolean
   source?: 'manual_input' | 'transcript'
+  turnHistory?: SessionTurn[]
 }): Promise<string> {
   const origin = String(import.meta.env.VITE_API_ORIGIN || '').replace(/\/$/, '')
   const chatUrl =
@@ -66,8 +68,9 @@ export async function requestInterviewAnswer(params: {
   settings: AppSettings
   think: boolean
   source?: 'manual_input' | 'transcript'
+  turnHistory?: SessionTurn[]
+  signal?: AbortSignal
 }): Promise<string> {
-  // APK: call NVIDIA/Groq/OpenAI directly (desktop-style BYOK — avoids CORS to Vercel).
   if (isMobileApk()) {
     return requestInterviewAnswerDirect(params)
   }
@@ -80,6 +83,27 @@ export async function requestInterviewAnswer(params: {
       return requestInterviewAnswerDirect(params)
     }
     throw e
+  }
+}
+
+export async function validateProviderKey(settings: AppSettings): Promise<{ ok: boolean; error?: string }> {
+  if (!getActiveApiKey(settings)) {
+    return { ok: false, error: 'Add your API key in Settings → AI Providers.' }
+  }
+  if (isMobileApk()) {
+    return validateProviderKeyDirect(settings)
+  }
+  try {
+    await requestViaProxy({
+      question: 'ping',
+      profile: { name: '', summary: '', experience: [], skills: [], projects: [], education: [], extraContext: '', jobDescription: '' },
+      settings,
+      think: false,
+      source: 'manual_input',
+    })
+    return { ok: true }
+  } catch (e) {
+    return { ok: false, error: e instanceof Error ? e.message : 'API key validation failed' }
   }
 }
 

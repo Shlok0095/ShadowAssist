@@ -123,22 +123,37 @@ async function transcribeWhisper(
   return await parseTranscriptResponse(res)
 }
 
-export async function transcribeAudioBlob(settings: AppSettings, blob: Blob): Promise<string> {
-  const wav = await ensureWav16k(blob)
-  const provider = settings.sttProvider
+export async function transcribeAudioBlob(
+  settings: AppSettings,
+  blob: Blob,
+  opts?: { retries?: number },
+): Promise<string> {
+  const retries = opts?.retries ?? 1
 
-  if (provider === 'groq') {
-    return transcribeWhisper(settings, wav, 'https://api.groq.com/openai/v1', 'groq')
-  }
-  if (provider === 'openai') {
-    return transcribeWhisper(settings, wav, 'https://api.openai.com/v1', 'openai')
-  }
-  if (provider === 'deepgram') {
-    return transcribeDeepgram(settings, wav)
-  }
-  if (provider === 'nvidia') {
-    return transcribeNvidia(settings, wav)
+  const run = async (remaining: number): Promise<string> => {
+    try {
+      const wav = await ensureWav16k(blob)
+      const provider = settings.sttProvider
+
+      if (provider === 'groq') {
+        return transcribeWhisper(settings, wav, 'https://api.groq.com/openai/v1', 'groq')
+      }
+      if (provider === 'openai') {
+        return transcribeWhisper(settings, wav, 'https://api.openai.com/v1', 'openai')
+      }
+      if (provider === 'deepgram') {
+        return transcribeDeepgram(settings, wav)
+      }
+      if (provider === 'nvidia') {
+        return transcribeNvidia(settings, wav)
+      }
+
+      throw new Error('Unknown STT provider')
+    } catch (e) {
+      if (remaining > 0) return run(remaining - 1)
+      throw e
+    }
   }
 
-  throw new Error('Unknown STT provider')
+  return run(retries)
 }

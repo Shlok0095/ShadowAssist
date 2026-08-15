@@ -92,6 +92,8 @@ export type AppSettings = {
   nvidiaNimFunctionId: string
   deepgramKey: string
   deepgramModel: string
+  /** Keep screen on during an active interview session (wake lock). */
+  keepScreenAwake: boolean
 }
 
 export const DEFAULT_PROFILE: PersonalProfile = {
@@ -145,6 +147,7 @@ export const DEFAULT_APP_SETTINGS: AppSettings = {
   nvidiaNimFunctionId: '71203149-d3b7-4460-8231-1be2543a1fca',
   deepgramKey: '',
   deepgramModel: 'nova-3',
+  keepScreenAwake: true,
 }
 
 export function profileIsReady(profile: PersonalProfile): boolean {

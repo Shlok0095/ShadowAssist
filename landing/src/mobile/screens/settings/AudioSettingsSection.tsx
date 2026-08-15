@@ -43,6 +43,14 @@ export function AudioSettingsSection({
       <div className="mobile-settings-card space-y-3">
         <div className="mobile-settings-row">
           <div className="mobile-settings-row-text">
+            <span className="mobile-settings-row-label">Keep screen awake</span>
+            <span className="mobile-settings-row-hint">Prevent screen lock during an active interview session.</span>
+          </div>
+          <Toggle on={settings.keepScreenAwake} onChange={(v) => onChange({ keepScreenAwake: v })} />
+        </div>
+
+        <div className="mobile-settings-row">
+          <div className="mobile-settings-row-text">
             <span className="mobile-settings-row-label">Microphone</span>
             <span className="mobile-settings-row-hint">Pause listening without ending the session.</span>
           </div>

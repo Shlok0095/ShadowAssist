@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from 'react'
+import { useCallback, useEffect, useRef, useState } from 'react'
 import { getActiveApiKey, loadAppSettings, loadProfile, saveAppSettings, saveProfile } from './profileStorage'
 import { profileIsReady, type AppSettings, type PersonalProfile } from './profileTypes'
 import { sttKeyConfigured } from './sttRegistry'
@@ -18,6 +18,13 @@ export default function MobileInterviewApp() {
   const [settings, setSettings] = useState<AppSettings>(() => loadAppSettings())
 
   const session = useInterviewSession(profile, settings)
+  const restoredRef = useRef(false)
+
+  useEffect(() => {
+    if (restoredRef.current) return
+    restoredRef.current = true
+    session.restoreSessionFromSnapshot()
+  }, [session.restoreSessionFromSnapshot])
 
   const updateSettings = useCallback((patch: Partial<AppSettings>) => {
     setSettings((prev) => {
