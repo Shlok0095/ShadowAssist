@@ -10,6 +10,12 @@ const config: CapacitorConfig = {
   android: {
     allowMixedContent: true,
   },
+  plugins: {
+  // Patch fetch/XHR to native HTTP — required for NVIDIA NIM (no browser CORS headers).
+    CapacitorHttp: {
+      enabled: true,
+    },
+  },
 }
 
 export default config

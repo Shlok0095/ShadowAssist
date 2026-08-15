@@ -8,12 +8,26 @@ import {
   NVIDIA_NIM_FUNCTION_ID,
   whisperLangParams,
 } from './sttRegistry'
+import { mobileApiPost, type MobileHttpResponse } from './mobileHttp'
 
 function transcribeProxyUrl(): string {
   const origin = String(import.meta.env.VITE_API_ORIGIN || '').replace(/\/$/, '')
   if (origin) return `${origin}/api/interview/transcribe`
   if (import.meta.env.VITE_MOBILE_APK) return 'https://veilassist.vercel.app/api/interview/transcribe'
   return '/api/interview/transcribe'
+}
+
+async function parseTranscriptBody(res: MobileHttpResponse): Promise<string> {
+  const text = res.text
+  if (!res.ok) {
+    throw new Error(`Transcription failed (${res.status}): ${text.slice(0, 200)}`)
+  }
+  try {
+    const json = JSON.parse(text)
+    return String(json.text || json.transcript || '').trim()
+  } catch {
+    return text.trim()
+  }
 }
 
 async function parseTranscriptResponse(res: Response): Promise<string> {
@@ -36,29 +50,24 @@ async function transcribeNvidiaProxy(settings: AppSettings, wavBlob: Blob, apiKe
   const audioBase64 = btoa(binary)
   const functionId = settings.nvidiaNimFunctionId?.trim() || NVIDIA_NIM_FUNCTION_ID
   const proxyUrl = transcribeProxyUrl()
+  const body = {
+    provider: 'nvidia',
+    apiKey,
+    model: getSttModel(settings),
+    language: nvidiaLanguageCode(settings.micListenLanguage),
+    functionId,
+    audioBase64,
+  }
 
-  let proxyRes: Response
   try {
-    proxyRes = await fetch(proxyUrl, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        provider: 'nvidia',
-        apiKey,
-        model: getSttModel(settings),
-        language: nvidiaLanguageCode(settings.micListenLanguage),
-        functionId,
-        audioBase64,
-      }),
-    })
+    const proxyRes = await mobileApiPost(proxyUrl, { 'Content-Type': 'application/json' }, body)
+    return await parseTranscriptBody(proxyRes)
   } catch (err) {
     const msg = err instanceof Error ? err.message : String(err)
     throw new Error(
       `NVIDIA Parakeet STT could not reach ${proxyUrl} (${msg}). Parakeet requires the gRPC transcribe API on your site host.`,
     )
   }
-
-  return await parseTranscriptResponse(proxyRes)
 }
 
 async function transcribeNvidia(settings: AppSettings, wavBlob: Blob): Promise<string> {

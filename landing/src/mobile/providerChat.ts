@@ -4,6 +4,9 @@ import { getActiveApiKey, getActiveModel } from './profileStorage'
 import { buildChatPayload } from './promptBuilder'
 import { getChatBaseUrl, getChatProviderMeta } from './providerRegistry'
 import { applyNemotronReasoning, nvidiaChatHeaders } from './nvidiaChatHelpers'
+import { isLikelyCorsOrNetworkError, mobileApiPost } from './mobileHttp'
+
+const NVIDIA_CHAT_FALLBACK = 'nvidia/llama-3.1-nemotron-nano-vl-8b-v1'
 
 /** Direct provider call — same as desktop app (no Vercel proxy / no CORS issues in APK). */
 export async function requestInterviewAnswerDirect(params: {
@@ -51,24 +54,49 @@ export async function requestInterviewAnswerDirect(params: {
     params.think,
   )
 
-  let res: Response
+  const requestBody = { ...payload, messages }
+
+  let activeModel = model
+  let res: { status: number; text: string; ok: boolean }
+
   try {
-    res = await fetch(`${base}/chat/completions`, {
-      method: 'POST',
-      headers,
-      body: JSON.stringify({ ...payload, messages }),
-    })
+    res = await mobileApiPost(`${base}/chat/completions`, headers, requestBody)
   } catch (e) {
     const msg = e instanceof Error ? e.message : String(e)
-    if (/failed to fetch|network|load/i.test(msg)) {
+    if (isLikelyCorsOrNetworkError(msg) && params.settings.provider === 'nvidia') {
       throw new Error(
-        `Could not reach ${params.settings.provider} API. Check internet connection and API key.`,
+        `NVIDIA NIM blocked by browser CORS from the app shell. Reinstall the latest APK (1.2.1+) or switch to Groq in Settings → AI Providers. (${msg})`,
+      )
+    }
+    if (isLikelyCorsOrNetworkError(msg)) {
+      throw new Error(
+        `Could not reach ${params.settings.provider} API. Check internet connection and API key. (${msg})`,
       )
     }
     throw e
   }
 
-  const text = await res.text()
+  if (
+    !res.ok &&
+    params.settings.provider === 'nvidia' &&
+    activeModel !== NVIDIA_CHAT_FALLBACK &&
+    (res.status >= 500 || res.status === 404)
+  ) {
+    activeModel = NVIDIA_CHAT_FALLBACK
+    const retryBody = {
+      ...requestBody,
+      model: activeModel,
+      messages: applyNemotronReasoning(
+        payload.messages as Array<{ role: string; content: string }>,
+        base,
+        activeModel,
+        params.think,
+      ),
+    }
+    res = await mobileApiPost(`${base}/chat/completions`, headers, retryBody)
+  }
+
+  const text = res.text
   if (!res.ok) {
     let detail = text.slice(0, 300)
     try {

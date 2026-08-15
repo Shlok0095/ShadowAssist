@@ -4,6 +4,7 @@ import { getActiveApiKey, getActiveModel } from './profileStorage'
 
 import { getChatBaseUrl } from './providerRegistry'
 import { applyNemotronReasoning, nvidiaChatHeaders } from './nvidiaChatHelpers'
+import { isLikelyCorsOrNetworkError, mobileApiPost } from './mobileHttp'
 
 const CV_SYSTEM_PROMPT = `You extract resume/CV text into structured JSON for an interview assistant.
 Return ONLY valid JSON (no markdown fences) matching this schema:
@@ -126,20 +127,20 @@ async function structureCvDirect(
   const controller = new AbortController()
   const timeout = window.setTimeout(() => controller.abort(), 90000)
 
-  let res: Response
+  let res: { status: number; text: string; ok: boolean }
   try {
-    res = await fetch(`${base}/chat/completions`, {
-      method: 'POST',
-      headers: nvidiaChatHeaders(apiKey),
-      body: JSON.stringify(payload),
-      signal: controller.signal,
-    })
+    res = await mobileApiPost(`${base}/chat/completions`, nvidiaChatHeaders(apiKey), payload as Record<string, unknown>)
   } catch (e) {
     const msg = e instanceof Error ? e.message : String(e)
     if (/abort/i.test(msg)) {
       throw new Error('CV extraction timed out — try a shorter PDF or switch AI provider.')
     }
-    if (/failed to fetch|network|load/i.test(msg)) {
+    if (isLikelyCorsOrNetworkError(msg) && settings.provider === 'nvidia') {
+      throw new Error(
+        'NVIDIA NIM blocked by app WebView CORS. Update to APK 1.2.1+ or use Groq for CV extraction.',
+      )
+    }
+    if (isLikelyCorsOrNetworkError(msg)) {
       throw new Error(`Could not reach ${settings.provider} API for CV extraction. Check connection and API key.`)
     }
     throw e
@@ -147,7 +148,7 @@ async function structureCvDirect(
     window.clearTimeout(timeout)
   }
 
-  const text = await res.text()
+  const text = res.text
   if (!res.ok) {
     throw new Error(`CV extraction failed (${res.status}): ${text.slice(0, 200)}`)
   }

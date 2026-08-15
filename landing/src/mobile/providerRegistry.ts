@@ -63,7 +63,7 @@ export const CHAT_PROVIDERS: ChatProviderMeta[] = [
     docs: 'https://build.nvidia.com/',
     keyField: 'nvidiaKey',
     modelField: 'nvidiaModel',
-    defaultModel: 'nvidia/nemotron-nano-12b-v2-vl',
+    defaultModel: 'nvidia/llama-3.1-nemotron-nano-vl-8b-v1',
     kind: 'openai_compat',
     baseURL: 'https://integrate.api.nvidia.com/v1',
   },
