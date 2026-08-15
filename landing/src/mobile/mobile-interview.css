@@ -381,11 +381,101 @@
 }
 
 .mobile-interview-logo {
-  height: 28px;
-  width: 28px;
+  height: 36px;
+  width: 36px;
   object-fit: contain;
-  border-radius: 6px;
+  border-radius: 10px;
   flex-shrink: 0;
+}
+
+.mobile-provider-card {
+  display: flex;
+  flex-direction: column;
+  gap: 0;
+}
+
+.mobile-premium-select-wrap {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin-bottom: 0;
+}
+
+.mobile-premium-select-label {
+  font-size: 0.78rem;
+  color: rgba(255, 255, 255, 0.55);
+}
+
+.mobile-premium-select-shell {
+  position: relative;
+  border-radius: 14px;
+  border: 1px solid rgba(212, 175, 55, 0.32);
+  background: linear-gradient(
+    135deg,
+    rgba(212, 175, 55, 0.1) 0%,
+    rgba(59, 130, 246, 0.06) 55%,
+    rgba(255, 255, 255, 0.03) 100%
+  );
+  box-shadow:
+    0 0 0 1px rgba(255, 255, 255, 0.04) inset,
+    0 8px 24px rgba(0, 0, 0, 0.28);
+}
+
+.mobile-premium-select {
+  appearance: none;
+  width: 100%;
+  border: none;
+  background: transparent;
+  color: rgba(255, 255, 255, 0.94);
+  padding: 14px 40px 14px 14px;
+  font-size: 0.9rem;
+  font-weight: 600;
+  font-family: inherit;
+  cursor: pointer;
+  box-sizing: border-box;
+}
+
+.mobile-premium-select:focus {
+  outline: none;
+}
+
+.mobile-premium-select-shell:focus-within {
+  border-color: rgba(212, 175, 55, 0.55);
+  box-shadow:
+    0 0 0 1px rgba(212, 175, 55, 0.2) inset,
+    0 0 20px rgba(212, 175, 55, 0.12);
+}
+
+.mobile-premium-select-chevron {
+  position: absolute;
+  right: 14px;
+  top: 50%;
+  transform: translateY(-50%);
+  pointer-events: none;
+  color: rgba(255, 255, 255, 0.45);
+  font-size: 0.85rem;
+}
+
+.mobile-provider-detail {
+  margin-top: 16px;
+  padding-top: 16px;
+  border-top: 1px solid rgba(255, 255, 255, 0.08);
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.mobile-provider-detail-head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+  font-size: 0.85rem;
+  color: rgba(255, 255, 255, 0.92);
+}
+
+.mobile-provider-detail .mobile-field:last-child {
+  margin-bottom: 0;
 }
 
 /* Home + settings + personal info screens */

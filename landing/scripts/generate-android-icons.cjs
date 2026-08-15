@@ -13,7 +13,9 @@ if (!fs.existsSync(logoSrc)) {
 
 fs.mkdirSync(assetsDir, { recursive: true })
 fs.copyFileSync(logoSrc, path.join(assetsDir, 'icon.png'))
-fs.copyFileSync(logoSrc, path.join(assetsDir, 'splash.png'))
+// Omit splash.png — full-logo splashes balloon the APK (multi-MB per density).
+const splashAsset = path.join(assetsDir, 'splash.png')
+if (fs.existsSync(splashAsset)) fs.unlinkSync(splashAsset)
 
 console.log('[generate-android-icons] Generating Android launcher + splash from brand logo…')
 execSync(

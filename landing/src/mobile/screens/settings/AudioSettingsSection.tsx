@@ -1,8 +1,15 @@
-import { useState } from 'react'
 import type { AppSettings } from '../../profileTypes'
 import { Toggle, Segmented } from './SettingsPrimitives'
 import { ModelSelect } from './ModelSelect'
+import { PremiumSelect } from './PremiumSelect'
 import { STT_PROVIDER_META, sttKeyConfigured, sttModelOptions } from '../../sttRegistry'
+
+function sttModelField(id: AppSettings['sttProvider']): keyof AppSettings {
+  if (id === 'nvidia') return 'nvidiaWhisperModel'
+  if (id === 'deepgram') return 'deepgramModel'
+  if (id === 'groq') return 'groqWhisperModel'
+  return 'selectedModel'
+}
 
 export function AudioSettingsSection({
   settings,
@@ -11,8 +18,12 @@ export function AudioSettingsSection({
   settings: AppSettings
   onChange: (patch: Partial<AppSettings>) => void
 }) {
-  const [expanded, setExpanded] = useState<Record<string, boolean>>({})
   const cloudStt = settings.sttMode === 'cloud'
+  const meta = STT_PROVIDER_META.find((p) => p.id === settings.sttProvider)!
+  const keySaved = sttKeyConfigured(settings, meta.id)
+  const modelField = sttModelField(meta.id)
+  const modelValue = String(settings[modelField] || '')
+  const keyValue = String(settings[meta.keyField] || '')
 
   return (
     <section className="mobile-settings-group">
@@ -92,114 +103,61 @@ export function AudioSettingsSection({
       </div>
 
       {cloudStt ? (
-        <>
-          <div className="mobile-settings-card mt-3">
+        <div className="mobile-settings-card mobile-provider-card mt-3">
+          <PremiumSelect
+            label="Active cloud STT provider"
+            value={settings.sttProvider}
+            onChange={(e) =>
+              onChange({ sttProvider: e.target.value as AppSettings['sttProvider'] })
+            }
+          >
+            {STT_PROVIDER_META.map((p) => (
+              <option key={p.id} value={p.id}>
+                {p.badge} · {p.label}
+                {sttKeyConfigured(settings, p.id) ? ' ✓' : ''}
+              </option>
+            ))}
+          </PremiumSelect>
+
+          <div className="mobile-provider-detail">
+            <div className="mobile-provider-detail-head">
+              <span className="mobile-vendor-badge">{meta.badge}</span>
+              <strong>{meta.label}</strong>
+              {keySaved ? <span className="mobile-vendor-saved">Key saved</span> : null}
+            </div>
+            <p className="mobile-vendor-desc">{meta.desc}</p>
+            {meta.docs ? (
+              <a className="mobile-vendor-docs" href={meta.docs} target="_blank" rel="noreferrer">
+                Get API key ↗
+              </a>
+            ) : null}
+
             <label className="mobile-field">
-              <span>Active cloud STT provider</span>
-              <select
-                className="mobile-select"
-                value={settings.sttProvider}
-                onChange={(e) =>
-                  onChange({ sttProvider: e.target.value as AppSettings['sttProvider'] })
-                }
-              >
-                {STT_PROVIDER_META.map((p) => (
-                  <option key={p.id} value={p.id}>
-                    {p.label}
-                    {sttKeyConfigured(settings, p.id) ? ' ✓' : ''}
-                  </option>
-                ))}
-              </select>
+              <span>API key</span>
+              <input
+                className="mobile-input"
+                type="password"
+                value={keyValue}
+                onChange={(e) => onChange({ [meta.keyField]: e.target.value } as Partial<AppSettings>)}
+                placeholder={keySaved ? '••••••••' : 'Paste API key'}
+              />
             </label>
+
+            {meta.id !== 'openai' ? (
+              <label className="mobile-field">
+                <span>Model</span>
+                <ModelSelect
+                  value={modelValue}
+                  options={sttModelOptions(meta.id)}
+                  placeholder={sttModelOptions(meta.id)[0]}
+                  onChange={(m) => onChange({ [modelField]: m } as Partial<AppSettings>)}
+                />
+              </label>
+            ) : (
+              <p className="mobile-field-hint">Uses fixed model: whisper-1</p>
+            )}
           </div>
-
-          <div className="mobile-vendor-list">
-            {STT_PROVIDER_META.map((meta) => {
-              const isActive = settings.sttProvider === meta.id
-              const isOpen = expanded[meta.id] ?? isActive
-              const keySaved = sttKeyConfigured(settings, meta.id)
-              const modelField =
-                meta.id === 'nvidia'
-                  ? 'nvidiaWhisperModel'
-                  : meta.id === 'deepgram'
-                    ? 'deepgramModel'
-                    : meta.id === 'groq'
-                      ? 'groqWhisperModel'
-                      : 'selectedModel'
-              const modelValue = String(settings[modelField as keyof AppSettings] || '')
-              const keyField = meta.keyField
-              const keyValue = String(settings[keyField] || '')
-
-              return (
-                <div key={meta.id} className={`mobile-vendor-card ${isActive ? 'active' : ''}`}>
-                  <button
-                    type="button"
-                    className="mobile-vendor-card-head"
-                    onClick={() => setExpanded((prev) => ({ ...prev, [meta.id]: !isOpen }))}
-                  >
-                    <div className="mobile-vendor-card-title">
-                      <span className="mobile-vendor-badge">{meta.badge}</span>
-                      <strong>{meta.label}</strong>
-                      {isActive ? <span className="mobile-vendor-active-tag">Active</span> : null}
-                      {keySaved ? <span className="mobile-vendor-saved">Key saved</span> : null}
-                    </div>
-                    <span className="mobile-vendor-chevron">{isOpen ? '⌃' : '⌄'}</span>
-                  </button>
-
-                  {isOpen ? (
-                    <div className="mobile-vendor-card-body">
-                      <p className="mobile-vendor-desc">{meta.desc}</p>
-                      {meta.docs ? (
-                        <a className="mobile-vendor-docs" href={meta.docs} target="_blank" rel="noreferrer">
-                          Get API key ↗
-                        </a>
-                      ) : null}
-
-                      <label className="mobile-field">
-                        <span>API key</span>
-                        <input
-                          className="mobile-input"
-                          type="password"
-                          value={keyValue}
-                          onChange={(e) =>
-                            onChange({ [keyField]: e.target.value } as Partial<AppSettings>)
-                          }
-                          placeholder={keySaved ? '••••••••' : 'Paste API key'}
-                        />
-                      </label>
-
-                      {meta.id !== 'openai' ? (
-                        <label className="mobile-field">
-                          <span>Model</span>
-                          <ModelSelect
-                            value={modelValue}
-                            options={sttModelOptions(meta.id)}
-                            placeholder={sttModelOptions(meta.id)[0]}
-                            onChange={(m) =>
-                              onChange({ [modelField]: m } as Partial<AppSettings>)
-                            }
-                          />
-                        </label>
-                      ) : (
-                        <p className="mobile-field-hint">Uses fixed model: whisper-1</p>
-                      )}
-
-                      {!isActive ? (
-                        <button
-                          type="button"
-                          className="mobile-vendor-use-btn"
-                          onClick={() => onChange({ sttProvider: meta.id })}
-                        >
-                          Use {meta.label} for transcription
-                        </button>
-                      ) : null}
-                    </div>
-                  ) : null}
-                </div>
-              )
-            })}
-          </div>
-        </>
+        </div>
       ) : null}
     </section>
   )
