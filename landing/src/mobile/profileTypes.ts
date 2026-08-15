@@ -47,7 +47,7 @@ export type AiProvider =
   | 'google'
   | 'deepseek'
   | 'custom'
-export type SttProvider = 'groq' | 'openai'
+export type SttProvider = 'nvidia' | 'deepgram' | 'groq' | 'openai'
 export type SttMode = 'device' | 'cloud'
 export type MicSensitivity = 'standard' | 'boost'
 export type MicListenLanguage = 'en' | 'hi' | 'en_hi_hinglish'
@@ -88,6 +88,10 @@ export type AppSettings = {
   sttMode: SttMode
   sttProvider: SttProvider
   groqWhisperModel: string
+  nvidiaWhisperModel: string
+  nvidiaNimFunctionId: string
+  deepgramKey: string
+  deepgramModel: string
 }
 
 export const DEFAULT_PROFILE: PersonalProfile = {
@@ -135,8 +139,12 @@ export const DEFAULT_APP_SETTINGS: AppSettings = {
   micSensitivity: 'standard',
   micListenLanguage: 'en',
   sttMode: 'device',
-  sttProvider: 'groq',
-  groqWhisperModel: 'whisper-large-v3-turbo',
+  sttProvider: 'nvidia',
+  groqWhisperModel: 'whisper-large-v3',
+  nvidiaWhisperModel: 'nvidia/parakeet-1.1b-rnnt-multilingual-asr',
+  nvidiaNimFunctionId: '71203149-d3b7-4460-8231-1be2543a1fca',
+  deepgramKey: '',
+  deepgramModel: 'nova-2',
 }
 
 export function profileIsReady(profile: PersonalProfile): boolean {

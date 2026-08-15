@@ -1,4 +1,5 @@
 import { useState } from 'react'
+import { BackButton } from '../components/BackButton'
 import ReactMarkdown from 'react-markdown'
 import type { AppSettings } from '../profileTypes'
 import type { useInterviewSession } from '../useInterviewSession'
@@ -43,9 +44,7 @@ export function InterviewScreen({
   return (
     <>
       <header className="mobile-interview-header">
-        <button type="button" className="mobile-interview-icon-btn" aria-label="Back" onClick={session.stopSession}>
-          ←
-        </button>
+        <BackButton onClick={session.stopSession} />
         <div className="mobile-interview-stop-wrap">
           <button type="button" className="mobile-interview-stop-btn" aria-label="Stop" onClick={session.stopSession}>
             <span style={{ width: 14, height: 14, background: '#f87171', borderRadius: 2 }} />

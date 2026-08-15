@@ -1,6 +1,8 @@
 import { useState } from 'react'
 import type { AppSettings } from '../../profileTypes'
 import { CHAT_PROVIDER_ORDER, CHAT_PROVIDERS, providerKeyConfigured } from '../../providerRegistry'
+import { syncChatModels } from '../../modelSync'
+import { ModelSelect } from './ModelSelect'
 
 export function AiProvidersSection({
   settings,
@@ -11,21 +13,18 @@ export function AiProvidersSection({
 }) {
   const [expanded, setExpanded] = useState<Record<string, boolean>>({})
 
-  const toggleExpanded = (id: string) => {
-    setExpanded((prev) => ({ ...prev, [id]: !prev[id] }))
-  }
-
   return (
     <section className="mobile-settings-group">
       <p className="mobile-settings-group-label">AI PROVIDERS</p>
       <p className="mobile-section-hint mobile-settings-intro">
-        Bring your own API keys — same vendors as the desktop app. Keys stay on your device.
+        Chat models for interview answers. Keys stay on your device.
       </p>
 
       <div className="mobile-settings-card">
         <label className="mobile-field">
           <span>Active chat provider</span>
           <select
+            className="mobile-select"
             value={settings.provider}
             onChange={(e) => onChange({ provider: e.target.value as AppSettings['provider'] })}
           >
@@ -39,7 +38,6 @@ export function AiProvidersSection({
               )
             })}
           </select>
-          <span className="mobile-field-hint">Used for interview answer generation.</span>
         </label>
       </div>
 
@@ -52,14 +50,11 @@ export function AiProvidersSection({
           const keySaved = providerKeyConfigured(settings, meta.id)
 
           return (
-            <div
-              key={meta.id}
-              className={`mobile-vendor-card ${isActive ? 'active' : ''}`}
-            >
+            <div key={meta.id} className={`mobile-vendor-card ${isActive ? 'active' : ''}`}>
               <button
                 type="button"
                 className="mobile-vendor-card-head"
-                onClick={() => toggleExpanded(meta.id)}
+                onClick={() => setExpanded((prev) => ({ ...prev, [meta.id]: !isOpen }))}
               >
                 <div className="mobile-vendor-card-title">
                   <span className="mobile-vendor-badge">{meta.badge}</span>
@@ -81,7 +76,7 @@ export function AiProvidersSection({
 
                   {meta.kind === 'anthropic' ? (
                     <p className="mobile-vendor-note">
-                      Claude uses the Anthropic Messages API — not OpenAI-compatible.
+                      Claude uses Anthropic Messages API — not OpenAI-compatible.
                     </p>
                   ) : null}
 
@@ -89,6 +84,7 @@ export function AiProvidersSection({
                     <label className="mobile-field">
                       <span>Base URL</span>
                       <input
+                        className="mobile-input"
                         value={String(settings[meta.baseUrlField] || '')}
                         onChange={(e) =>
                           onChange({ [meta.baseUrlField!]: e.target.value } as Partial<AppSettings>)
@@ -101,6 +97,7 @@ export function AiProvidersSection({
                   <label className="mobile-field">
                     <span>API key</span>
                     <input
+                      className="mobile-input"
                       type="password"
                       value={keyValue}
                       onChange={(e) =>
@@ -112,12 +109,14 @@ export function AiProvidersSection({
 
                   <label className="mobile-field">
                     <span>Model</span>
-                    <input
+                    <ModelSelect
                       value={modelValue}
-                      onChange={(e) =>
-                        onChange({ [meta.modelField]: e.target.value } as Partial<AppSettings>)
-                      }
+                      options={[meta.defaultModel]}
                       placeholder={meta.defaultModel}
+                      onChange={(m) =>
+                        onChange({ [meta.modelField]: m } as Partial<AppSettings>)
+                      }
+                      onSync={() => syncChatModels(meta.id, settings)}
                     />
                   </label>
 

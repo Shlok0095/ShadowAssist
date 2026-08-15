@@ -1,4 +1,5 @@
 import type { ReactNode } from 'react'
+import { BackButton } from './BackButton'
 
 export function ScreenHeader({
   title,
@@ -11,13 +12,7 @@ export function ScreenHeader({
 }) {
   return (
     <header className="mobile-screen-header">
-      {onBack ? (
-        <button type="button" className="mobile-interview-icon-btn" aria-label="Back" onClick={onBack}>
-          ←
-        </button>
-      ) : (
-        <span className="w-9" />
-      )}
+      {onBack ? <BackButton onClick={onBack} /> : <span className="w-9" />}
       <h1 className="mobile-screen-title">{title}</h1>
       <div className="mobile-screen-header-right">{right || <span className="w-9" />}</div>
     </header>

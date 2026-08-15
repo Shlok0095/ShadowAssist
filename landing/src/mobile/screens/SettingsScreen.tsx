@@ -1,4 +1,5 @@
 import type { AppSettings } from '../profileTypes'
+import { ScreenHeader } from '../components/MobileUi'
 import { AiProvidersSection } from './settings/AiProvidersSection'
 import { AudioSettingsSection } from './settings/AudioSettingsSection'
 import { Segmented, Toggle } from './settings/SettingsPrimitives'
@@ -69,11 +70,7 @@ export function SettingsScreen({
 }) {
   return (
     <div className="mobile-screen">
-      <header className="mobile-screen-header">
-        <button type="button" className="mobile-interview-icon-btn" onClick={onBack}>←</button>
-        <h1 className="mobile-screen-title">Settings</h1>
-        <span className="w-9" />
-      </header>
+      <ScreenHeader title="Settings" onBack={onBack} />
 
       <div className="mobile-screen-body">
         <section className="mobile-settings-group">

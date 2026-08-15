@@ -1,5 +1,8 @@
+import { useState } from 'react'
 import type { AppSettings } from '../../profileTypes'
 import { Toggle, Segmented } from './SettingsPrimitives'
+import { ModelSelect } from './ModelSelect'
+import { STT_PROVIDER_META, sttKeyConfigured, sttModelOptions } from '../../sttRegistry'
 
 export function AudioSettingsSection({
   settings,
@@ -8,22 +11,21 @@ export function AudioSettingsSection({
   settings: AppSettings
   onChange: (patch: Partial<AppSettings>) => void
 }) {
+  const [expanded, setExpanded] = useState<Record<string, boolean>>({})
   const cloudStt = settings.sttMode === 'cloud'
-  const sttKeyReady =
-    settings.sttProvider === 'groq' ? settings.groqKey.trim().length > 0 : settings.apiKey.trim().length > 0
 
   return (
     <section className="mobile-settings-group">
       <p className="mobile-settings-group-label">AUDIO</p>
       <p className="mobile-section-hint mobile-settings-intro">
-        Microphone and speech-to-text for live interview transcription on your phone.
+        Microphone capture and cloud speech-to-text (NVIDIA Parakeet, Deepgram, Whisper).
       </p>
 
       <div className="mobile-info-card mobile-audio-note">
         <p className="mobile-info-card-title">Android mic tip</p>
         <ul className="mobile-info-card-list">
-          <li>Only one app can use the mic at a time — use another device for the video call.</li>
-          <li>Hold the phone near you; this app uses the device mic, not call audio.</li>
+          <li>Use another device for the video call — only one app can use the mic.</li>
+          <li>Hold the phone near you; this uses the device mic, not call audio.</li>
         </ul>
       </div>
 
@@ -31,7 +33,7 @@ export function AudioSettingsSection({
         <div className="mobile-settings-row">
           <div className="mobile-settings-row-text">
             <span className="mobile-settings-row-label">Microphone</span>
-            <span className="mobile-settings-row-hint">Turn off to pause listening without ending the session.</span>
+            <span className="mobile-settings-row-hint">Pause listening without ending the session.</span>
           </div>
           <Toggle on={settings.audioEnabled} onChange={(v) => onChange({ audioEnabled: v })} />
         </div>
@@ -39,6 +41,7 @@ export function AudioSettingsSection({
         <label className="mobile-field">
           <span>Listen language</span>
           <select
+            className="mobile-select"
             value={settings.micListenLanguage}
             onChange={(e) =>
               onChange({ micListenLanguage: e.target.value as AppSettings['micListenLanguage'] })
@@ -48,7 +51,6 @@ export function AudioSettingsSection({
             <option value="hi">Hindi</option>
             <option value="en_hi_hinglish">English + Hindi (Hinglish)</option>
           </select>
-          <span className="mobile-field-hint">Used for on-device and cloud speech recognition.</span>
         </label>
 
         <div className="mobile-field">
@@ -61,7 +63,6 @@ export function AudioSettingsSection({
             ]}
             onChange={(v) => onChange({ micSensitivity: v })}
           />
-          <span className="mobile-field-hint">Boost picks up softer speech from farther away.</span>
         </div>
 
         <div className="mobile-field">
@@ -75,46 +76,13 @@ export function AudioSettingsSection({
             onChange={(v) => onChange({ sttMode: v })}
           />
           <span className="mobile-field-hint">
-            On-device uses your phone&apos;s speech engine (free, no key). Cloud uses Groq/OpenAI Whisper (more accurate).
+            On-device is free (phone speech engine). Cloud uses NVIDIA Parakeet, Deepgram, or Whisper.
           </span>
         </div>
-
-        {cloudStt ? (
-          <>
-            <label className="mobile-field">
-              <span>Cloud STT provider</span>
-              <select
-                value={settings.sttProvider}
-                onChange={(e) => onChange({ sttProvider: e.target.value as AppSettings['sttProvider'] })}
-              >
-                <option value="groq">Groq Whisper</option>
-                <option value="openai">OpenAI Whisper</option>
-              </select>
-            </label>
-            {settings.sttProvider === 'groq' ? (
-              <label className="mobile-field">
-                <span>Whisper model</span>
-                <select
-                  value={settings.groqWhisperModel}
-                  onChange={(e) => onChange({ groqWhisperModel: e.target.value })}
-                >
-                  <option value="whisper-large-v3-turbo">Whisper Large v3 Turbo</option>
-                  <option value="whisper-large-v3">Whisper Large v3</option>
-                </select>
-              </label>
-            ) : null}
-            <p className="mobile-field-hint">
-              {sttKeyReady
-                ? `Uses your saved ${settings.sttProvider === 'groq' ? 'Groq' : 'OpenAI'} API key from AI Providers.`
-                : `Add a ${settings.sttProvider === 'groq' ? 'Groq' : 'OpenAI'} key in AI Providers below.`}
-            </p>
-          </>
-        ) : null}
 
         <div className="mobile-settings-row">
           <div className="mobile-settings-row-text">
             <span className="mobile-settings-row-label">Show live transcription</span>
-            <span className="mobile-settings-row-hint">Display the transcript panel during interviews.</span>
           </div>
           <Toggle
             on={settings.showTranscription}
@@ -122,6 +90,117 @@ export function AudioSettingsSection({
           />
         </div>
       </div>
+
+      {cloudStt ? (
+        <>
+          <div className="mobile-settings-card mt-3">
+            <label className="mobile-field">
+              <span>Active cloud STT provider</span>
+              <select
+                className="mobile-select"
+                value={settings.sttProvider}
+                onChange={(e) =>
+                  onChange({ sttProvider: e.target.value as AppSettings['sttProvider'] })
+                }
+              >
+                {STT_PROVIDER_META.map((p) => (
+                  <option key={p.id} value={p.id}>
+                    {p.label}
+                    {sttKeyConfigured(settings, p.id) ? ' ✓' : ''}
+                  </option>
+                ))}
+              </select>
+            </label>
+          </div>
+
+          <div className="mobile-vendor-list">
+            {STT_PROVIDER_META.map((meta) => {
+              const isActive = settings.sttProvider === meta.id
+              const isOpen = expanded[meta.id] ?? isActive
+              const keySaved = sttKeyConfigured(settings, meta.id)
+              const modelField =
+                meta.id === 'nvidia'
+                  ? 'nvidiaWhisperModel'
+                  : meta.id === 'deepgram'
+                    ? 'deepgramModel'
+                    : meta.id === 'groq'
+                      ? 'groqWhisperModel'
+                      : 'selectedModel'
+              const modelValue = String(settings[modelField as keyof AppSettings] || '')
+              const keyField = meta.keyField
+              const keyValue = String(settings[keyField] || '')
+
+              return (
+                <div key={meta.id} className={`mobile-vendor-card ${isActive ? 'active' : ''}`}>
+                  <button
+                    type="button"
+                    className="mobile-vendor-card-head"
+                    onClick={() => setExpanded((prev) => ({ ...prev, [meta.id]: !isOpen }))}
+                  >
+                    <div className="mobile-vendor-card-title">
+                      <span className="mobile-vendor-badge">{meta.badge}</span>
+                      <strong>{meta.label}</strong>
+                      {isActive ? <span className="mobile-vendor-active-tag">Active</span> : null}
+                      {keySaved ? <span className="mobile-vendor-saved">Key saved</span> : null}
+                    </div>
+                    <span className="mobile-vendor-chevron">{isOpen ? '⌃' : '⌄'}</span>
+                  </button>
+
+                  {isOpen ? (
+                    <div className="mobile-vendor-card-body">
+                      <p className="mobile-vendor-desc">{meta.desc}</p>
+                      {meta.docs ? (
+                        <a className="mobile-vendor-docs" href={meta.docs} target="_blank" rel="noreferrer">
+                          Get API key ↗
+                        </a>
+                      ) : null}
+
+                      <label className="mobile-field">
+                        <span>API key</span>
+                        <input
+                          className="mobile-input"
+                          type="password"
+                          value={keyValue}
+                          onChange={(e) =>
+                            onChange({ [keyField]: e.target.value } as Partial<AppSettings>)
+                          }
+                          placeholder={keySaved ? '••••••••' : 'Paste API key'}
+                        />
+                      </label>
+
+                      {meta.id !== 'openai' ? (
+                        <label className="mobile-field">
+                          <span>Model</span>
+                          <ModelSelect
+                            value={modelValue}
+                            options={sttModelOptions(meta.id)}
+                            placeholder={sttModelOptions(meta.id)[0]}
+                            onChange={(m) =>
+                              onChange({ [modelField]: m } as Partial<AppSettings>)
+                            }
+                          />
+                        </label>
+                      ) : (
+                        <p className="mobile-field-hint">Uses fixed model: whisper-1</p>
+                      )}
+
+                      {!isActive ? (
+                        <button
+                          type="button"
+                          className="mobile-vendor-use-btn"
+                          onClick={() => onChange({ sttProvider: meta.id })}
+                        >
+                          Use {meta.label} for transcription
+                        </button>
+                      ) : null}
+                    </div>
+                  ) : null}
+                </div>
+              )
+            })}
+          </div>
+        </>
+      ) : null}
     </section>
   )
 }

@@ -8,6 +8,7 @@ import {
   type WorkExperience,
 } from '../profileTypes'
 import { DraggableList, DragHandle, type ReorderControls } from '../components/DraggableList'
+import { ScreenHeader } from '../components/MobileUi'
 import { extractDocumentText } from '../pdfExtract'
 import { getActiveApiKey } from '../profileStorage'
 import { structureResumeText } from '../resumeParser'
@@ -97,11 +98,7 @@ export function PersonalInfoScreen({
 
   return (
     <div className="mobile-screen">
-      <header className="mobile-screen-header">
-        <button type="button" className="mobile-interview-icon-btn" onClick={onBack}>←</button>
-        <h1 className="mobile-screen-title">Edit Personal Info</h1>
-        <span className="w-9" />
-      </header>
+      <ScreenHeader title="Edit Personal Info" onBack={onBack} />
 
       <div className="mobile-screen-body">
         <input

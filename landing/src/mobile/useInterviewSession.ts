@@ -5,6 +5,7 @@ import type { AppSettings, PersonalProfile } from './profileTypes'
 import { profileIsReady } from './profileTypes'
 import { getActiveApiKey } from './profileStorage'
 import { speechLangFromSettings } from './providerRegistry'
+import { sttKeyConfigured } from './sttRegistry'
 import {
   createSpeechRecognition,
   requestInterviewAnswer,
@@ -257,6 +258,10 @@ export function useInterviewSession(profile: PersonalProfile, settings: AppSetti
     }
     if (!getActiveApiKey(settings)) {
       setError('Add your API key in Settings → AI Providers.')
+      return
+    }
+    if (settings.sttMode === 'cloud' && !sttKeyConfigured(settings, settings.sttProvider)) {
+      setError(`Add your ${settings.sttProvider} API key in Settings → Audio.`)
       return
     }
     setError(null)

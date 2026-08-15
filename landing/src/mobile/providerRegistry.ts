@@ -151,7 +151,7 @@ export const STT_PROVIDERS: Array<{
   { id: 'openai', label: 'OpenAI Whisper', keyField: 'apiKey', fixedModel: 'whisper-1' },
 ]
 
-export const GROQ_WHISPER_MODELS = [
+export const GROQ_WHISPER_MODELS_LEGACY = [
   { id: 'whisper-large-v3-turbo', label: 'Whisper Large v3 Turbo (fast)' },
   { id: 'whisper-large-v3', label: 'Whisper Large v3' },
 ]
@@ -188,16 +188,4 @@ export function speechLangFromSettings(lang: MicListenLanguage): string {
   if (lang === 'hi') return 'hi-IN'
   if (lang === 'en_hi_hinglish') return 'en-IN'
   return 'en-US'
-}
-
-export function getSttApiKey(settings: AppSettings): string {
-  if (settings.sttProvider === 'groq') return settings.groqKey.trim()
-  return settings.apiKey.trim()
-}
-
-export function getSttModel(settings: AppSettings): string {
-  if (settings.sttProvider === 'groq') {
-    return settings.groqWhisperModel.trim() || 'whisper-large-v3-turbo'
-  }
-  return 'whisper-1'
 }
