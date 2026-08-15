@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useState } from 'react'
 import { getActiveApiKey, loadAppSettings, loadProfile, saveAppSettings, saveProfile } from './profileStorage'
 import { profileIsReady, type AppSettings, type PersonalProfile } from './profileTypes'
+import { sttKeyConfigured } from './sttRegistry'
 import { useInterviewSession } from './useInterviewSession'
 import { HomeScreen } from './screens/HomeScreen'
 import { SettingsScreen } from './screens/SettingsScreen'
@@ -108,6 +109,7 @@ export default function MobileInterviewApp() {
       <HomeScreen
         profileReady={profileIsReady(profile)}
         hasApiKey={!!getActiveApiKey(settings)}
+        hasSttKey={settings.sttMode !== 'cloud' || sttKeyConfigured(settings, settings.sttProvider)}
         onOpenSettings={() => setScreen('settings')}
         onStart={session.startSession}
       />

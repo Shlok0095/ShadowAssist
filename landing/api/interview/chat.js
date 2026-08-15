@@ -265,7 +265,23 @@ export default async function handler(req, res) {
     }
 
     if (/nemotron/i.test(model)) {
-      payload.chat_template_kwargs = { enable_thinking: false }
+      payload.chat_template_kwargs = { enable_thinking: think }
+      if (!think) {
+        const systemIndex = messages.findIndex((m) => m.role === 'system')
+        if (systemIndex >= 0 && !messages[systemIndex].content.includes('/no_think')) {
+          messages[systemIndex] = {
+            ...messages[systemIndex],
+            content: `/no_think\n${messages[systemIndex].content}`,
+          }
+        } else if (systemIndex < 0) {
+          messages.unshift({ role: 'system', content: '/no_think' })
+        }
+        payload.messages = messages
+      }
+    }
+
+    if (think && /reasoner/i.test(model)) {
+      payload.temperature = 0.6
     }
 
     if (providerCfg.kind === 'anthropic') {

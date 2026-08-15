@@ -1,4 +1,4 @@
-import { useCallback, useRef, useState } from 'react'
+import { useCallback, useEffect, useRef, useState } from 'react'
 import {
   mergeCvIntoProfile,
   type AppSettings,
@@ -31,6 +31,8 @@ export function PersonalInfoScreen({
 }) {
   const fileRef = useRef<HTMLInputElement>(null)
   const [local, setLocal] = useState(profile)
+  const localRef = useRef(local)
+  localRef.current = local
   const [uploading, setUploading] = useState(false)
   const [uploadError, setUploadError] = useState<string | null>(null)
   const [uploadNote, setUploadNote] = useState<string | null>(null)
@@ -54,6 +56,13 @@ export function PersonalInfoScreen({
     },
     [commitProfile],
   )
+
+  useEffect(() => {
+    return () => {
+      if (saveTimer.current) clearTimeout(saveTimer.current)
+      commitProfile(localRef.current)
+    }
+  }, [commitProfile])
 
   const hasApiKey = !!getActiveApiKey(settings)
 

@@ -19,4 +19,10 @@ for (const name of ['logo.png', 'favicon.png', 'manifest.webmanifest']) {
   if (fs.existsSync(src)) fs.copyFileSync(src, dest)
 }
 
+// Never bundle the marketing APK inside the Capacitor web assets.
+const downloadsDir = path.join(dir, 'downloads')
+if (fs.existsSync(downloadsDir)) fs.rmSync(downloadsDir, { recursive: true, force: true })
+const strayApk = path.join(dir, 'VeilAssist-Interview.apk')
+if (fs.existsSync(strayApk)) fs.unlinkSync(strayApk)
+
 console.log('[prepare-mobile-dist] dist-mobile/index.html ready for Capacitor')

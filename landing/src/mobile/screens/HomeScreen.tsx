@@ -5,11 +5,13 @@ export function HomeScreen({
   onOpenSettings,
   profileReady,
   hasApiKey,
+  hasSttKey,
 }: {
   onStart: () => void
   onOpenSettings: () => void
   profileReady: boolean
   hasApiKey: boolean
+  hasSttKey: boolean
 }) {
   return (
     <div className="mobile-home">
@@ -36,7 +38,7 @@ export function HomeScreen({
           type="button"
           className="mobile-start-btn"
           onClick={onStart}
-          disabled={!profileReady || !hasApiKey}
+          disabled={!profileReady || !hasApiKey || !hasSttKey}
         >
           <span className="mobile-start-icon">▶</span>
           Start Interview
@@ -46,6 +48,9 @@ export function HomeScreen({
         ) : null}
         {!hasApiKey ? (
           <p className="mobile-home-hint">Add your API key in Settings → AI Provider.</p>
+        ) : null}
+        {!hasSttKey ? (
+          <p className="mobile-home-hint">Add your cloud STT API key in Settings → Audio.</p>
         ) : null}
       </div>
     </div>

@@ -30,7 +30,7 @@ export const STT_PROVIDER_META: Array<{
     id: 'deepgram',
     label: 'Deepgram',
     badge: 'NOVA',
-    desc: 'Nova streaming-quality REST transcription.',
+    desc: 'Nova-3 — sub-300ms streaming latency; fastest REST model for live chunks.',
     keyField: 'deepgramKey',
     docs: 'https://console.deepgram.com/',
   },
@@ -53,15 +53,32 @@ export const STT_PROVIDER_META: Array<{
 ]
 
 const WHISPER_PRIMERS: Record<MicListenLanguage, string> = {
-  en: 'Okay, so let me think about this. The question is asking about...',
+  en: 'English interview speech with international accents. Question about experience and skills.',
   hi: 'ठीक है, तो इस सवाल का जवाब देते हैं।',
-  en_hi_hinglish: 'Okay so yaar, is question ka answer kya hoga? Let me think...',
+  en_hi_hinglish: 'English and Hindi mixed interview speech. Question about experience.',
 }
 
 export function nvidiaLanguageCode(lang: MicListenLanguage): string {
-  if (lang === 'en') return 'en-US'
+  // `multi` handles English with international accents better than en-US
+  if (lang === 'en' || lang === 'en_hi_hinglish') return 'multi'
   if (lang === 'hi') return 'hi-IN'
   return 'multi'
+}
+
+export function deepgramQueryParams(settings: AppSettings): URLSearchParams {
+  const model = getSttModel(settings)
+  const lang = settings.micListenLanguage
+  const language =
+    lang === 'hi' ? 'hi' : lang === 'en_hi_hinglish' ? 'multi' : 'en'
+  const params = new URLSearchParams({
+    model,
+    language,
+    punctuate: 'true',
+    // smart_format adds REST latency; punctuate alone is enough for interviews.
+    smart_format: 'false',
+    filler_words: 'false',
+  })
+  return params
 }
 
 export function whisperLangParams(lang: MicListenLanguage): {
@@ -87,10 +104,10 @@ export function getSttModel(settings: AppSettings): string {
     return settings.nvidiaWhisperModel.trim() || NVIDIA_PARAKEET_MODELS[0]
   }
   if (settings.sttProvider === 'deepgram') {
-    return settings.deepgramModel.trim() || 'nova-2'
+    return settings.deepgramModel.trim() || 'nova-3'
   }
   if (settings.sttProvider === 'groq') {
-    return settings.groqWhisperModel.trim() || 'whisper-large-v3'
+    return settings.groqWhisperModel.trim() || 'whisper-large-v3-turbo'
   }
   return 'whisper-1'
 }

@@ -1,9 +1,11 @@
 import type { AppSettings } from './profileTypes'
 import { blobToWav16k } from './audioConvert'
 import {
+  deepgramQueryParams,
   getSttApiKey,
   getSttModel,
   nvidiaLanguageCode,
+  NVIDIA_NIM_FUNCTION_ID,
   whisperLangParams,
 } from './sttRegistry'
 
@@ -25,29 +27,12 @@ async function parseTranscriptResponse(res: Response): Promise<string> {
   }
 }
 
-async function transcribeNvidia(settings: AppSettings, wavBlob: Blob): Promise<string> {
-  const apiKey = getSttApiKey(settings, 'nvidia')
-  if (!apiKey) throw new Error('Add NVIDIA API key in Audio → NVIDIA Parakeet.')
-
-  const form = new FormData()
-  form.append('file', wavBlob, 'audio.wav')
-  form.append('model', getSttModel(settings))
-  form.append('language', nvidiaLanguageCode(settings.micListenLanguage))
-  form.append('response_format', 'json')
-
-  const res = await fetch('https://integrate.api.nvidia.com/v1/audio/transcriptions', {
-    method: 'POST',
-    headers: { Authorization: `Bearer ${apiKey}` },
-    body: form,
-  })
-
-  if (res.ok) return await parseTranscriptResponse(res)
-
-  // Fallback: server proxy when direct REST fails (CORS or gateway)
+async function transcribeNvidiaProxy(settings: AppSettings, wavBlob: Blob, apiKey: string): Promise<string> {
   const arr = new Uint8Array(await wavBlob.arrayBuffer())
   let binary = ''
   for (let i = 0; i < arr.length; i += 1) binary += String.fromCharCode(arr[i])
   const audioBase64 = btoa(binary)
+  const functionId = settings.nvidiaNimFunctionId?.trim() || NVIDIA_NIM_FUNCTION_ID
 
   const proxyRes = await fetch(TRANSCRIBE_PROXY, {
     method: 'POST',
@@ -57,30 +42,56 @@ async function transcribeNvidia(settings: AppSettings, wavBlob: Blob): Promise<s
       apiKey,
       model: getSttModel(settings),
       language: nvidiaLanguageCode(settings.micListenLanguage),
-      functionId: settings.nvidiaNimFunctionId,
+      functionId,
       audioBase64,
     }),
   })
   return await parseTranscriptResponse(proxyRes)
 }
 
-async function transcribeDeepgram(settings: AppSettings, wavBlob: Blob): Promise<string> {
+async function transcribeNvidia(settings: AppSettings, wavBlob: Blob): Promise<string> {
+  const apiKey = getSttApiKey(settings, 'nvidia')
+  if (!apiKey) throw new Error('Add NVIDIA API key in Audio → NVIDIA Parakeet.')
+
+  // Parakeet ASR uses NVCF — not the generic OpenAI REST route on integrate.api.nvidia.com.
+  if (import.meta.env.VITE_MOBILE_APK) {
+    return transcribeNvidiaProxy(settings, wavBlob, apiKey)
+  }
+
+  const form = new FormData()
+  form.append('file', wavBlob, 'audio.wav')
+  form.append('model', getSttModel(settings))
+  form.append('language', nvidiaLanguageCode(settings.micListenLanguage))
+  form.append('response_format', 'json')
+
+  const functionId = settings.nvidiaNimFunctionId?.trim() || NVIDIA_NIM_FUNCTION_ID
+
+  const res = await fetch('https://integrate.api.nvidia.com/v1/audio/transcriptions', {
+    method: 'POST',
+    headers: {
+      Authorization: `Bearer ${apiKey}`,
+      'NVCF-Function-Id': functionId,
+    },
+    body: form,
+  })
+
+  if (res.ok) return await parseTranscriptResponse(res)
+  return transcribeNvidiaProxy(settings, wavBlob, apiKey)
+}
+
+async function transcribeDeepgram(settings: AppSettings, audioBlob: Blob): Promise<string> {
   const apiKey = getSttApiKey(settings, 'deepgram')
   if (!apiKey) throw new Error('Add Deepgram API key in Audio → Deepgram.')
 
-  const model = getSttModel(settings)
-  const params = new URLSearchParams({
-    model,
-    punctuate: 'true',
-    smart_format: 'true',
-  })
+  const params = deepgramQueryParams(settings)
+  const contentType = audioBlob.type || 'audio/wav'
   const res = await fetch(`https://api.deepgram.com/v1/listen?${params}`, {
     method: 'POST',
     headers: {
       Authorization: `Token ${apiKey}`,
-      'Content-Type': 'audio/wav',
+      'Content-Type': contentType,
     },
-    body: wavBlob,
+    body: audioBlob,
   })
   const text = await res.text()
   if (!res.ok) throw new Error(`Deepgram failed (${res.status}): ${text.slice(0, 200)}`)
@@ -124,10 +135,14 @@ export async function transcribeAudioBlob(settings: AppSettings, blob: Blob): Pr
     const wav = await blobToWav16k(blob)
     return transcribeWhisper(settings, wav, 'https://api.openai.com/v1', 'openai')
   }
+  if (provider === 'deepgram') {
+    const audio =
+      blob.type.includes('webm') || blob.type.includes('ogg') ? blob : await blobToWav16k(blob)
+    return transcribeDeepgram(settings, audio)
+  }
 
   const wav = await blobToWav16k(blob)
   if (provider === 'nvidia') return transcribeNvidia(settings, wav)
-  if (provider === 'deepgram') return transcribeDeepgram(settings, wav)
 
   throw new Error('Unknown STT provider')
 }

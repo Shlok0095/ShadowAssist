@@ -3,6 +3,7 @@ import { DEFAULT_PROFILE } from './profileTypes'
 import { getActiveApiKey, getActiveModel } from './profileStorage'
 
 import { getChatBaseUrl } from './providerRegistry'
+import { applyNemotronReasoning, nvidiaChatHeaders } from './nvidiaChatHelpers'
 
 const CV_SYSTEM_PROMPT = `You extract resume/CV text into structured JSON for an interview assistant.
 Return ONLY valid JSON (no markdown fences) matching this schema:
@@ -96,10 +97,15 @@ async function structureCvDirect(
 
   const payload: Record<string, unknown> = {
     model,
-    messages: [
-      { role: 'system', content: CV_SYSTEM_PROMPT },
-      { role: 'user', content: `Extract structured profile from this CV/resume text:\n\n${clipped}` },
-    ],
+    messages: applyNemotronReasoning(
+      [
+        { role: 'system', content: CV_SYSTEM_PROMPT },
+        { role: 'user', content: `Extract structured profile from this CV/resume text:\n\n${clipped}` },
+      ],
+      base,
+      model,
+      false,
+    ),
     max_tokens: 4000,
     temperature: 0,
     top_p: 0.7,
@@ -110,18 +116,24 @@ async function structureCvDirect(
     payload.chat_template_kwargs = { enable_thinking: false }
   }
 
-  if (settings.provider === 'openai' || settings.provider === 'groq') {
+  if (settings.provider === 'openai' || settings.provider === 'groq' || settings.provider === 'nvidia') {
     payload.response_format = { type: 'json_object' }
   }
 
-  const res = await fetch(`${base}/chat/completions`, {
-    method: 'POST',
-    headers: {
-      Authorization: `Bearer ${apiKey}`,
-      'Content-Type': 'application/json',
-    },
-    body: JSON.stringify(payload),
-  })
+  let res: Response
+  try {
+    res = await fetch(`${base}/chat/completions`, {
+      method: 'POST',
+      headers: nvidiaChatHeaders(apiKey),
+      body: JSON.stringify(payload),
+    })
+  } catch (e) {
+    const msg = e instanceof Error ? e.message : String(e)
+    if (/failed to fetch|network|load/i.test(msg)) {
+      throw new Error(`Could not reach ${settings.provider} API for CV extraction. Check connection and API key.`)
+    }
+    throw e
+  }
 
   const text = await res.text()
   if (!res.ok) {

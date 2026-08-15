@@ -127,7 +127,7 @@ export const DEFAULT_APP_SETTINGS: AppSettings = {
   deepseekKey: '',
   customOpenaiKey: '',
   customOpenaiBaseUrl: '',
-  nvidiaModel: 'nvidia/nemotron-nano-12b-v2-vl',
+  nvidiaModel: 'nvidia/llama-3.1-nemotron-nano-vl-8b-v1',
   groqModel: 'llama-3.3-70b-versatile',
   selectedModel: 'gpt-4o-mini',
   openrouterModel: 'nvidia/nemotron-nano-12b-v2-vl:free',
@@ -138,13 +138,13 @@ export const DEFAULT_APP_SETTINGS: AppSettings = {
   audioEnabled: true,
   micSensitivity: 'standard',
   micListenLanguage: 'en',
-  sttMode: 'device',
+  sttMode: 'cloud',
   sttProvider: 'nvidia',
-  groqWhisperModel: 'whisper-large-v3',
+  groqWhisperModel: 'whisper-large-v3-turbo',
   nvidiaWhisperModel: 'nvidia/parakeet-1.1b-rnnt-multilingual-asr',
   nvidiaNimFunctionId: '71203149-d3b7-4460-8231-1be2543a1fca',
   deepgramKey: '',
-  deepgramModel: 'nova-2',
+  deepgramModel: 'nova-3',
 }
 
 export function profileIsReady(profile: PersonalProfile): boolean {
@@ -152,8 +152,9 @@ export function profileIsReady(profile: PersonalProfile): boolean {
   const hasExperience = profile.experience.some(
     (e) => e.title.trim() || e.company.trim() || e.bullets.trim(),
   )
+  const hasSkills = profile.skills.length >= 3
   const hasRaw = (profile.rawText || '').trim().length > 80
-  return hasSummary || hasExperience || hasRaw
+  return hasSummary || hasExperience || hasSkills || hasRaw
 }
 
 /** Apply CV extraction — updates resume fields only; keeps manual-only fields. */

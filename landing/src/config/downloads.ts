@@ -172,7 +172,7 @@ export async function fetchChannel(owner: string, repo: string, tag: string): Pr
 }
 
 /** Site-hosted interview APK (Capacitor build) — fresher than stale GitHub release assets. */
-export const SITE_ANDROID_APK_SIZE = 92514136
+export const SITE_ANDROID_APK_SIZE = 92469807
 
 export function applySiteAndroidApk(channel: ReleaseChannel): ReleaseChannel {
   return {

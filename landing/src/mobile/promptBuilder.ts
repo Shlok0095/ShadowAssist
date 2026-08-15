@@ -129,7 +129,12 @@ export function buildChatPayload(input: {
   }
 
   if (/nemotron/i.test(input.model)) {
-    payload.chat_template_kwargs = { enable_thinking: false }
+    payload.chat_template_kwargs = { enable_thinking: input.think }
+  }
+
+  // DeepSeek reasoner only when Think is active
+  if (input.think && /reasoner/i.test(input.model)) {
+    payload.temperature = 0.6
   }
 
   return { payload, route, systemPrompt }

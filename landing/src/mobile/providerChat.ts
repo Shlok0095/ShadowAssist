@@ -3,6 +3,7 @@ import { profileToContextText } from './profileTypes'
 import { getActiveApiKey, getActiveModel } from './profileStorage'
 import { buildChatPayload } from './promptBuilder'
 import { getChatBaseUrl, getChatProviderMeta } from './providerRegistry'
+import { applyNemotronReasoning, nvidiaChatHeaders } from './nvidiaChatHelpers'
 
 /** Direct provider call — same as desktop app (no Vercel proxy / no CORS issues in APK). */
 export async function requestInterviewAnswerDirect(params: {
@@ -36,19 +37,36 @@ export async function requestInterviewAnswerDirect(params: {
 
   const base = getChatBaseUrl(params.settings, params.settings.provider)
   const headers: Record<string, string> = {
-    Authorization: `Bearer ${apiKey}`,
-    'Content-Type': 'application/json',
+    ...nvidiaChatHeaders(apiKey),
   }
   if (params.settings.provider === 'openrouter') {
     headers['HTTP-Referer'] = 'https://veilassist.vercel.app'
     headers['X-Title'] = 'VeilAssist Interview'
   }
 
-  const res = await fetch(`${base}/chat/completions`, {
-    method: 'POST',
-    headers,
-    body: JSON.stringify(payload),
-  })
+  const messages = applyNemotronReasoning(
+    payload.messages as Array<{ role: string; content: string }>,
+    base,
+    model,
+    params.think,
+  )
+
+  let res: Response
+  try {
+    res = await fetch(`${base}/chat/completions`, {
+      method: 'POST',
+      headers,
+      body: JSON.stringify({ ...payload, messages }),
+    })
+  } catch (e) {
+    const msg = e instanceof Error ? e.message : String(e)
+    if (/failed to fetch|network|load/i.test(msg)) {
+      throw new Error(
+        `Could not reach ${params.settings.provider} API. Check internet connection and API key.`,
+      )
+    }
+    throw e
+  }
 
   const text = await res.text()
   if (!res.ok) {

@@ -2,8 +2,9 @@
 export const CHAT_MODEL_CATALOG: Record<string, string[]> = {
   groq: ['llama-3.3-70b-versatile', 'qwen/qwen3.6-27b', 'meta-llama/llama-4-scout-17b-16e-instruct'],
   nvidia: [
-    'nvidia/nemotron-nano-12b-v2-vl',
     'nvidia/llama-3.1-nemotron-nano-vl-8b-v1',
+    'nvidia/nemotron-mini-4b-instruct',
+    'nvidia/nemotron-nano-12b-v2-vl',
     'meta/llama-3.2-11b-vision-instruct',
     'meta/llama-4-scout-17b-16e-instruct',
   ],
@@ -23,7 +24,13 @@ export const CHAT_MODEL_CATALOG: Record<string, string[]> = {
   custom: ['gpt-4o', 'gpt-4o-mini'],
 }
 
-export const DEEPGRAM_MODELS = ['nova-2', 'nova-3', 'enhanced', 'base']
+export const DEEPGRAM_MODELS = [
+  'nova-3',
+  'nova-3-general',
+  'nova-2-conversationalai',
+  'nova-2-general',
+  'nova-2',
+]
 export const GROQ_WHISPER_MODELS = ['whisper-large-v3', 'whisper-large-v3-turbo']
 export const NVIDIA_PARAKEET_MODELS = [
   'nvidia/parakeet-1.1b-rnnt-multilingual-asr',

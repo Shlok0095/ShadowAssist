@@ -1,29 +1,11 @@
-import { useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { BackButton } from '../components/BackButton'
 import ReactMarkdown from 'react-markdown'
 import type { AppSettings } from '../profileTypes'
 import type { useInterviewSession } from '../useInterviewSession'
+import { SettingToggleRow, SESSION_SETTING_ICONS } from './settings/SettingsPrimitives'
 
 type Session = ReturnType<typeof useInterviewSession>
-
-function Toggle({
-  on,
-  onChange,
-}: {
-  on: boolean
-  onChange: (v: boolean) => void
-}) {
-  return (
-    <button
-      type="button"
-      className={`mobile-interview-toggle ${on ? 'on' : ''}`}
-      aria-pressed={on}
-      onClick={() => onChange(!on)}
-    >
-      <span className="mobile-interview-toggle-knob" />
-    </button>
-  )
-}
 
 export function InterviewScreen({
   session,
@@ -38,8 +20,14 @@ export function InterviewScreen({
 }) {
   const [typed, setTyped] = useState('')
   const [settingsOpen, setSettingsOpen] = useState(false)
+  const transcriptEndRef = useRef<HTMLDivElement | null>(null)
 
   const showTranscriptPanel = settings.showTranscription
+
+  useEffect(() => {
+    if (!settings.autoScroll || !showTranscriptPanel) return
+    transcriptEndRef.current?.scrollIntoView({ behavior: 'smooth', block: 'end' })
+  }, [session.transcript, settings.autoScroll, showTranscriptPanel])
 
   return (
     <>
@@ -63,19 +51,37 @@ export function InterviewScreen({
 
       {settingsOpen ? (
         <div className="mobile-interview-settings-pop">
-          <div className="mobile-settings-row">
-            <span>Show Transcription</span>
-            <Toggle
-              on={settings.showTranscription}
-              onChange={(v) => onPatchSettings({ showTranscription: v })}
-            />
+          <SettingToggleRow
+            icon={SESSION_SETTING_ICONS.transcription}
+            label="Show Transcription"
+            on={settings.showTranscription}
+            onChange={(v) => onPatchSettings({ showTranscription: v })}
+          />
+          <SettingToggleRow
+            icon={SESSION_SETTING_ICONS.autoScroll}
+            label="Auto-scroll"
+            on={settings.autoScroll}
+            onChange={(v) => onPatchSettings({ autoScroll: v })}
+          />
+          <SettingToggleRow
+            icon={SESSION_SETTING_ICONS.autoAnswer}
+            label="Auto-answer questions"
+            on={settings.autoAnswer}
+            onChange={(v) => onPatchSettings({ autoAnswer: v })}
+          />
+          <div className="mobile-interview-settings-pop-actions">
+            <button type="button" className="mobile-interview-settings-link" onClick={onOpenSettings}>
+              Open full settings
+            </button>
+            <button
+              type="button"
+              className="mobile-interview-settings-close"
+              aria-label="Close"
+              onClick={() => setSettingsOpen(false)}
+            >
+              ✕
+            </button>
           </div>
-          <button type="button" className="mt-2 text-xs text-blue-400" onClick={onOpenSettings}>
-            Open full settings →
-          </button>
-          <button type="button" className="mt-2 text-xs text-white/40" onClick={() => setSettingsOpen(false)}>
-            Close ✕
-          </button>
         </div>
       ) : null}
 
@@ -92,11 +98,11 @@ export function InterviewScreen({
         {session.starting ? (
           <div className="mobile-interview-generating">
             <span className="mobile-interview-spinner" />
-            Starting…
+            {session.startingMessage || 'Starting…'}
           </div>
         ) : null}
 
-        {!session.answer && !session.isGenerating ? (
+        {!session.answer && !session.isGenerating && !session.starting ? (
           <div>
             <h2 className="mobile-interview-hero-title">Ready to assist</h2>
             <p className="mobile-interview-hero-sub">
@@ -124,10 +130,13 @@ export function InterviewScreen({
         <div className="mobile-interview-transcript-card" style={{ margin: '0 16px 8px' }}>
           <div className="mobile-interview-transcript-head">
             <span>🎤 Transcription</span>
-            <span>⌃</span>
+            <span className="mobile-interview-transcript-status">
+              {session.listeningStatus || ''}
+            </span>
           </div>
           <div className="mobile-interview-transcript-body">
             {session.transcript || 'Transcription will appear here…'}
+            <div ref={transcriptEndRef} />
           </div>
         </div>
       ) : null}

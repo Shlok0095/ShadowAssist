@@ -7,8 +7,12 @@
     "VITE_SITE_ORIGIN": "https://veilassist.vercel.app",
     "VITE_ROLLING_TAG": "latest"
   },
+  "functions": {
+    "api/**/*.js": {
+      "maxDuration": 60
+    }
+  },
   "rewrites": [
-    { "source": "/api/(.*)", "destination": "/api/$1" },
     { "source": "/((?!api/).*)", "destination": "/index.html" }
   ],
   "headers": [

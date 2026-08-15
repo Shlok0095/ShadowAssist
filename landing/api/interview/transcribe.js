@@ -1,4 +1,5 @@
 import { handleCorsPreflight } from './_cors.js'
+import { transcribeWavGrpc } from '../nvidia-parakeet-grpc.js'
 
 const DEFAULT_FUNCTION_ID = '71203149-d3b7-4460-8231-1be2543a1fca'
 
@@ -30,41 +31,17 @@ export default async function handler(req, res) {
     }
 
     const audioBuf = Buffer.from(audioBase64, 'base64')
-    const model =
-      String(body.model || '').trim() || 'nvidia/parakeet-1.1b-rnnt-multilingual-asr'
     const language = String(body.language || 'multi').trim()
     const functionId = String(body.functionId || DEFAULT_FUNCTION_ID).trim()
 
-    const form = new FormData()
-    form.append('file', new Blob([audioBuf], { type: 'audio/wav' }), 'audio.wav')
-    form.append('model', model)
-    form.append('language', language)
-    form.append('response_format', 'json')
-
-    const restRes = await fetch('https://integrate.api.nvidia.com/v1/audio/transcriptions', {
-      method: 'POST',
-      headers: {
-        Authorization: `Bearer ${apiKey}`,
-        'NVCF-Function-Id': functionId,
-      },
-      body: form,
+    const text = await transcribeWavGrpc({
+      wavBuffer: audioBuf,
+      apiKey,
+      languageCode: language,
+      functionId,
     })
 
-    const text = await restRes.text()
-    if (restRes.ok) {
-      try {
-        const json = JSON.parse(text)
-        res.status(200).json({ text: String(json.text || '').trim() })
-      } catch {
-        res.status(200).json({ text: text.trim() })
-      }
-      return
-    }
-
-    res.status(restRes.status).json({
-      error: `NVIDIA transcription failed (${restRes.status})`,
-      detail: text.slice(0, 300),
-    })
+    res.status(200).json({ text })
   } catch (err) {
     res.status(500).json({ error: err?.message || 'Transcription failed' })
   }
