@@ -9,6 +9,7 @@ const config: CapacitorConfig = {
   },
   android: {
     allowMixedContent: true,
+    backgroundColor: '#0c0c0d',
   },
   plugins: {
     // Keep disabled: global fetch/XHR patch buffers the full response and breaks SSE streaming.

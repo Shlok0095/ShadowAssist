@@ -6,7 +6,8 @@ import {
   type Project,
   type WorkExperience,
 } from '../profileTypes'
-import { DraggableList, DragHandle, type ReorderControls } from '../components/DraggableList'
+import { DraggableList, type ReorderControls } from '../components/DraggableList'
+import { ExpandableProfileCard, FilledField } from '../components/ExpandableProfileCard'
 import { ScreenHeader } from '../components/MobileUi'
 import { extractDocumentText } from '../pdfExtract'
 import { getActiveApiKey, loadAppSettings } from '../profileStorage'
@@ -33,7 +34,6 @@ export function PersonalInfoScreen({
   localRef.current = local
   const [uploading, setUploading] = useState(false)
   const [uploadError, setUploadError] = useState<string | null>(null)
-  const [uploadNote, setUploadNote] = useState<string | null>(null)
   const saveTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
 
   const commitProfile = useCallback(
@@ -69,42 +69,34 @@ export function PersonalInfoScreen({
     }
     setUploading(true)
     setUploadError(null)
-    setUploadNote(null)
     try {
       const text = await extractDocumentText(file)
       let structured: PersonalProfile
-      let note: string
 
       const freshSettings = loadAppSettings()
       if (resolveNvidiaCvCredentials(freshSettings) || getActiveApiKey(freshSettings)) {
-        setUploadNote('Extracting with AI…')
         try {
           structured = await structureCvWithLlm(text, freshSettings, file.name)
-          note = 'CV imported with AI extraction.'
         } catch (llmErr) {
-          const detail = llmErr instanceof Error ? llmErr.message : 'AI extraction failed'
           console.warn('[cv]', llmErr)
           structured = structureResumeText(text, file.name)
-          note = `AI extraction failed — used basic parser. (${detail})`
         }
       } else {
         structured = structureResumeText(text, file.name)
-        note = 'CV imported. Add an API key in Settings → AI Providers for AI extraction.'
       }
 
       const merged = mergeCvIntoProfile(local, structured)
       setLocal(merged)
       commitProfile(merged)
-      setUploadNote(note)
     } catch (e) {
-      setUploadError(e instanceof Error ? e.message : 'Upload failed')
+      setUploadError(e instanceof Error ? e.message : 'Could not read that file')
     } finally {
       setUploading(false)
     }
   }
 
   return (
-    <div className="mobile-screen">
+    <div className={`mobile-screen${uploading ? ' is-frozen' : ''}`} aria-busy={uploading}>
       <ScreenHeader title="Edit Personal Info" onBack={onBack} />
 
       <div className="mobile-screen-body">
@@ -119,33 +111,59 @@ export function PersonalInfoScreen({
             e.target.value = ''
           }}
         />
-        <button
-          type="button"
-          className="mobile-upload-btn"
-          disabled={uploading}
-          onClick={() => fileRef.current?.click()}
-        >
-          📄 {uploading ? 'Parsing CV…' : 'Upload CV to auto-fill'}
-        </button>
+        <div className="mobile-upload-wrap">
+          <button
+            type="button"
+            className={`mobile-upload-btn${uploading ? ' is-busy' : ''}`}
+            disabled={uploading}
+            aria-label={uploading ? 'Uploading resume' : 'Upload resume'}
+            onClick={() => fileRef.current?.click()}
+          >
+            {uploading ? (
+              <span className="mobile-interview-spinner" aria-hidden />
+            ) : (
+              <>
+                <span className="mobile-upload-btn-icon" aria-hidden>
+                  <svg width="20" height="20" viewBox="0 0 24 24" fill="none">
+                    <path
+                      d="M12 16V5M12 5l-4 4M12 5l4 4"
+                      stroke="currentColor"
+                      strokeWidth="1.8"
+                      strokeLinecap="round"
+                      strokeLinejoin="round"
+                    />
+                    <path
+                      d="M5 19h14"
+                      stroke="currentColor"
+                      strokeWidth="1.8"
+                      strokeLinecap="round"
+                    />
+                  </svg>
+                </span>
+                <span className="mobile-upload-btn-label">Upload resume</span>
+              </>
+            )}
+          </button>
+        </div>
         <p className="mobile-upload-hint">PDF only, max 10MB</p>
-        {uploadNote ? <p className="mobile-upload-note">{uploadNote}</p> : null}
         {uploadError ? <p className="mobile-interview-error">{uploadError}</p> : null}
 
         <h2 className="mobile-section-title">Basic Info</h2>
-        <label className="mobile-field block">
-          <span>Name</span>
-          <input value={local.name} onChange={(e) => patch({ name: e.target.value })} />
-        </label>
-        <label className="mobile-field block">
-          <span>Professional Summary</span>
-          <textarea
-            rows={5}
+        <div className="mobile-settings-card mobile-info-stack">
+          <FilledField label="Name" value={local.name} onChange={(name) => patch({ name })} />
+          <FilledField
+            label="Professional Summary"
             value={local.summary}
-            onChange={(e) => patch({ summary: e.target.value })}
+            onChange={(summary) => patch({ summary })}
+            multiline
+            rows={5}
           />
-        </label>
+        </div>
 
         <h2 className="mobile-section-title">Work Experience</h2>
+        <p className="mobile-section-hint">
+          Show your relevant experience. Use bullet points with numbers and facts — e.g. “Increased sales by 30%”.
+        </p>
         <DraggableList
           items={local.experience}
           onReorder={(experience) => patch({ experience })}
@@ -288,22 +306,16 @@ export function PersonalInfoScreen({
         </button>
 
         <h2 className="mobile-section-title">Extra Context</h2>
-        <textarea
-          className="mobile-textarea"
-          rows={4}
-          value={local.extraContext}
-          onChange={(e) => patch({ extraContext: e.target.value })}
-          placeholder="e.g., I'm transitioning from backend to frontend development…"
-        />
-
-        <h2 className="mobile-section-title">Job Description</h2>
-        <textarea
-          className="mobile-textarea"
-          rows={4}
-          value={local.jobDescription}
-          onChange={(e) => patch({ jobDescription: e.target.value })}
-          placeholder="Paste the role JD for fit questions…"
-        />
+        <div className="mobile-settings-card mobile-info-stack">
+          <FilledField
+            label="Extra context"
+            value={local.extraContext}
+            onChange={(extraContext) => patch({ extraContext })}
+            multiline
+            rows={4}
+            placeholder="e.g., I'm transitioning from backend to frontend development…"
+          />
+        </div>
       </div>
     </div>
   )
@@ -323,40 +335,32 @@ function ExperienceCard({
   const [open, setOpen] = useState(false)
   const headline = [exp.title, exp.company].filter(Boolean).join(' at ') || 'Experience'
   return (
-    <div {...controls.cardProps}>
-      <div className="mobile-list-card-head">
-        <DragHandle controls={controls} />
-        <button type="button" className="mobile-list-card-head-main" onClick={() => setOpen((o) => !o)}>
-          <div className="mobile-list-card-title">
-            <strong>{headline}</strong>
-            {exp.dateRange ? <span>{exp.dateRange}</span> : null}
-          </div>
-          <span>{open ? '⌃' : '⌄'}</span>
-        </button>
-      </div>
-      {open ? (
-        <div className="mobile-list-card-body">
-          <input placeholder="Title" value={exp.title} onChange={(e) => onChange({ ...exp, title: e.target.value })} />
-          <input
-            placeholder="Company"
-            value={exp.company}
-            onChange={(e) => onChange({ ...exp, company: e.target.value })}
-          />
-          <input
-            placeholder="Jun 2025 – Present"
-            value={exp.dateRange}
-            onChange={(e) => onChange({ ...exp, dateRange: e.target.value })}
-          />
-          <textarea
-            rows={4}
-            placeholder="Bullet points…"
-            value={exp.bullets}
-            onChange={(e) => onChange({ ...exp, bullets: e.target.value })}
-          />
-          <button type="button" className="mobile-remove-btn" onClick={onRemove}>Remove</button>
-        </div>
-      ) : null}
-    </div>
+    <ExpandableProfileCard
+      title={headline}
+      secondary={exp.dateRange || undefined}
+      preview={open ? undefined : exp.bullets || undefined}
+      open={open}
+      onToggle={() => setOpen((o) => !o)}
+      controls={controls}
+      onDelete={onRemove}
+    >
+      <FilledField label="Job title" value={exp.title} onChange={(title) => onChange({ ...exp, title })} />
+      <FilledField label="Company" value={exp.company} onChange={(company) => onChange({ ...exp, company })} />
+      <FilledField
+        label="Dates"
+        value={exp.dateRange}
+        onChange={(dateRange) => onChange({ ...exp, dateRange })}
+        placeholder="Jun 2025 – Present"
+      />
+      <FilledField
+        label="Highlights"
+        value={exp.bullets}
+        onChange={(bullets) => onChange({ ...exp, bullets })}
+        multiline
+        rows={4}
+        placeholder="Bullet points with numbers and facts…"
+      />
+    </ExpandableProfileCard>
   )
 }
 
@@ -372,37 +376,31 @@ function ProjectCard({
   onRemove: () => void
 }) {
   const [open, setOpen] = useState(false)
-  const headline = proj.name || 'Project'
   return (
-    <div {...controls.cardProps}>
-      <div className="mobile-list-card-head">
-        <DragHandle controls={controls} />
-        <button type="button" className="mobile-list-card-head-main" onClick={() => setOpen((o) => !o)}>
-          <div className="mobile-list-card-title">
-            <strong>{headline}</strong>
-            {proj.tech ? <span>{proj.tech}</span> : null}
-          </div>
-          <span>{open ? '⌃' : '⌄'}</span>
-        </button>
-      </div>
-      {open ? (
-        <div className="mobile-list-card-body">
-          <input placeholder="Name" value={proj.name} onChange={(e) => onChange({ ...proj, name: e.target.value })} />
-          <input
-            placeholder="Tech stack"
-            value={proj.tech}
-            onChange={(e) => onChange({ ...proj, tech: e.target.value })}
-          />
-          <textarea
-            rows={3}
-            placeholder="Description"
-            value={proj.description}
-            onChange={(e) => onChange({ ...proj, description: e.target.value })}
-          />
-          <button type="button" className="mobile-remove-btn" onClick={onRemove}>Remove</button>
-        </div>
-      ) : null}
-    </div>
+    <ExpandableProfileCard
+      title={proj.name || 'Project'}
+      meta={proj.tech || undefined}
+      preview={proj.description || undefined}
+      open={open}
+      onToggle={() => setOpen((o) => !o)}
+      controls={controls}
+      onDelete={onRemove}
+    >
+      <FilledField label="Project name" value={proj.name} onChange={(name) => onChange({ ...proj, name })} />
+      <FilledField
+        label="Technologies"
+        value={proj.tech}
+        onChange={(tech) => onChange({ ...proj, tech })}
+        placeholder="BERT, Python, TensorFlow"
+      />
+      <FilledField
+        label="Description"
+        value={proj.description}
+        onChange={(description) => onChange({ ...proj, description })}
+        multiline
+        rows={4}
+      />
+    </ExpandableProfileCard>
   )
 }
 
@@ -419,32 +417,22 @@ function EducationCard({
 }) {
   const [open, setOpen] = useState(false)
   return (
-    <div {...controls.cardProps}>
-      <div className="mobile-list-card-head">
-        <DragHandle controls={controls} />
-        <button type="button" className="mobile-list-card-head-main" onClick={() => setOpen((o) => !o)}>
-          <div className="mobile-list-card-title">
-            <strong>{edu.degree || 'Education'}</strong>
-          </div>
-          <span>{open ? '⌃' : '⌄'}</span>
-        </button>
-      </div>
-      {open ? (
-        <div className="mobile-list-card-body">
-          <input
-            placeholder="Degree"
-            value={edu.degree}
-            onChange={(e) => onChange({ ...edu, degree: e.target.value })}
-          />
-          <textarea
-            rows={2}
-            placeholder="Details"
-            value={edu.details}
-            onChange={(e) => onChange({ ...edu, details: e.target.value })}
-          />
-          <button type="button" className="mobile-remove-btn" onClick={onRemove}>Remove</button>
-        </div>
-      ) : null}
-    </div>
+    <ExpandableProfileCard
+      title={edu.degree || 'Education'}
+      preview={edu.details || undefined}
+      open={open}
+      onToggle={() => setOpen((o) => !o)}
+      controls={controls}
+      onDelete={onRemove}
+    >
+      <FilledField label="Degree" value={edu.degree} onChange={(degree) => onChange({ ...edu, degree })} />
+      <FilledField
+        label="Details"
+        value={edu.details}
+        onChange={(details) => onChange({ ...edu, details })}
+        multiline
+        rows={2}
+      />
+    </ExpandableProfileCard>
   )
 }

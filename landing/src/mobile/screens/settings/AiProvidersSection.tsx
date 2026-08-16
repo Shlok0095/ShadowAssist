@@ -1,5 +1,6 @@
 import type { AppSettings } from '../../profileTypes'
 import { CHAT_MODEL_CATALOG } from '../../modelCatalog'
+import { groqModelOptions, nvidiaFallbackHint, nvidiaModelOptions } from '../../modelDisplay'
 import { CHAT_PROVIDER_ORDER, CHAT_PROVIDERS, providerKeyConfigured } from '../../providerRegistry'
 import { loadAppSettings } from '../../profileStorage'
 import { syncChatModels } from '../../modelSync'
@@ -26,17 +27,25 @@ export function AiProvidersSection({
     }
   })
 
+  const modelOptions =
+    meta.id === 'nvidia'
+      ? nvidiaModelOptions()
+      : meta.id === 'groq'
+        ? groqModelOptions()
+        : (CHAT_MODEL_CATALOG[meta.id] || [meta.defaultModel]).map((m) => ({ value: m, label: m }))
+
   return (
     <ProviderConfigSection
       groupLabel="AI providers"
       selectLabel="Provider"
       value={settings.provider}
-      onChange={(e) => onChange({ provider: e.target.value as AppSettings['provider'] })}
+      onChange={(v) => onChange({ provider: v as AppSettings['provider'] })}
       options={providerOptions}
       badge={meta.badge}
       title={meta.label}
       keySaved={keySaved}
       docs={meta.docs}
+      description={meta.desc}
     >
 
       {meta.baseUrlField ? (
@@ -68,7 +77,7 @@ export function AiProvidersSection({
         <span>Model</span>
         <ModelSelect
           value={modelValue}
-          options={CHAT_MODEL_CATALOG[meta.id] || [meta.defaultModel]}
+          options={modelOptions}
           placeholder={meta.defaultModel}
           onChange={(m) => onChange({ [meta.modelField]: m } as Partial<AppSettings>)}
           onSync={
@@ -77,6 +86,9 @@ export function AiProvidersSection({
               : () => syncChatModels(meta.id, loadAppSettings())
           }
         />
+        {meta.id === 'nvidia' || meta.id === 'groq' ? (
+          <p className="mobile-fallback-hint">{nvidiaFallbackHint()}</p>
+        ) : null}
       </label>
     </ProviderConfigSection>
   )

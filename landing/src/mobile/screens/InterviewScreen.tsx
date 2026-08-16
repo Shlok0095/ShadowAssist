@@ -6,6 +6,8 @@ import type { useInterviewSession } from '../useInterviewSession'
 import { useAutoScrollToBottom } from '../useAutoScroll'
 import { compressImageDataUrl, providerSupportsMobileVision, readFileAsDataUrl } from '../imageQuestionExtract'
 import { SettingToggleRow, SESSION_SETTING_ICONS } from './settings/SettingsPrimitives'
+import { SettingsSheet } from '../components/SettingsSheet'
+import { SessionOrb } from '../components/SessionOrb'
 
 type Session = ReturnType<typeof useInterviewSession>
 
@@ -50,14 +52,6 @@ function SendIcon() {
         strokeLinecap="round"
         strokeLinejoin="round"
       />
-    </svg>
-  )
-}
-
-function PlayIcon() {
-  return (
-    <svg width="22" height="22" viewBox="0 0 24 24" aria-hidden>
-      <path d="M7.2 4.4v15.2L20.6 12 7.2 4.4Z" fill="currentColor" />
     </svg>
   )
 }
@@ -128,25 +122,6 @@ export function InterviewScreen({
     return () => window.removeEventListener('veilassist:hardware-back', onHardwareBack)
   }, [])
 
-  const listeningActive =
-    session.loopPhase === 'listening' ||
-    /listening/i.test(session.listeningStatus || '') ||
-    /listening/i.test(session.statusLabel || '')
-
-  const reconnecting = /reconnecting/i.test(session.statusLabel || '')
-
-  const headerStatus = session.starting
-    ? 'Starting'
-    : paused
-      ? 'Paused'
-      : reconnecting
-        ? 'Reconnecting'
-        : session.answerFailed
-          ? 'Retry needed'
-          : listeningActive
-            ? 'Listening'
-            : 'Ready'
-
   const onBack = () => {
     setSettingsOpen(false)
     setLeaveOpen(true)
@@ -182,29 +157,12 @@ export function InterviewScreen({
     <div className={`mobile-interview-shell${paused ? ' is-paused' : ''}`}>
       <header className="mobile-interview-header">
         <BackButton onClick={onBack} />
-        <p className="mobile-interview-header-status" role="status">
-          {headerStatus}
-        </p>
+        <SessionOrb
+          mode={session.starting ? 'loading' : paused ? 'play' : 'pause'}
+          onPause={onPauseToggle}
+          onResume={session.resumeSession}
+        />
         <div className="mobile-interview-header-actions">
-          {paused ? (
-            <button
-              type="button"
-              className="mobile-interview-resume-btn"
-              aria-label="Resume session"
-              onClick={session.resumeSession}
-            >
-              <PlayIcon />
-            </button>
-          ) : (
-            <button
-              type="button"
-              className="mobile-interview-stop-btn"
-              aria-label="Pause session"
-              onClick={onPauseToggle}
-            >
-              <span className="mobile-interview-stop-icon" />
-            </button>
-          )}
           <button
             type="button"
             className="mobile-home-settings"
@@ -235,7 +193,7 @@ export function InterviewScreen({
           </div>
         ) : null}
 
-        {session.answerFailed ? (
+        {session.answerFailed && !session.error ? (
           <div className="mobile-interview-error mobile-interview-error-inline">
             <span>Answer failed.</span>
             <button type="button" className="mobile-interview-settings-link" onClick={session.retryFailedAnswer}>
@@ -390,58 +348,38 @@ export function InterviewScreen({
       </footer>
 
       {settingsOpen ? (
-        <div className="mobile-sheet-root">
-          <button
-            type="button"
-            className="mobile-interview-settings-backdrop"
-            aria-label="Close settings"
-            onClick={() => setSettingsOpen(false)}
+        <SettingsSheet title="Session" onClose={() => setSettingsOpen(false)}>
+          <SettingToggleRow
+            icon={SESSION_SETTING_ICONS.transcription}
+            label="Transcription"
+            on={settings.showTranscription}
+            onChange={(v) => onPatchSettings({ showTranscription: v })}
           />
-          <div className="mobile-interview-settings-pop" role="dialog" aria-labelledby="session-sheet-title">
-            <div className="mobile-sheet-handle" aria-hidden />
-            <div className="mobile-interview-settings-pop-head">
-              <strong id="session-sheet-title">Session</strong>
-              <button
-                type="button"
-                className="mobile-interview-settings-close"
-                aria-label="Close"
-                onClick={() => setSettingsOpen(false)}
-              >
-                ✕
-              </button>
-            </div>
-            <SettingToggleRow
-              icon={SESSION_SETTING_ICONS.transcription}
-              label="Transcription"
-              on={settings.showTranscription}
-              onChange={(v) => onPatchSettings({ showTranscription: v })}
-            />
-            <SettingToggleRow
-              icon={SESSION_SETTING_ICONS.autoScroll}
-              label="Auto-scroll"
-              on={settings.autoScroll}
-              onChange={(v) => onPatchSettings({ autoScroll: v })}
-            />
-            <SettingToggleRow
-              icon={SESSION_SETTING_ICONS.autoAnswer}
-              label="Auto-answer"
-              on={settings.autoAnswer}
-              onChange={(v) => onPatchSettings({ autoAnswer: v })}
-            />
-            <div className="mobile-interview-settings-pop-actions">
-              <button
-                type="button"
-                className="mobile-interview-settings-link"
-                onClick={() => {
-                  setSettingsOpen(false)
-                  onOpenSettings()
-                }}
-              >
-                Full settings
-              </button>
-            </div>
+          <SettingToggleRow
+            icon={SESSION_SETTING_ICONS.autoScroll}
+            label="Auto-scroll"
+            on={settings.autoScroll}
+            onChange={(v) => onPatchSettings({ autoScroll: v })}
+          />
+          <SettingToggleRow
+            icon={SESSION_SETTING_ICONS.autoAnswer}
+            label="Auto-answer"
+            on={settings.autoAnswer}
+            onChange={(v) => onPatchSettings({ autoAnswer: v })}
+          />
+          <div className="mobile-choice-pad">
+            <button
+              type="button"
+              className="mobile-interview-settings-link"
+              onClick={() => {
+                setSettingsOpen(false)
+                onOpenSettings()
+              }}
+            >
+              Full settings
+            </button>
           </div>
-        </div>
+        </SettingsSheet>
       ) : null}
 
       {leaveOpen ? (

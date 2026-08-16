@@ -56,6 +56,23 @@ export function fullTranscriptText(segments: SpeechSegment[]): string {
     .trim()
 }
 
+/** Last N seconds of heard speech — InterviewMan conversation memory. */
+export function transcriptInWindow(
+  segments: SpeechSegment[],
+  memorySec: number,
+  now = Date.now(),
+): string {
+  const cutoff = now - Math.max(30, memorySec) * 1000
+  const text = segments
+    .filter((s) => s.capturedAt >= cutoff)
+    .map((s) => s.text.trim())
+    .filter(Boolean)
+    .join(' ')
+    .trim()
+  if (text.length <= 4000) return text
+  return text.slice(-4000).trim()
+}
+
 export function selectActiveQuestion(segments: SpeechSegment[]): string {
   const pending = segments.filter((s) => !s.consumed && s.text.trim())
   if (!pending.length) return ''

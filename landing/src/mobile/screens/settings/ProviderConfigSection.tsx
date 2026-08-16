@@ -1,5 +1,5 @@
-import { useState, type ReactNode, type SelectHTMLAttributes } from 'react'
-import { PremiumSelect } from './PremiumSelect'
+import { useState, type ReactNode } from 'react'
+import { SheetSelect } from './SheetSelect'
 
 export function ProviderConfigSection({
   groupLabel,
@@ -19,7 +19,7 @@ export function ProviderConfigSection({
   intro?: string
   selectLabel: string
   value: string
-  onChange: SelectHTMLAttributes<HTMLSelectElement>['onChange']
+  onChange: (value: string) => void
   options: { value: string; label: string }[]
   badge: string
   title: string
@@ -36,11 +36,13 @@ export function ProviderConfigSection({
       {intro ? <p className="mobile-section-hint mobile-settings-intro">{intro}</p> : null}
 
       <div className="mobile-provider-shell">
-        <PremiumSelect label={selectLabel} value={value} onChange={onChange}>
-          {options.map((opt) => (
-            <option key={opt.value} value={opt.value}>{opt.label}</option>
-          ))}
-        </PremiumSelect>
+        <SheetSelect
+          label={selectLabel}
+          value={value}
+          options={options}
+          title={selectLabel}
+          onChange={onChange}
+        />
 
         <button
           type="button"

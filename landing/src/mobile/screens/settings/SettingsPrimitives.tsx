@@ -107,6 +107,12 @@ export const SettingsIcons = {
       <path d="M9 6l6 6-6 6" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
     </svg>
   ),
+  info: (
+    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" aria-hidden>
+      <circle cx="12" cy="12" r="9" stroke="currentColor" strokeWidth="1.8" />
+      <path d="M12 11v5M12 8h.01" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" />
+    </svg>
+  ),
 }
 
 export const SESSION_SETTING_ICONS = {
@@ -118,18 +124,23 @@ export const SESSION_SETTING_ICONS = {
 export function SettingToggleRow({
   icon,
   label,
+  hint,
   on,
   onChange,
 }: {
   icon?: ReactNode
   label: string
+  hint?: string
   on: boolean
   onChange: (v: boolean) => void
 }) {
   return (
     <div className="mobile-settings-row">
       {icon ? <SettingsLeading>{icon}</SettingsLeading> : null}
-      <span className="mobile-settings-row-label">{label}</span>
+      <span className="mobile-settings-row-text">
+        <span className="mobile-settings-row-label">{label}</span>
+        {hint ? <span className="mobile-settings-row-hint">{hint}</span> : null}
+      </span>
       <Toggle on={on} onChange={onChange} />
     </div>
   )

@@ -19,6 +19,7 @@ export function loadSessionSnapshot(): SessionSnapshot | null {
         ? parsed.turnHistory.map((t) => ({
             question: String(t.question || ''),
             answer: String(t.answer || ''),
+            at: Number(t.at) || Number(parsed.updatedAt) || Date.now(),
           }))
         : [],
       updatedAt: Number(parsed.updatedAt) || 0,

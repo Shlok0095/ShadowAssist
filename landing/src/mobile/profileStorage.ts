@@ -9,7 +9,10 @@ import {
   getProviderApiKey,
   getProviderModel,
 } from './providerRegistry'
+import { FALLBACK_RANK } from './generated/fallbackRank.generated'
 import { normalizeSttProvider } from './sttRegistry'
+
+const LEGACY_NVIDIA_DEFAULT = 'nvidia/llama-3.1-nemotron-nano-vl-8b-v1'
 
 const STORAGE_PROFILE = 'veilassist.mobile.profile.v1'
 const STORAGE_SETTINGS = 'veilassist.mobile.appSettings.v1'
@@ -47,13 +50,47 @@ export function saveProfile(profile: PersonalProfile) {
   }
 }
 
+function normalizeAnswerStructure(value: unknown): AppSettings['answerStructure'] {
+  if (value === 'car' || value === 'soar' || value === 'par' || value === 'soara' || value === 'star') {
+    return value
+  }
+  return 'star'
+}
+
+function normalizeResponseFormat(value: unknown): AppSettings['responseFormat'] {
+  if (value === 'conversational' || value === 'example' || value === 'bullets') return value
+  if (value === 'paragraph') return 'conversational'
+  return 'bullets'
+}
+
+function normalizeFontSize(value: unknown): AppSettings['fontSize'] {
+  if (value === 'small' || value === 'large' || value === 'xlarge' || value === 'system') return value
+  return 'standard'
+}
+
+function normalizeMemory(value: unknown): AppSettings['conversationMemorySec'] {
+  if (value === 60 || value === 120 || value === 180 || value === 30) return value
+  return 30
+}
+
 export function loadAppSettings(): AppSettings {
   const parsed = readJson<AppSettings>(STORAGE_SETTINGS, DEFAULT_APP_SETTINGS)
+  const nvidiaModel =
+    parsed.nvidiaModel === LEGACY_NVIDIA_DEFAULT
+      ? FALLBACK_RANK.primary_nvidia
+      : parsed.nvidiaModel || DEFAULT_APP_SETTINGS.nvidiaModel
   return {
     ...DEFAULT_APP_SETTINGS,
     ...parsed,
+    nvidiaModel,
     sttProvider: normalizeSttProvider(parsed.sttProvider),
     colorScheme: parsed.colorScheme === 'light' ? 'light' : 'dark',
+    answerStructure: normalizeAnswerStructure(parsed.answerStructure),
+    responseFormat: normalizeResponseFormat(parsed.responseFormat),
+    fontSize: normalizeFontSize(parsed.fontSize),
+    conversationMemorySec: normalizeMemory(parsed.conversationMemorySec),
+    interviewTopicLocked: Boolean(parsed.interviewTopicLocked),
+    interviewLanguage: parsed.interviewLanguage || 'en',
   }
 }
 

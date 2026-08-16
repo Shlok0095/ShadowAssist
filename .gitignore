@@ -10,6 +10,11 @@ build/*
 .env
 .env.*
 !.env.example
+
+# Multimodal benchmark artifacts (may contain raw model output)
+landing/scripts/multimodal_bench/benchmark_results/
+landing/scripts/multimodal_bench/.env
+landing/scripts/multimodal_bench/dataset/images/
 .DS_Store
 Thumbs.db
 

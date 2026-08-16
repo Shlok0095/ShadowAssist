@@ -2,11 +2,14 @@ import type { AppSettings } from './profileTypes'
 import { routeInterviewQuestion } from './answerRouting'
 import type { SessionTurn } from './sessionLoopTypes'
 import { isNvidiaFastChatModel } from './nvidiaChatModels'
+import { THINKING_TEMPERATURE } from './multimodalRouter'
+import { formatPrompt, INTERVIEW_LANGUAGES, selectConversationMemory, structurePrompt } from './settingsCatalog'
 
 export function buildInterviewSystemPrompt(input: {
   profileText: string
   jobDescription: string
   interviewTopic: string
+  interviewLanguage: string
   customInstructions: string
   answerStructure: AppSettings['answerStructure']
   responseFormat: AppSettings['responseFormat']
@@ -14,6 +17,8 @@ export function buildInterviewSystemPrompt(input: {
   useResume: boolean
   useJd: boolean
   answerContract: string
+  recentConversation?: string
+  conversationMemorySec?: AppSettings['conversationMemorySec']
 }): string {
   const parts = [
     'You are VeilAssist, a private interview copilot on the user\'s phone.',
@@ -39,19 +44,9 @@ export function buildInterviewSystemPrompt(input: {
     )
   }
 
-  if (input.answerStructure === 'star') {
-    parts.push(
-      'Use STAR (Situation, Task, Action, Result) for behavioral questions — keep it natural, max 4 short sentences.',
-    )
-  } else if (input.answerStructure === 'concise') {
-    parts.push('Be very concise — one or two sentences unless depth is required.')
-  }
-
-  if (input.responseFormat === 'bullets') {
-    parts.push('Format the answer as short bullet points the candidate can scan quickly.')
-  } else {
-    parts.push('Format as a short spoken paragraph.')
-  }
+  const structureLine = structurePrompt(input.answerStructure)
+  if (structureLine) parts.push(structureLine)
+  parts.push(formatPrompt(input.responseFormat))
 
   if (input.answerLength === 'short') parts.push('Target under 80 words.')
   else if (input.answerLength === 'long') parts.push('Up to 250 words if technical depth is needed.')
@@ -61,8 +56,21 @@ export function buildInterviewSystemPrompt(input: {
     parts.push(`Interview focus / role topic: ${input.interviewTopic.trim().slice(0, 500)}`)
   }
 
+  const lang = INTERVIEW_LANGUAGES.find((l) => l.value === input.interviewLanguage)
+  if (lang && lang.value !== 'en' && lang.value !== 'en-US') {
+    parts.push(`The interview is in ${lang.label}. Answer in that language.`)
+  }
+
   if (input.customInstructions?.trim()) {
     parts.push(`Custom instructions: ${input.customInstructions.trim().slice(0, 2000)}`)
+  }
+
+  const recent = input.recentConversation?.trim()
+  if (recent) {
+    const sec = input.conversationMemorySec || 30
+    parts.push(
+      `\n## RECENT CONVERSATION (last ${sec}s — use for follow-ups and context)\n${recent.slice(0, 4000)}`,
+    )
   }
 
   if (input.useResume && input.profileText?.trim()) {
@@ -89,6 +97,7 @@ export function buildChatPayload(input: {
   turnHistory?: SessionTurn[]
   stream?: boolean
   imageDataUrl?: string
+  recentConversation?: string
 }) {
   const hasProfile = input.profileText.trim().length > 40
   const hasJd = input.jobDescription.trim().length > 20
@@ -103,6 +112,7 @@ export function buildChatPayload(input: {
     profileText: input.profileText,
     jobDescription: input.jobDescription,
     interviewTopic: input.settings.interviewTopic,
+    interviewLanguage: input.settings.interviewLanguage,
     customInstructions: input.settings.customInstructions,
     answerStructure: input.settings.answerStructure,
     responseFormat: input.settings.responseFormat,
@@ -110,9 +120,14 @@ export function buildChatPayload(input: {
     useResume: route.useResume,
     useJd: route.useJd,
     answerContract: route.answerContract,
+    recentConversation: input.recentConversation,
+    conversationMemorySec: input.settings.conversationMemorySec,
   })
 
-  const historyMessages = (input.turnHistory || []).flatMap((turn) => [
+  const historyMessages = selectConversationMemory(
+    input.turnHistory || [],
+    input.settings.conversationMemorySec,
+  ).flatMap((turn) => [
     {
       role: 'user' as const,
       content: `Interview question:\n\n${turn.question}`,
@@ -151,7 +166,7 @@ export function buildChatPayload(input: {
     messages,
     max_tokens:
       input.think ? 2200 : answerLength === 'long' ? 1800 : answerLength === 'short' ? 600 : 1400,
-    temperature: 0,
+    temperature: input.think ? THINKING_TEMPERATURE : 0,
     top_p: 0.7,
     stream: Boolean(input.stream),
   }
@@ -168,9 +183,13 @@ export function buildChatPayload(input: {
     payload.chat_template_kwargs = { enable_thinking: input.think }
   }
 
-  // DeepSeek reasoner only when Think is active
+  if (input.settings.provider === 'groq' && /qwen3\.6/i.test(model)) {
+    payload.reasoning_effort = input.think ? 'default' : 'none'
+    payload.reasoning_format = 'hidden'
+  }
+
   if (input.think && /reasoner/i.test(input.model)) {
-    payload.temperature = 0.6
+    payload.temperature = THINKING_TEMPERATURE
   }
 
   return { payload, route, systemPrompt }

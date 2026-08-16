@@ -149,14 +149,22 @@ function buildSystemPrompt({
 
   if (answerStructure === 'star') {
     parts.push('Use STAR (Situation, Task, Action, Result) for behavioral questions — keep it natural, max 4 short sentences.')
-  } else if (answerStructure === 'concise') {
-    parts.push('Be very concise — one or two sentences unless depth is required.')
+  } else if (answerStructure === 'car') {
+    parts.push('Use CAR (Context, Action, Result) for behavioral questions — keep it natural and spoken.')
+  } else if (answerStructure === 'soar') {
+    parts.push('Use SOAR (Situation, Obstacle, Action, Result) for behavioral questions.')
+  } else if (answerStructure === 'par') {
+    parts.push('Use PAR (Problem, Action, Result) for behavioral questions.')
+  } else if (answerStructure === 'soara') {
+    parts.push('Use SOARA (Situation, Objective, Action, Result, Aftermath) for behavioral questions.')
   }
 
-  if (responseFormat === 'bullets') {
-    parts.push('Format the answer as short bullet points the candidate can scan quickly.')
+  if (responseFormat === 'conversational') {
+    parts.push('Format as a natural spoken answer — short sentences, light filler is OK.')
+  } else if (responseFormat === 'example') {
+    parts.push('Lead with the point, then illustrate with a concrete example from the profile when one exists.')
   } else {
-    parts.push('Format as a short spoken paragraph.')
+    parts.push('Format the answer as short bullet points the candidate can scan quickly.')
   }
 
   if (answerLength === 'short') parts.push('Target under 80 words.')

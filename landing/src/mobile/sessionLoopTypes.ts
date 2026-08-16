@@ -4,6 +4,7 @@ export type SessionLoopPhase = 'idle' | 'listening' | 'generating_answer' | 'pau
 export type SessionTurn = {
   question: string
   answer: string
+  at: number
 }
 
 export type SessionSnapshot = {
@@ -16,7 +17,7 @@ export type SessionSnapshot = {
 }
 
 export const SESSION_SNAPSHOT_KEY = 'veilassist.mobile.sessionSnapshot.v1'
-export const MAX_TURN_HISTORY = 6
+export const MAX_TURN_HISTORY = 24
 
 export function loopPhaseLabel(
   phase: SessionLoopPhase,

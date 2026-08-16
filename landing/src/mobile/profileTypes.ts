@@ -33,11 +33,12 @@ export type PersonalProfile = {
   updatedAt?: number
 }
 
-export type AnswerStructure = 'star' | 'direct' | 'concise'
-export type ResponseFormat = 'bullets' | 'paragraph'
+export type AnswerStructure = 'star' | 'car' | 'soar' | 'par' | 'soara'
+export type ResponseFormat = 'bullets' | 'conversational' | 'example'
 export type AnswerLength = 'short' | 'medium' | 'long'
 export type DetectionLevel = 'low' | 'medium' | 'high'
-export type FontSize = 'small' | 'standard' | 'large'
+export type FontSize = 'small' | 'standard' | 'large' | 'xlarge' | 'system'
+export type ConversationMemorySec = 30 | 60 | 120 | 180
 export type ColorScheme = 'dark' | 'light'
 export type AiProvider =
   | 'groq'
@@ -55,6 +56,7 @@ export type MicListenLanguage = 'en' | 'hi' | 'en_hi_hinglish'
 
 export type AppSettings = {
   interviewTopic: string
+  interviewTopicLocked: boolean
   customInstructions: string
   interviewLanguage: string
   autoAnswer: boolean
@@ -63,6 +65,7 @@ export type AppSettings = {
   answerLength: AnswerLength
   questionDetection: DetectionLevel
   fontSize: FontSize
+  conversationMemorySec: ConversationMemorySec
   colorScheme: ColorScheme
   showTranscription: boolean
   autoScroll: boolean
@@ -109,6 +112,7 @@ export const DEFAULT_PROFILE: PersonalProfile = {
 
 export const DEFAULT_APP_SETTINGS: AppSettings = {
   interviewTopic: '',
+  interviewTopicLocked: false,
   customInstructions: '',
   interviewLanguage: 'en',
   autoAnswer: true,
@@ -117,6 +121,7 @@ export const DEFAULT_APP_SETTINGS: AppSettings = {
   answerLength: 'medium',
   questionDetection: 'high',
   fontSize: 'standard',
+  conversationMemorySec: 30,
   colorScheme: 'dark',
   showTranscription: true,
   autoScroll: true,
@@ -130,8 +135,8 @@ export const DEFAULT_APP_SETTINGS: AppSettings = {
   deepseekKey: '',
   customOpenaiKey: '',
   customOpenaiBaseUrl: '',
-  nvidiaModel: 'nvidia/llama-3.1-nemotron-nano-vl-8b-v1',
-  groqModel: 'llama-3.3-70b-versatile',
+  nvidiaModel: 'nvidia/nemotron-nano-12b-v2-vl',
+  groqModel: 'qwen/qwen3.6-27b',
   selectedModel: 'gpt-4o-mini',
   openrouterModel: 'nvidia/nemotron-nano-12b-v2-vl:free',
   anthropicModel: 'claude-sonnet-4-20250514',

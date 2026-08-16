@@ -44,6 +44,33 @@ export async function mobileApiPost(
   return { status: res.status, text, ok: res.ok }
 }
 
+export async function mobileApiGet(
+  url: string,
+  headers: Record<string, string>,
+  timeouts?: { connectTimeout?: number; readTimeout?: number },
+): Promise<MobileHttpResponse> {
+  if (Capacitor.isNativePlatform()) {
+    const res = await CapacitorHttp.get({
+      url,
+      headers,
+      responseType: 'text',
+      connectTimeout: timeouts?.connectTimeout ?? 15000,
+      readTimeout: timeouts?.readTimeout ?? 30000,
+    })
+    const text =
+      typeof res.data === 'string'
+        ? res.data
+        : res.data != null
+          ? JSON.stringify(res.data)
+          : ''
+    return { status: res.status, text, ok: res.status >= 200 && res.status < 300 }
+  }
+
+  const res = await fetch(url, { method: 'GET', headers })
+  const text = await res.text()
+  return { status: res.status, text, ok: res.ok }
+}
+
 /** Binary POST for cloud APIs — bypasses WebView CORS on APK. */
 export async function mobileApiPostBinary(
   url: string,

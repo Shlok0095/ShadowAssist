@@ -1,4 +1,11 @@
 import { useEffect, useState } from 'react'
+import { SheetSelect } from './SheetSelect'
+
+export type ModelOption = { value: string; label: string }
+
+function asOptions(options: Array<string | ModelOption>): ModelOption[] {
+  return options.map((opt) => (typeof opt === 'string' ? { value: opt, label: opt } : opt))
+}
 
 export function ModelSelect({
   value,
@@ -8,20 +15,27 @@ export function ModelSelect({
   onSync,
 }: {
   value: string
-  options: string[]
+  options: Array<string | ModelOption>
   placeholder: string
   onChange: (model: string) => void
   onSync?: () => Promise<{ models: string[]; source?: 'api' | 'static'; error?: string }>
 }) {
-  const [list, setList] = useState<string[]>(options)
+  const labeled = asOptions(options)
+  const [list, setList] = useState<ModelOption[]>(labeled)
   const [syncing, setSyncing] = useState(false)
   const [syncNote, setSyncNote] = useState<string | null>(null)
 
   useEffect(() => {
-    setList(options)
+    setList(asOptions(options))
   }, [options])
 
-  const merged = [...new Set([value, ...list].filter(Boolean))]
+  const merged = [...list]
+  if (value && !merged.some((m) => m.value === value)) {
+    merged.unshift({ value, label: value })
+  }
+  const sheetOptions = merged.length
+    ? merged
+    : [{ value: placeholder, label: placeholder }]
 
   const runSync = async () => {
     if (!onSync) return
@@ -29,7 +43,7 @@ export function ModelSelect({
     setSyncNote(null)
     try {
       const result = await onSync()
-      if (result.models.length) setList(result.models)
+      if (result.models.length) setList(result.models.map((m) => ({ value: m, label: m })))
       if (result.error) setSyncNote(result.error)
       else if (result.source === 'api') setSyncNote('Models synced from API')
       else setSyncNote('Using built-in model list')
@@ -43,23 +57,13 @@ export function ModelSelect({
   return (
     <div className="mobile-model-select-wrap">
       <div className="mobile-model-select-row">
-        <div className="mobile-outlined-select mobile-model-select">
-          <select
-            className="mobile-select"
-            value={value || ''}
-            onChange={(e) => onChange(e.target.value)}
-          >
-            {!value ? <option value="">{placeholder}</option> : null}
-            {merged.map((m) => (
-              <option key={m} value={m}>{m}</option>
-            ))}
-          </select>
-          <span className="mobile-select-chevron" aria-hidden>
-            <svg width="20" height="20" viewBox="0 0 24 24" fill="none">
-              <path d="M7 10l5 5 5-5" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
-            </svg>
-          </span>
-        </div>
+        <SheetSelect
+          value={value || placeholder}
+          options={sheetOptions}
+          title="Model"
+          subtitle="Ranked for camera. Failures try the next model automatically."
+          onChange={onChange}
+        />
         {onSync ? (
           <button
             type="button"

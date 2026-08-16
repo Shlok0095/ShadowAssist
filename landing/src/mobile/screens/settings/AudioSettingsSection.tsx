@@ -1,5 +1,5 @@
 import type { AppSettings } from '../../profileTypes'
-import { OutlinedSelect, Segmented, SettingToggleRow, SettingsIcons } from './SettingsPrimitives'
+import { Segmented, SettingToggleRow, SettingsIcons } from './SettingsPrimitives'
 import { ModelSelect } from './ModelSelect'
 import { STT_PROVIDER_META, sttKeyConfigured, sttModelOptions } from '../../sttRegistry'
 import { ProviderConfigSection } from './ProviderConfigSection'
@@ -48,20 +48,6 @@ export function AudioSettingsSection({
             onChange={(v) => onChange({ audioEnabled: v })}
           />
 
-          <label className="mobile-field">
-            <span>Listen language</span>
-            <OutlinedSelect
-              value={settings.micListenLanguage}
-              onChange={(e) =>
-                onChange({ micListenLanguage: e.target.value as AppSettings['micListenLanguage'] })
-              }
-            >
-              <option value="en">English</option>
-              <option value="hi">Hindi</option>
-              <option value="en_hi_hinglish">English + Hindi (Hinglish)</option>
-            </OutlinedSelect>
-          </label>
-
           <div className="mobile-field">
             <span>Mic sensitivity</span>
             <Segmented
@@ -100,9 +86,7 @@ export function AudioSettingsSection({
           groupLabel="Cloud speech"
           selectLabel="Provider"
           value={settings.sttProvider}
-          onChange={(e) =>
-            onChange({ sttProvider: e.target.value as AppSettings['sttProvider'] })
-          }
+          onChange={(v) => onChange({ sttProvider: v as AppSettings['sttProvider'] })}
           options={sttOptions}
           badge={meta.badge}
           title={meta.label}

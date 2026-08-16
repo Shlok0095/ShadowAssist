@@ -22,6 +22,7 @@ async function requestViaProxy(params: {
   think: boolean
   source?: 'manual_input' | 'transcript'
   turnHistory?: SessionTurn[]
+  recentConversation?: string
 }): Promise<string> {
   const origin = String(import.meta.env.VITE_API_ORIGIN || '').replace(/\/$/, '')
   const chatUrl =
@@ -69,8 +70,10 @@ export async function requestInterviewAnswer(params: {
   think: boolean
   source?: 'manual_input' | 'transcript'
   turnHistory?: SessionTurn[]
+  recentConversation?: string
   signal?: AbortSignal
   onDelta?: (chunk: string) => void
+  onStreamReset?: () => void
   imageDataUrl?: string
 }): Promise<string> {
   if (isMobileApk()) {

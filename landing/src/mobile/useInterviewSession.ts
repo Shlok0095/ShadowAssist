@@ -18,13 +18,14 @@ import {
   fullTranscriptText,
   questionsAreSimilar,
   selectActiveQuestion,
+  transcriptInWindow,
   type SpeechSegment,
 } from './transcriptSegments'
 import { extractFollowUpAfterAnswer, resolveFollowUpQuestion } from './transcriptFollowUp'
 import type { AppSettings, PersonalProfile } from './profileTypes'
 import { profileIsReady } from './profileTypes'
 import { getActiveApiKey, loadProfile } from './profileStorage'
-import { speechLangFromSettings } from './providerRegistry'
+import { getProviderApiKey, speechLangFromSettings } from './providerRegistry'
 import { sttKeyConfigured } from './sttRegistry'
 import {
   createSpeechRecognition,
@@ -464,7 +465,11 @@ export function useInterviewSession(profile: PersonalProfile, settings: AppSetti
 
       const currentSettings = settingsRef.current
       const currentProfile = profileRef.current
-      if (!getActiveApiKey(currentSettings)) {
+      const hasRoutedKey =
+        Boolean(getProviderApiKey(currentSettings, 'nvidia')) ||
+        Boolean(getProviderApiKey(currentSettings, 'groq')) ||
+        Boolean(getActiveApiKey(currentSettings))
+      if (!hasRoutedKey) {
         setError('Add your API key in Settings → AI Providers.')
         return
       }
@@ -474,6 +479,10 @@ export function useInterviewSession(profile: PersonalProfile, settings: AppSetti
       answeredTranscriptSnapshotRef.current = q
       lastSentQuestionRef.current = q
       lastTriggerAtRef.current = Date.now()
+      const recentConversation = transcriptInWindow(
+        speechSegmentsRef.current,
+        currentSettings.conversationMemorySec,
+      )
       speechSegmentsRef.current = consumeSegmentsForQuestion(speechSegmentsRef.current, q)
       syncTranscriptDisplay()
       generatingRef.current = true
@@ -500,6 +509,7 @@ export function useInterviewSession(profile: PersonalProfile, settings: AppSetti
           think: opts?.manual && opts?.source === 'manual_input' ? thinkMode : false,
           source: opts?.source || 'manual_input',
           turnHistory: turnHistoryRef.current,
+          recentConversation,
           signal: controller.signal,
           imageDataUrl: opts?.imageDataUrl,
           onDelta: (chunk) => {
@@ -508,12 +518,15 @@ export function useInterviewSession(profile: PersonalProfile, settings: AppSetti
             })
             scrollAnswer()
           },
+          onStreamReset: () => {
+            flushSync(() => setStreamingAnswer(''))
+          },
         })
         if (controller.signal.aborted) return
 
         const nextHistory = [
           ...turnHistoryRef.current,
-          { question: q, answer: text },
+          { question: q, answer: text, at: Date.now() },
         ].slice(-MAX_TURN_HISTORY)
         turnHistoryRef.current = nextHistory
         setTurnHistory(nextHistory)
@@ -973,10 +986,8 @@ export function useInterviewSession(profile: PersonalProfile, settings: AppSetti
     const validation = await validationPromise
     if (!validation.ok) {
       setStarting(false)
-      setError(
-        validation.error ||
-          'AI key validation failed — answers may not work. Check Settings → AI Providers.',
-      )
+      // Only hard-fail auth / missing key. Capacity 503s are handled as ok above.
+      setError(validation.error || 'AI key looks invalid. Check Settings → AI Providers.')
     }
 
     window.setTimeout(() => setStarting(false), SESSION_WARMUP_MS)
