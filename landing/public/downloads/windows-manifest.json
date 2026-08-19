@@ -1,6 +1,9 @@
 {
   "version": "2026.08.20.02.07",
   "compactVersion": "2026.820.207",
+  "releaseTag": "v2026.820.207",
+  "installerDownloadUrl": "https://github.com/Shlok0095/VeilAssist/releases/download/v2026.820.207/VeilAssist-Setup.exe",
+  "portableDownloadUrl": "https://github.com/Shlok0095/VeilAssist/releases/download/v2026.820.207/VeilAssist.exe",
   "builtAt": "2026-08-19T20:54:00.218Z",
   "installerSize": 139875534,
   "portableSize": 139604342

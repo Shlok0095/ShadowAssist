@@ -56,9 +56,17 @@ const distDir = findDistDirForYml(ymlPath)
 const portableSize = distDir ? findExeSize(distDir, 'VeilAssist.exe') : null
 const installerSize = yml.installerSize || (distDir ? findExeSize(distDir, 'VeilAssist-Setup.exe') : null)
 
+const compactVersion = yml.version || ''
+const releaseTag = compactVersion ? `v${compactVersion}` : 'v2026.820.207'
+const repo = 'Shlok0095/VeilAssist'
+const releaseBase = `https://github.com/${repo}/releases/download/${releaseTag}`
+
 const manifest = {
-  version: stampVersion || yml.version || '',
-  compactVersion: yml.version || stampVersion || '',
+  version: stampVersion || compactVersion || '',
+  compactVersion: compactVersion || stampVersion || '',
+  releaseTag,
+  installerDownloadUrl: `${releaseBase}/VeilAssist-Setup.exe`,
+  portableDownloadUrl: `${releaseBase}/VeilAssist.exe`,
   builtAt: yml.releaseDate || new Date().toISOString(),
   installerSize: installerSize || 0,
   portableSize: portableSize || 0,

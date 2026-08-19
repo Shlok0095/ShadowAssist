@@ -247,11 +247,16 @@ export function applySiteWindowsBuild(channel: ReleaseChannel): ReleaseChannel {
         a.kind === 'installer'
           ? SITE_WINDOWS_BUILD_MANIFEST.installerSize || a.size
           : SITE_WINDOWS_BUILD_MANIFEST.portableSize || a.size
+      const downloadUrl =
+        a.kind === 'installer'
+          ? SITE_WINDOWS_BUILD_MANIFEST.installerDownloadUrl || a.downloadUrl
+          : SITE_WINDOWS_BUILD_MANIFEST.portableDownloadUrl || a.downloadUrl
       return {
         ...a,
         version: winVersion || a.version,
         size: size > 0 ? size : a.size,
         releasedAt: SITE_WINDOWS_BUILD_MANIFEST.builtAt || a.releasedAt,
+        downloadUrl,
       }
     }),
   }
@@ -356,7 +361,7 @@ export const FALLBACK_CHANNEL: ReleaseChannel = applySiteManifests({
       version: SITE_WINDOWS_BUILD_MANIFEST.version,
       size: SITE_WINDOWS_BUILD_MANIFEST.installerSize > 0 ? SITE_WINDOWS_BUILD_MANIFEST.installerSize : null,
       releasedAt: SITE_WINDOWS_BUILD_MANIFEST.builtAt,
-      downloadUrl: 'https://github.com/Shlok0095/VeilAssist/releases/download/latest-stag/VeilAssist-Setup.exe',
+      downloadUrl: SITE_WINDOWS_BUILD_MANIFEST.installerDownloadUrl,
       checksum: null,
     },
     {
@@ -367,7 +372,7 @@ export const FALLBACK_CHANNEL: ReleaseChannel = applySiteManifests({
       version: SITE_WINDOWS_BUILD_MANIFEST.version,
       size: SITE_WINDOWS_BUILD_MANIFEST.portableSize > 0 ? SITE_WINDOWS_BUILD_MANIFEST.portableSize : null,
       releasedAt: SITE_WINDOWS_BUILD_MANIFEST.builtAt,
-      downloadUrl: 'https://github.com/Shlok0095/VeilAssist/releases/download/latest-stag/VeilAssist.exe',
+      downloadUrl: SITE_WINDOWS_BUILD_MANIFEST.portableDownloadUrl,
       checksum: null,
     },
     {
