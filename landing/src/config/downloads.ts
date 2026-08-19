@@ -15,6 +15,7 @@
 
 import { SITE } from './site'
 import { SITE_ANDROID_APK_MANIFEST } from './apkManifest.generated'
+import { SITE_WINDOWS_BUILD_MANIFEST } from './windowsManifest.generated'
 
 export type DownloadPlatform = 'windows' | 'macos' | 'linux' | 'android'
 export type DownloadKind = 'installer' | 'portable' | 'archive'
@@ -226,7 +227,34 @@ export async function fetchChannel(owner: string, repo: string, tag: string): Pr
   if (ymlAsset) {
     channel = await enrichFromLatestYml(channel, ymlAsset.browser_download_url)
   }
-  return applySiteAndroidApk(channel)
+  return applySiteManifests(channel)
+}
+
+function applySiteManifests(channel: ReleaseChannel): ReleaseChannel {
+  return applySiteWindowsBuild(applySiteAndroidApk(channel))
+}
+
+/** Site-hosted Windows build metadata (see windowsManifest.generated.ts). */
+export function applySiteWindowsBuild(channel: ReleaseChannel): ReleaseChannel {
+  const winVersion = SITE_WINDOWS_BUILD_MANIFEST.version || SITE_WINDOWS_BUILD_MANIFEST.compactVersion
+  if (!winVersion) return channel
+
+  return {
+    ...channel,
+    artifacts: channel.artifacts.map((a) => {
+      if (a.platform !== 'windows') return a
+      const size =
+        a.kind === 'installer'
+          ? SITE_WINDOWS_BUILD_MANIFEST.installerSize || a.size
+          : SITE_WINDOWS_BUILD_MANIFEST.portableSize || a.size
+      return {
+        ...a,
+        version: winVersion || a.version,
+        size: size > 0 ? size : a.size,
+        releasedAt: SITE_WINDOWS_BUILD_MANIFEST.builtAt || a.releasedAt,
+      }
+    }),
+  }
 }
 
 /** Site-hosted interview APK metadata (see apkManifest.generated.ts). */
@@ -313,11 +341,11 @@ export const PLATFORM_LABELS: Record<DownloadPlatform, string> = {
  * page never shows an empty state. Refresh when the artifact naming scheme
  * changes — not on every release.
  */
-export const FALLBACK_CHANNEL: ReleaseChannel = applySiteAndroidApk({
+export const FALLBACK_CHANNEL: ReleaseChannel = applySiteManifests({
   tag: 'latest-stag',
   name: 'VeilAssist — latest-stag',
   prerelease: true,
-  publishedAt: '2026-08-16T19:28:58Z',
+  publishedAt: SITE_WINDOWS_BUILD_MANIFEST.builtAt,
   htmlUrl: 'https://github.com/Shlok0095/VeilAssist/releases/tag/latest-stag',
   artifacts: [
     {
@@ -325,9 +353,9 @@ export const FALLBACK_CHANNEL: ReleaseChannel = applySiteAndroidApk({
       platform: 'windows',
       arch: 'x64',
       kind: 'installer',
-      version: '2026.08.16.19.01',
-      size: 139843765,
-      releasedAt: '2026-08-16T19:28:58Z',
+      version: SITE_WINDOWS_BUILD_MANIFEST.version,
+      size: SITE_WINDOWS_BUILD_MANIFEST.installerSize > 0 ? SITE_WINDOWS_BUILD_MANIFEST.installerSize : null,
+      releasedAt: SITE_WINDOWS_BUILD_MANIFEST.builtAt,
       downloadUrl: 'https://github.com/Shlok0095/VeilAssist/releases/download/latest-stag/VeilAssist-Setup.exe',
       checksum: null,
     },
@@ -336,9 +364,9 @@ export const FALLBACK_CHANNEL: ReleaseChannel = applySiteAndroidApk({
       platform: 'windows',
       arch: 'x64',
       kind: 'portable',
-      version: '2026.08.16.19.01',
-      size: 139572611,
-      releasedAt: '2026-08-16T19:28:58Z',
+      version: SITE_WINDOWS_BUILD_MANIFEST.version,
+      size: SITE_WINDOWS_BUILD_MANIFEST.portableSize > 0 ? SITE_WINDOWS_BUILD_MANIFEST.portableSize : null,
+      releasedAt: SITE_WINDOWS_BUILD_MANIFEST.builtAt,
       downloadUrl: 'https://github.com/Shlok0095/VeilAssist/releases/download/latest-stag/VeilAssist.exe',
       checksum: null,
     },
