@@ -8,6 +8,7 @@ import {
   fetchChannel,
   formatBytes,
   formatDate,
+  formatDateTime,
   KIND_LABELS,
   PLATFORM_LABELS,
   type DownloadArtifact,
@@ -104,7 +105,7 @@ function ArtifactCard({
         <dt className="text-zinc-600">Size</dt>
         <dd className="text-right text-zinc-400">{formatBytes(artifact.size)}</dd>
         <dt className="text-zinc-600">Released</dt>
-        <dd className="text-right text-zinc-400">{formatDate(artifact.releasedAt)}</dd>
+        <dd className="text-right text-zinc-400">{formatDateTime(artifact.releasedAt)}</dd>
         {artifact.checksum ? (
           <>
             <dt className="truncate text-zinc-600" title={artifact.checksum}>
