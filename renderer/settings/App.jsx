@@ -1,14 +1,15 @@
 // Copyright (c) 2026 VeilAssist. All rights reserved.
 // Unauthorized copying or distribution is prohibited.
 
-import React, { useState, useEffect, useMemo, useRef } from 'react'
+import React, { useState, useEffect, useMemo, useRef, useCallback } from 'react'
 import { createIpcShim } from '../shared/ipcShim'
 import SettingsTabContent from './SettingsTabContent'
-import { SettingsNav } from './settingsNav.jsx'
+import { SettingsNav, normalizeSettingsTabId } from './settingsNav.jsx'
 import { DEFAULT_HOTKEYS_MAP } from './settingsConstants'
 import { toDateKey, friendlyCalendarError } from './settingsFormatters'
 import SettingsWindowFrame from './SettingsWindowFrame'
 import brandLogo from '../shared/brandLogo'
+import { fontSizeFromAnswerLength } from '../shared/interviewSettings'
 
 const ipc = createIpcShim()
 
@@ -73,7 +74,7 @@ export default function Settings() {
   const [keySetMap, setKeySetMap] = useState({})
   const [testByProvider, setTestByProvider] = useState({})
   const [testingProvider, setTestingProvider] = useState(null)
-  const [activeTab, setActiveTab] = useState('profile')
+  const [activeTab, setActiveTab] = useState('display')
   const [hasCompletedOnboarding, setHasCompletedOnboarding] = useState(true)
   const [audioEnabled, setAudioEnabled] = useState(true)
   const [micSensitivity, setMicSensitivity] = useState('standard')
@@ -116,8 +117,15 @@ export default function Settings() {
 
   const [overlayOpacityUi, setOverlayOpacityUi] = useState(0.92)
   const [overlayFontUi, setOverlayFontUi] = useState('medium')
-  const [answerStyleUi, setAnswerStyleUi] = useState('brief')
+  const [answerStructureUi, setAnswerStructureUi] = useState('star')
+  const [responseFormatUi, setResponseFormatUi] = useState('bullets')
+  const [answerLengthUi, setAnswerLengthUi] = useState('medium')
+  const [questionDetectionUi, setQuestionDetectionUi] = useState('high')
+  const [assistAutoTriggerUi, setAssistAutoTriggerUi] = useState(false)
+  const [overlayAnswerAutoScrollUi, setOverlayAnswerAutoScrollUi] = useState(true)
+  const [meetingListenLanguageUi, setMeetingListenLanguageUi] = useState('en')
   const [aiResponseLanguageUi, setAiResponseLanguageUi] = useState('')
+  const [interviewCustomInstructionsUi, setInterviewCustomInstructionsUi] = useState('')
   const [conversationFollowUpsEnabled, setConversationFollowUpsEnabled] = useState(false)
   const [overlayAnswerViewUi, setOverlayAnswerViewUi] = useState('latest')
   const [overlayTeleprompterUi, setOverlayTeleprompterUi] = useState(false)
@@ -319,8 +327,15 @@ export default function Settings() {
         const ob = s.overlayBounds || {}
         setOverlayOpacityUi(typeof s.overlayOpacity === 'number' ? s.overlayOpacity : 0.92)
         setOverlayFontUi(s.overlayFontSize || 'medium')
-        setAnswerStyleUi(s.answerStyle === 'detailed' ? 'detailed' : 'brief')
+        setAnswerStructureUi(s.answerStructure === 'car' || s.answerStructure === 'soar' || s.answerStructure === 'par' || s.answerStructure === 'soara' ? s.answerStructure : 'star')
+        setResponseFormatUi(s.responseFormat === 'conversational' || s.responseFormat === 'example' ? s.responseFormat : 'bullets')
+        setAnswerLengthUi(s.answerLength === 'short' || s.answerLength === 'long' ? s.answerLength : 'medium')
+        setQuestionDetectionUi(s.questionDetection === 'low' || s.questionDetection === 'medium' ? s.questionDetection : 'high')
+        setAssistAutoTriggerUi(s.assistAutoTrigger === true)
+        setOverlayAnswerAutoScrollUi(s.overlayAnswerAutoScroll !== false)
+        setMeetingListenLanguageUi(String(s.meetingListenLanguage || s.micListenLanguage || 'en'))
         setAiResponseLanguageUi(String(s.aiResponseLanguage || ''))
+        setInterviewCustomInstructionsUi(String(s.interviewCustomInstructions || ''))
         setConversationFollowUpsEnabled(s.conversationFollowUpsEnabled === true)
         setOverlayAnswerViewUi(s.overlayAnswerView === 'history' ? 'history' : 'latest')
         setOverlayTeleprompterUi(s.overlayTeleprompter === true)
@@ -404,8 +419,12 @@ export default function Settings() {
   }, [])
 
 
+  const selectSettingsTab = useCallback((tabId) => {
+    setActiveTab(normalizeSettingsTabId(tabId))
+  }, [])
+
   useEffect(() => {
-    if (isFirstRunWindow) setActiveTab('ai')
+    if (isFirstRunWindow) setActiveTab('advance')
   }, [isFirstRunWindow])
 
   useEffect(() => {
@@ -429,7 +448,7 @@ export default function Settings() {
 
   useEffect(() => {
     if (isFirstRunWindow && snap && !hasCompletedOnboarding) {
-      setActiveTab('ai')
+      setActiveTab('advance')
     }
   }, [isFirstRunWindow, snap, hasCompletedOnboarding])
 
@@ -809,12 +828,73 @@ export default function Settings() {
     await ipc?.invoke('apply-overlay-display', { overlayFontSize: v })
   }
 
-  const applyAnswerStyle = async (v) => {
-    const next = v === 'detailed' ? 'detailed' : 'brief'
-    setAnswerStyleUi(next)
-    patchSnap('answerStyle', next)
-    await save('answerStyle', next)
-    await ipc?.invoke('apply-overlay-display', { answerStyle: next })
+  const applyAnswerStructure = async (v) => {
+    const next = ['star', 'car', 'soar', 'par', 'soara'].includes(v) ? v : 'star'
+    setAnswerStructureUi(next)
+    patchSnap('answerStructure', next)
+    await save('answerStructure', next)
+  }
+
+  const applyResponseFormat = async (v) => {
+    const next = v === 'conversational' || v === 'example' ? v : 'bullets'
+    setResponseFormatUi(next)
+    patchSnap('responseFormat', next)
+    await save('responseFormat', next)
+    const displayStyle = next === 'bullets' ? 'brief' : 'detailed'
+    patchSnap('answerStyle', displayStyle)
+    await save('answerStyle', displayStyle)
+    await ipc?.invoke('apply-overlay-display', { responseFormat: next, answerStyle: displayStyle })
+  }
+
+  const applyAnswerLength = async (v) => {
+    const next = v === 'short' || v === 'long' ? v : 'medium'
+    setAnswerLengthUi(next)
+    patchSnap('answerLength', next)
+    await save('answerLength', next)
+    if (overlayAnswerAutoScrollUi) {
+      const fs = fontSizeFromAnswerLength(next)
+      setOverlayFontUi(fs)
+      patchSnap('overlayFontSize', fs)
+      await save('overlayFontSize', fs)
+    }
+    await ipc?.invoke('apply-overlay-display', { answerLength: next })
+  }
+
+  const applyQuestionDetection = async (v) => {
+    const next = v === 'low' || v === 'medium' ? v : 'high'
+    setQuestionDetectionUi(next)
+    patchSnap('questionDetection', next)
+    await save('questionDetection', next)
+    await ipc?.invoke('apply-overlay-display', { questionDetection: next })
+  }
+
+  const applyAssistAutoTrigger = async (v) => {
+    const enabled = !!v
+    setAssistAutoTriggerUi(enabled)
+    patchSnap('assistAutoTrigger', enabled)
+    await save('assistAutoTrigger', enabled)
+    await ipc?.invoke('apply-overlay-display', { assistAutoTrigger: enabled })
+  }
+
+  const applyOverlayAnswerAutoScroll = async (v) => {
+    const enabled = !!v
+    setOverlayAnswerAutoScrollUi(enabled)
+    patchSnap('overlayAnswerAutoScroll', enabled)
+    await save('overlayAnswerAutoScroll', enabled)
+    if (enabled) {
+      const fs = fontSizeFromAnswerLength(answerLengthUi)
+      setOverlayFontUi(fs)
+      patchSnap('overlayFontSize', fs)
+      await save('overlayFontSize', fs)
+    }
+    await ipc?.invoke('apply-overlay-display', { overlayAnswerAutoScroll: enabled })
+  }
+
+  const applyMeetingListenLanguage = async (v) => {
+    const next = String(v || 'en')
+    setMeetingListenLanguageUi(next)
+    patchSnap('meetingListenLanguage', next)
+    await save('meetingListenLanguage', next)
   }
 
   const applyAiResponseLanguage = async (v) => {
@@ -822,6 +902,21 @@ export default function Settings() {
     setAiResponseLanguageUi(lang)
     patchSnap('aiResponseLanguage', lang)
     await save('aiResponseLanguage', lang)
+  }
+
+  const applyInterviewCustomInstructions = async () => {
+    const text = String(interviewCustomInstructionsUi || '').trim().slice(0, 2000)
+    setInterviewCustomInstructionsUi(text)
+    patchSnap('interviewCustomInstructions', text)
+    await save('interviewCustomInstructions', text)
+  }
+
+  const onInterviewCustomInstructionsChange = (v) => {
+    setInterviewCustomInstructionsUi(String(v || '').slice(0, 2000))
+  }
+
+  const onInterviewCustomInstructionsBlur = () => {
+    void applyInterviewCustomInstructions()
   }
 
   const applyConversationFollowUps = async (v) => {
@@ -1088,12 +1183,12 @@ export default function Settings() {
         ) : null}
 
         <div className="flex min-h-0 min-w-0 flex-1 overflow-hidden">
-          <SettingsNav activeTab={activeTab} onSelectTab={setActiveTab} />
+          <SettingsNav activeTab={activeTab} onSelectTab={selectSettingsTab} />
 
           <main className="settings-scroll-outer min-h-0 min-w-0 flex-1 overflow-y-auto overflow-x-hidden p-6">
           <SettingsTabContent
-            activeTab={activeTab}
-            onSelectTab={setActiveTab}
+            activeTab={normalizeSettingsTabId(activeTab)}
+            onSelectTab={selectSettingsTab}
             snap={snap}
             providerMeta={providerMeta}
             provider={provider}
@@ -1117,10 +1212,17 @@ export default function Settings() {
             chatTest={chatTest}
             chatTesting={chatTesting}
             onTestConnection={testApiFor}
-            answerStyleUi={answerStyleUi}
-            onAnswerStyleChange={applyAnswerStyle}
+            answerStructureUi={answerStructureUi}
+            onAnswerStructureChange={applyAnswerStructure}
+            responseFormatUi={responseFormatUi}
+            onResponseFormatChange={applyResponseFormat}
+            answerLengthUi={answerLengthUi}
+            onAnswerLengthChange={applyAnswerLength}
             aiResponseLanguageUi={aiResponseLanguageUi}
             onAiResponseLanguageChange={applyAiResponseLanguage}
+            interviewCustomInstructionsUi={interviewCustomInstructionsUi}
+            onInterviewCustomInstructionsChange={onInterviewCustomInstructionsChange}
+            onInterviewCustomInstructionsBlur={onInterviewCustomInstructionsBlur}
             conversationFollowUpsEnabled={conversationFollowUpsEnabled}
             onConversationFollowUpsChange={applyConversationFollowUps}
             showSetupBanner={showSetupBanner}
@@ -1128,18 +1230,32 @@ export default function Settings() {
             audioEnabled={audioEnabled}
             onAudioEnabledChange={(v) => { setAudioEnabled(v); save('audioEnabled', v) }}
             micSensitivity={micSensitivity}
-            onMicSensitivityChange={(v) => { setMicSensitivity(v); save('micSensitivity', v) }}
+            onMicSensitivityChange={async (v) => {
+              setMicSensitivity(v)
+              await save('micSensitivity', v)
+              await ipc?.invoke('apply-overlay-display', { micSensitivity: v })
+            }}
             sttModeUi={sttModeUi}
             onSttModeChange={(id) => { setSttModeUi(id); save('sttMode', id) }}
             sttCapableMeta={sttCapableMeta}
             sttProvider={sttProvider}
-            onSttProviderChange={(id) => { setSttProvider(id); save('sttProvider', id) }}
+            onSttProviderChange={(id) => {
+              setSttProvider(id)
+              save('sttProvider', id)
+              const needsCloud = ['deepgram', 'elevenlabs', 'azure', 'google', 'soniox', 'nvidia'].includes(id)
+              if (needsCloud && sttModeUi !== 'cloud') {
+                setSttModeUi('cloud')
+                save('sttMode', 'cloud')
+              }
+            }}
             currentSttMeta={currentSttMeta}
             sttKeyField={sttKeyField}
             sttKeySaved={sttKeySaved}
             sttSecretInput={sttSecretInput}
             onSttSecretInputChange={setSttSecretInput}
             onSaveSttKey={() => { if (sttKeyField && sttSecretInput.trim()) { saveKey(sttKeyField, sttSecretInput); setSttSecretInput('') } }}
+            meetingListenLanguageUi={meetingListenLanguageUi}
+            onMeetingListenLanguageChange={applyMeetingListenLanguage}
             overlayOpacityUi={overlayOpacityUi}
             onOverlayOpacityChange={applyOverlayOpacity}
             onOpacityPreset={applyOpacityPreset}
@@ -1157,6 +1273,12 @@ export default function Settings() {
             onTranscriptAutoScrollChange={applyTranscriptAutoScroll}
             overlayAnswerPinToTopUi={overlayAnswerPinToTopUi}
             onAnswerPinToTopChange={applyAnswerPinToTop}
+            assistAutoTriggerUi={assistAutoTriggerUi}
+            onAssistAutoTriggerChange={applyAssistAutoTrigger}
+            questionDetectionUi={questionDetectionUi}
+            onQuestionDetectionChange={applyQuestionDetection}
+            overlayAnswerAutoScrollUi={overlayAnswerAutoScrollUi}
+            onOverlayAnswerAutoScrollChange={applyOverlayAnswerAutoScroll}
             openAtLoginUi={openAtLoginUi}
             onOpenAtLoginChange={applyOpenAtLogin}
             overlayMousePassthroughUi={overlayMousePassthroughUi}

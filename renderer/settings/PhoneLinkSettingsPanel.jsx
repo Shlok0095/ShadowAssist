@@ -8,6 +8,7 @@ import { createIpcShim } from '../shared/ipcShim'
 import AppIcon from '../shared/AppIcon'
 import {
   SettingsPage,
+  SettingsPanelShell,
   SettingsRow,
   SettingsSection,
   ToggleSwitch,
@@ -16,6 +17,7 @@ import {
 const ipc = createIpcShim()
 
 export default function PhoneLinkSettingsPanel({
+  embedded = false,
   phoneLinkEnabled,
   onPhoneLinkEnabledChange,
   phoneLinkRemoteMicEnabled,
@@ -115,7 +117,8 @@ export default function PhoneLinkSettingsPanel({
   const toolsReady = mirrorProbe?.adbFound && mirrorProbe?.scrcpyFound
 
   return (
-    <SettingsPage
+    <SettingsPanelShell
+      embedded={embedded}
       title="Phone"
       description="Phone Link (QR companion) and Android USB mirror (scrcpy). Desktop Listen, STT, and screen capture stay unchanged unless you opt in below."
     >
@@ -304,6 +307,6 @@ export default function PhoneLinkSettingsPanel({
           </div>
         </div>
       </SettingsSection>
-    </SettingsPage>
+    </SettingsPanelShell>
   )
 }

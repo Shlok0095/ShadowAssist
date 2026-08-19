@@ -2,6 +2,7 @@
 // Unauthorized copying or distribution is prohibited.
 
 const { app, BrowserWindow, ipcMain, globalShortcut, Tray, nativeImage, screen, dialog, Menu, clipboard, shell, Notification, powerMonitor } = require('electron')
+require('../lib/mainWebSocket').installMainWebSocket()
 const path = require('path')
 const fs = require('fs')
 const fsPromises = require('fs').promises
@@ -87,7 +88,18 @@ function win32Bg() {
 }
 const { isPointInBounds, resolveOverlayMouseCapture } = require('../lib/overlayMousePolicy')
 const { resolveSystemPrompt } = require('../lib/defaultSystemPrompt')
-const { getAnswerStyleSuffix } = require('../lib/answerStyle')
+const { getInterviewAnswerSuffixFromStore } = require('../lib/interviewAnswerPrompt.cjs')
+const {
+  normalizeAnswerStructure,
+  normalizeResponseFormat,
+  normalizeAnswerLength,
+  normalizeQuestionDetection,
+  normalizeMeetingLanguage,
+  micFromMeetingLanguage,
+  overlayDisplayStyleFromFormat,
+  fontSizeFromAnswerLength,
+  maxTokensForAnswerLength,
+} = require('../lib/interviewSettingsCatalog.cjs')
 const {
   normalizePromptsList,
   formatActivePromptBlock,
@@ -155,6 +167,26 @@ const { createPhoneMirrorManager } = require('../lib/phoneMirror/phoneMirrorMana
 const { TimedCache } = require('../lib/timedCache')
 
 store.runDataMigration()
+
+function overlayFontPayloadForAnswerLength(store, answerLength) {
+  const payload = { answerLength }
+  if (store.get('overlayAnswerAutoScroll') !== false) {
+    const fs = fontSizeFromAnswerLength(answerLength)
+    store.set('overlayFontSize', fs)
+    payload.overlayFontSize = fs
+  }
+  return payload
+}
+
+function overlayFontPayloadForAutoScrollToggle(store, enabled) {
+  const payload = { overlayAnswerAutoScroll: enabled }
+  if (enabled) {
+    const fs = fontSizeFromAnswerLength(store.get('answerLength'))
+    store.set('overlayFontSize', fs)
+    payload.overlayFontSize = fs
+  }
+  return payload
+}
 
 /** Short-lived cache for profile/context blocks on repeated asks in the same session. */
 const profileContextCache = new TimedCache(60_000, 32)
@@ -2797,7 +2829,7 @@ async function handleAskAI(userQuestion, audioTranscript, _askMeta = {}) {
   const getStore = (k) => store.get(k)
   const model = providers.getModelForProvider(provider, getStore)
 
-  fullSystem = `${fullSystem}\n\n---\n${getAnswerStyleSuffix(store.get('answerStyle'))}`
+  fullSystem = `${fullSystem}\n\n---\n${getInterviewAnswerSuffixFromStore(store)}`
 
   const transcript = String(audioCombined).trim()
   const hasActionableText = /[a-z0-9]/i.test(
@@ -2914,11 +2946,10 @@ async function handleAskAI(userQuestion, audioTranscript, _askMeta = {}) {
     // The Groq on-demand tier allows 8K TPM for Qwen 3.6. Screenshot and
     // prompt input commonly consume 3ΓÇô4K tokens. A bounded output also avoids
     // reserving unnecessary TPM and keeps the overlay answer useful quickly.
-    const answerStyle = store.get('answerStyle')
-    const qwenOutputTokens =
-      effectiveAnswerContract === 'coding_answer'
-        ? answerStyle === 'detailed' ? 2400 : 1800
-        : answerStyle === 'detailed' ? 2200 : 1200
+    const answerLength = normalizeAnswerLength(store.get('answerLength'))
+    const qwenOutputTokens = maxTokensForAnswerLength(answerLength, {
+      coding: effectiveAnswerContract === 'coding_answer',
+    })
     const isFastVisionModel =
       (provider === 'nvidia' && isMultimodalChatModel('nvidia', model)) ||
       (provider === 'groq' && model === 'qwen/qwen3.6-27b')
@@ -2929,17 +2960,24 @@ async function handleAskAI(userQuestion, audioTranscript, _askMeta = {}) {
     // Same-provider NVIDIA multimodal chain (bench-ranked). Chat no longer depends on Groq.
     const NVIDIA_FALLBACK_MODELS = nvidiaFallbackModelsFor(model)
     const nvidiaKey = String(store.get(providers.getApiKeyField('nvidia')) || '').trim()
-    const fallbacks =
-      provider === 'nvidia' && nvidiaKey
-        ? NVIDIA_FALLBACK_MODELS
-            .filter((id) => id !== model && isMultimodalChatModel('nvidia', id))
-            .map((id) => ({
-              provider: 'nvidia',
-              apiKey: nvidiaKey,
-              model: id,
-              maxTokens: qwenOutputTokens,
-            }))
+    const groqKey = String(store.get(providers.getApiKeyField('groq')) || '').trim()
+    const nvFallbacks = provider === 'nvidia' && nvidiaKey
+      ? NVIDIA_FALLBACK_MODELS
+          .filter((id) => id !== model && isMultimodalChatModel('nvidia', id))
+          .map((id) => ({
+            provider: 'nvidia',
+            apiKey: nvidiaKey,
+            model: id,
+            maxTokens: qwenOutputTokens,
+          }))
+      : []
+    // Text-only fallback: when no screenshot is attached and all NVIDIA models are vision-only,
+    // Groq (qwen3.6-27b) can handle pure text requests. Appended last so vision models run first.
+    const groqTextFallback =
+      provider === 'nvidia' && !visionB64 && groqKey
+        ? [{ provider: 'groq', apiKey: groqKey, model: 'qwen/qwen3.6-27b', maxTokens: qwenOutputTokens }]
         : []
+    const fallbacks = [...nvFallbacks, ...groqTextFallback]
     let activeStreamProvider = provider
     let streamFinishMeta = null
     const requestStartedAt = Date.now()
@@ -3522,6 +3560,43 @@ function setupIPC() {
       const v = value === 'detailed' ? 'detailed' : 'brief'
       store.set('answerStyle', v)
       sendToOverlay('overlay-display-update', { answerStyle: v })
+      return true
+    }
+    if (key === 'answerStructure') {
+      const v = normalizeAnswerStructure(value)
+      store.set('answerStructure', v)
+      return true
+    }
+    if (key === 'responseFormat') {
+      const v = normalizeResponseFormat(value)
+      store.set('responseFormat', v)
+      const displayStyle = overlayDisplayStyleFromFormat(v)
+      store.set('answerStyle', displayStyle)
+      sendToOverlay('overlay-display-update', { responseFormat: v, answerStyle: displayStyle })
+      return true
+    }
+    if (key === 'answerLength') {
+      const v = normalizeAnswerLength(value)
+      store.set('answerLength', v)
+      sendToOverlay('overlay-display-update', overlayFontPayloadForAnswerLength(store, v))
+      return true
+    }
+    if (key === 'questionDetection') {
+      const v = normalizeQuestionDetection(value)
+      store.set('questionDetection', v)
+      sendToOverlay('overlay-display-update', { questionDetection: v })
+      return true
+    }
+    if (key === 'meetingListenLanguage') {
+      const v = normalizeMeetingLanguage(value)
+      store.set('meetingListenLanguage', v)
+      store.set('micListenLanguage', micFromMeetingLanguage(v))
+      return true
+    }
+    if (key === 'overlayAnswerAutoScroll') {
+      const v = !!value
+      store.set('overlayAnswerAutoScroll', v)
+      sendToOverlay('overlay-display-update', overlayFontPayloadForAutoScrollToggle(store, v))
       return true
     }
     if (key === 'overlayAnswerView') {
@@ -4155,6 +4230,45 @@ function setupIPC() {
         const v = opts.overlayAnswerPinToTop !== false
         store.set('overlayAnswerPinToTop', v)
         sendToOverlay('overlay-display-update', { overlayAnswerPinToTop: v })
+      }
+      if (opts.overlayAnswerAutoScroll != null) {
+        const v = !!opts.overlayAnswerAutoScroll
+        store.set('overlayAnswerAutoScroll', v)
+        sendToOverlay('overlay-display-update', overlayFontPayloadForAutoScrollToggle(store, v))
+      }
+      if (opts.assistAutoTrigger != null) {
+        const v = !!opts.assistAutoTrigger
+        store.set('assistAutoTrigger', v)
+        sendToOverlay('overlay-display-update', { assistAutoTrigger: v })
+      }
+      if (opts.questionDetection) {
+        const v = normalizeQuestionDetection(opts.questionDetection)
+        store.set('questionDetection', v)
+        sendToOverlay('overlay-display-update', { questionDetection: v })
+      }
+      if (opts.answerStructure) {
+        store.set('answerStructure', normalizeAnswerStructure(opts.answerStructure))
+      }
+      if (opts.responseFormat) {
+        const v = normalizeResponseFormat(opts.responseFormat)
+        store.set('responseFormat', v)
+        const displayStyle = overlayDisplayStyleFromFormat(v)
+        store.set('answerStyle', displayStyle)
+        sendToOverlay('overlay-display-update', { responseFormat: v, answerStyle: displayStyle })
+      }
+      if (opts.answerLength) {
+        const v = normalizeAnswerLength(opts.answerLength)
+        store.set('answerLength', v)
+        sendToOverlay('overlay-display-update', overlayFontPayloadForAnswerLength(store, v))
+      }
+      if (opts.meetingListenLanguage) {
+        const v = normalizeMeetingLanguage(opts.meetingListenLanguage)
+        store.set('meetingListenLanguage', v)
+        store.set('micListenLanguage', micFromMeetingLanguage(v))
+      }
+      if (opts.micSensitivity === 'boost' || opts.micSensitivity === 'standard') {
+        store.set('micSensitivity', opts.micSensitivity)
+        sendToOverlay('overlay-display-update', { micSensitivity: opts.micSensitivity })
       }
       if (typeof opts.width === 'number' || typeof opts.height === 'number') {
         const prev = store.get('overlayBounds') || {}

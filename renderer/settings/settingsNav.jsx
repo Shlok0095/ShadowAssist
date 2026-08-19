@@ -3,19 +3,15 @@
 
 import React from 'react'
 import {
-  Bot,
-  Brain,
-  CalendarDays,
   CircleHelp,
   Info,
   Keyboard,
   LayoutTemplate,
   LogOut,
-  Mic,
   Monitor,
   Shield,
-  Smartphone,
-  Sparkles,
+  SlidersHorizontal,
+  Video,
 } from 'lucide-react'
 import { createIpcShim } from '../shared/ipcShim'
 import AppIcon from '../shared/AppIcon'
@@ -27,19 +23,26 @@ const ipc = createIpcShim()
 
 /** @type {SettingsTab[]} */
 export const SETTINGS_TABS = [
-  { id: 'profile', label: 'Profile', icon: LayoutTemplate },
-  { id: 'skills', label: 'Skills', icon: Sparkles },
-  { id: 'ai', label: 'AI Providers', icon: Bot },
-  { id: 'speech', label: 'Audio', icon: Mic },
   { id: 'display', label: 'General', icon: Monitor },
-  { id: 'phone', label: 'Phone', icon: Smartphone },
-  { id: 'intelligence', label: 'Intelligence', icon: Brain },
+  { id: 'profile', label: 'Profile', icon: LayoutTemplate },
+  { id: 'advance', label: 'Advance', icon: SlidersHorizontal },
   { id: 'keybinds', label: 'Keybinds', icon: Keyboard },
-  { id: 'meetings', label: 'Calendar', icon: CalendarDays },
+  { id: 'meetings', label: 'Meeting', icon: Video },
   { id: 'privacy', label: 'Privacy', icon: Shield },
   { id: 'help', label: 'Help', icon: CircleHelp },
   { id: 'about', label: 'About', icon: Info },
 ]
+
+/** Legacy tab ids — profile/skills → Profile; ai/speech/phone/intelligence → Advance. */
+export const LEGACY_PROFILE_TAB_IDS = new Set(['skills'])
+export const LEGACY_ADVANCE_TAB_IDS = new Set(['ai', 'speech', 'phone', 'intelligence'])
+
+export function normalizeSettingsTabId(tabId) {
+  const id = String(tabId || '').trim()
+  if (id === 'profile' || LEGACY_PROFILE_TAB_IDS.has(id)) return 'profile'
+  if (LEGACY_ADVANCE_TAB_IDS.has(id)) return 'advance'
+  return SETTINGS_TABS.some((t) => t.id === id) ? id : 'display'
+}
 
 export function SettingsNav({ activeTab, onSelectTab }) {
   const { name } = useBrand()
@@ -47,13 +50,15 @@ export function SettingsNav({ activeTab, onSelectTab }) {
     ipc?.send('app-quit')
   }
 
+  const normalizedActive = normalizeSettingsTabId(activeTab)
+
   return (
     <nav className="settings-nav">
       <p className="settings-nav-title">Settings</p>
 
       <div className="settings-nav-list">
         {SETTINGS_TABS.map((t) => {
-          const active = activeTab === t.id
+          const active = normalizedActive === t.id
           return (
             <button
               key={t.id}

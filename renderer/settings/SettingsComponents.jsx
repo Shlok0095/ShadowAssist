@@ -17,6 +17,16 @@ export const SettingsPage = memo(function SettingsPage({ title, description, chi
   )
 })
 
+/** When embedded inside Advance collapsibles, skip duplicate page chrome. */
+export function SettingsPanelShell({ embedded = false, title, description, wide, children }) {
+  if (embedded) return <div className="space-y-5">{children}</div>
+  return (
+    <SettingsPage title={title} description={description} wide={wide}>
+      {children}
+    </SettingsPage>
+  )
+}
+
 export function SettingsSection({ title, description, children, className = '' }) {
   return (
     <section className={`glass-panel ${className}`}>

@@ -32,7 +32,7 @@ import TemplateModeIcon from './TemplateModeIcons'
 
 import AppIcon from '../shared/AppIcon'
 
-import { SettingsPage } from './SettingsComponents'
+import { SettingsPanelShell } from './SettingsComponents'
 
 
 
@@ -95,6 +95,8 @@ export default function ProfileModesPanel({
   onRemoveFile,
 
   onToggleTemplates,
+
+  embedded = false,
 
 }) {
   const name = 'VeilAssist'
@@ -192,7 +194,9 @@ export default function ProfileModesPanel({
 
   return (
 
-    <SettingsPage
+    <SettingsPanelShell
+
+      embedded={embedded}
 
       wide
 
@@ -835,7 +839,7 @@ export default function ProfileModesPanel({
 
       </div>
 
-    </SettingsPage>
+    </SettingsPanelShell>
 
   )
 

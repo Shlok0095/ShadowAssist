@@ -53,7 +53,7 @@ export default function MeetingsSettingsPanel({
   const [detailsSessionId, setDetailsSessionId] = useState(null)
   return (
     <SettingsPage
-      title="Calendar"
+      title="Meeting"
       description="Google Calendar, meeting detection, and session recaps."
     >
       <section className="glass-panel overflow-hidden p-6">

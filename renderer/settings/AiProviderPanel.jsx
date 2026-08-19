@@ -4,17 +4,15 @@ import React from 'react'
 import {
   ModelInput,
   ModelSelect,
-  SegmentedControl,
   SettingsBadge,
   SettingsFieldLabel,
-  SettingsPage,
+  SettingsPanelShell,
   SettingsSection,
-  ToggleSwitch,
 } from './SettingsComponents'
-import { listAiResponseLanguages } from '../../lib/aiResponseLanguage.js'
 import { useBrand } from '../shared/branding'
 
 export default function AiProviderPanel({
+  embedded = false,
   snap,
   providerMeta,
   provider,
@@ -38,18 +36,13 @@ export default function AiProviderPanel({
   chatTest,
   chatTesting,
   onTestConnection,
-  answerStyleUi,
-  onAnswerStyleChange,
-  aiResponseLanguageUi,
-  onAiResponseLanguageChange,
-  conversationFollowUpsEnabled,
-  onConversationFollowUpsChange,
   showSetupBanner,
   onLaunchFromSetup,
 }) {
   const { name } = useBrand()
   return (
-    <SettingsPage
+    <SettingsPanelShell
+      embedded={embedded}
       title="AI Providers"
       description="Configure chat models and API keys. Speech transcription is under Audio."
     >
@@ -237,57 +230,11 @@ export default function AiProviderPanel({
         )}
       </SettingsSection>
 
-      <SettingsSection
-        title="Response style"
-        description="How the assistant formats answers in the overlay — independent of overlay font size."
-      >
-        <div>
-          <SettingsFieldLabel>Detail level</SettingsFieldLabel>
-          <p className="mb-2 text-[11px] text-zinc-600">
-            Brief: multi-paragraph depth + visible code; lists tuck under “Show lists &amp; steps”. Detailed: full markdown.
-          </p>
-          <SegmentedControl
-            value={answerStyleUi}
-            onChange={onAnswerStyleChange}
-            options={[
-              { id: 'brief', label: 'Brief (summary)' },
-              { id: 'detailed', label: 'Detailed' },
-            ]}
-          />
-        </div>
-        <div className="mt-4">
-          <SettingsFieldLabel>Response language</SettingsFieldLabel>
-          <p className="mb-2 text-[11px] text-zinc-600">
-            Optional — append a language instruction to the system prompt. Default follows your question language.
-          </p>
-          <select
-            value={aiResponseLanguageUi || ''}
-            onChange={(e) => onAiResponseLanguageChange?.(e.target.value)}
-            className="input-shadow w-full max-w-md px-3 py-2 text-sm"
-          >
-            {listAiResponseLanguages().map((opt) => (
-              <option key={opt.id || 'auto'} value={opt.id} className="bg-void-900">
-                {opt.label}
-              </option>
-            ))}
-          </select>
-        </div>
-        <div className="mt-4 flex items-start justify-between gap-4 rounded-lg border border-white/[0.07] bg-white/[0.025] px-3 py-3">
-          <div>
-            <SettingsFieldLabel>Conversation follow-ups</SettingsFieldLabel>
-            <p className="text-[11px] leading-relaxed text-zinc-500">
-              Resolve short continuations and references against the most relevant question and answer in this session.
-            </p>
-          </div>
-          <ToggleSwitch checked={conversationFollowUpsEnabled} onChange={onConversationFollowUpsChange} />
-        </div>
-      </SettingsSection>
-
       {showSetupBanner && (
         <button type="button" onClick={onLaunchFromSetup} className="btn-glow w-full py-4 text-base">
           Launch {name}
         </button>
       )}
-    </SettingsPage>
+    </SettingsPanelShell>
   )
 }

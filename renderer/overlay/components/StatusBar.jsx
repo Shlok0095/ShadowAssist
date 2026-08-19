@@ -2,11 +2,14 @@
 // Unauthorized copying or distribution is prohibited.
 
 import React, { memo } from 'react'
-import { Settings } from 'lucide-react'
+import { SlidersHorizontal } from 'lucide-react'
 import AppIcon from '../../shared/AppIcon'
 import overlayBrandLogo from '../../shared/overlayBrandLogo'
 
+import { useBrand } from '../../shared/branding'
+
 function StatusBar({ sessionOn, ocrStatus, onToggleSession, onOpenSettings, onQuit }) {
+  const { name } = useBrand()
   const ocrHint =
     ocrStatus === 'loading'
       ? 'Loading screen OCR…'
@@ -68,7 +71,7 @@ function StatusBar({ sessionOn, ocrStatus, onToggleSession, onOpenSettings, onQu
           title="Settings"
           className="crystal-icon-btn cursor-default flex h-7 w-7 shrink-0 items-center justify-center rounded-lg active:scale-95"
         >
-          <AppIcon icon={Settings} size={14} strokeWidth={2} />
+          <AppIcon icon={SlidersHorizontal} size={15} strokeWidth={2} />
         </button>
 
         <button

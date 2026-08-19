@@ -19,7 +19,7 @@ export default function PrivacySettingsPanel({ onSelectIntelligenceTab }) {
             onClick={() => onSelectIntelligenceTab?.()}
             className="text-accent underline underline-offset-2 hover:opacity-90"
           >
-            Intelligence
+            Advance → Intelligence
           </button>
           .
         </p>

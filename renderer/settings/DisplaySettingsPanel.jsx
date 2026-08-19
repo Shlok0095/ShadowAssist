@@ -14,6 +14,8 @@ import {
   SettingsSection,
   ToggleSwitch,
 } from './SettingsComponents'
+import { QUESTION_DETECTION_LEVELS, ANSWER_STRUCTURES, RESPONSE_FORMATS, ANSWER_LENGTHS } from '../shared/interviewSettings'
+import { listAiResponseLanguages } from '../../lib/aiResponseLanguage.js'
 import { useBrand } from '../shared/branding'
 
 export default function DisplaySettingsPanel({
@@ -32,6 +34,27 @@ export default function DisplaySettingsPanel({
   onTranscriptAutoScrollChange,
   overlayAnswerPinToTopUi,
   onAnswerPinToTopChange,
+  answerStructureUi,
+  onAnswerStructureChange,
+  responseFormatUi,
+  onResponseFormatChange,
+  answerLengthUi,
+  onAnswerLengthChange,
+  interviewCustomInstructionsUi,
+  onInterviewCustomInstructionsChange,
+  onInterviewCustomInstructionsBlur,
+  aiResponseLanguageUi,
+  onAiResponseLanguageChange,
+  conversationFollowUpsEnabled,
+  onConversationFollowUpsChange,
+  overlayAnswerViewUi,
+  onAnswerViewChange,
+  assistAutoTriggerUi,
+  onAssistAutoTriggerChange,
+  questionDetectionUi,
+  onQuestionDetectionChange,
+  overlayAnswerAutoScrollUi,
+  onOverlayAnswerAutoScrollChange,
   openAtLoginUi,
   onOpenAtLoginChange,
   overlayMousePassthroughUi,
@@ -142,6 +165,128 @@ export default function DisplaySettingsPanel({
         </SettingsRow>
       </SettingsSection>
 
+      <SettingsSection title="Answers & screenshots" description="How answers are structured and how screen context is used. Applies to manual ask, auto-answer, and follow-ups.">
+        <div>
+          <SettingsFieldLabel>Custom instructions</SettingsFieldLabel>
+          <p className="mb-2 text-[11px] text-zinc-600">
+            Optional — appended to the system prompt for every answer. Same as Android Settings → Interview.
+          </p>
+          <textarea
+            value={interviewCustomInstructionsUi || ''}
+            onChange={(e) => onInterviewCustomInstructionsChange?.(e.target.value.slice(0, 2000))}
+            onBlur={() => onInterviewCustomInstructionsBlur?.()}
+            rows={3}
+            placeholder="How should the AI craft your answers? e.g. Add filler words to sound natural"
+            className="input-shadow min-h-[72px] w-full max-w-2xl resize-y px-3 py-2.5 text-[13px] leading-relaxed"
+          />
+        </div>
+        <div className="mt-4">
+          <SettingsFieldLabel>Answer structure</SettingsFieldLabel>
+          <p className="mb-2 text-[11px] text-zinc-600">
+            Behavioral framework for spoken answers (STAR, CAR, etc.).
+          </p>
+          <SegmentedControl
+            value={answerStructureUi}
+            onChange={onAnswerStructureChange}
+            options={ANSWER_STRUCTURES.map((o) => ({ id: o.value, label: o.label }))}
+          />
+        </div>
+        <div className="mt-4">
+          <SettingsFieldLabel>Response format</SettingsFieldLabel>
+          <p className="mb-2 text-[11px] text-zinc-600">
+            Bullets use a compact takeaway layout. Conversational adds natural fillers (Hmm, basically).
+          </p>
+          <SegmentedControl
+            value={responseFormatUi}
+            onChange={onResponseFormatChange}
+            options={RESPONSE_FORMATS.map((o) => ({ id: o.value, label: o.label }))}
+          />
+        </div>
+        <div className="mt-4">
+          <SettingsFieldLabel>Answer length</SettingsFieldLabel>
+          <p className="mb-2 text-[11px] text-zinc-600">
+            Controls prompt depth and token budget. When auto-scroll is on, overlay text size follows this.
+          </p>
+          <SegmentedControl
+            value={answerLengthUi}
+            onChange={onAnswerLengthChange}
+            options={ANSWER_LENGTHS.map((o) => ({ id: o.value, label: o.label }))}
+          />
+        </div>
+        <div className="mt-4">
+          <SettingsFieldLabel>Response language</SettingsFieldLabel>
+          <p className="mb-2 text-[11px] text-zinc-600">
+            Optional — append a language instruction to the system prompt. Default follows your question language.
+          </p>
+          <select
+            value={aiResponseLanguageUi || ''}
+            onChange={(e) => onAiResponseLanguageChange?.(e.target.value)}
+            className="input-shadow w-full max-w-md px-3 py-2 text-sm"
+          >
+            {listAiResponseLanguages().map((opt) => (
+              <option key={opt.id || 'auto'} value={opt.id} className="bg-void-900">
+                {opt.label}
+              </option>
+            ))}
+          </select>
+        </div>
+        <div className="mt-4 flex items-start justify-between gap-4 rounded-lg border border-white/[0.07] bg-white/[0.025] px-3 py-3">
+          <div>
+            <SettingsFieldLabel>Conversation follow-ups</SettingsFieldLabel>
+            <p className="text-[11px] leading-relaxed text-zinc-500">
+              Resolve short continuations against the most relevant question and answer in this session.
+            </p>
+          </div>
+          <ToggleSwitch checked={conversationFollowUpsEnabled} onChange={onConversationFollowUpsChange} />
+        </div>
+        <div className="mt-4">
+          <SettingsFieldLabel>Answer history</SettingsFieldLabel>
+          <p className="mb-2 text-[11px] text-zinc-600">
+            Latest keeps the overlay focused on the current exchange. History keeps earlier replies in the scroll feed.
+          </p>
+          <SegmentedControl
+            value={overlayAnswerViewUi}
+            onChange={onAnswerViewChange}
+            options={[
+              { id: 'latest', label: 'Latest only' },
+              { id: 'history', label: 'Full history' },
+            ]}
+          />
+        </div>
+        <p className="mt-4 text-[11px] leading-relaxed text-zinc-600">
+          Screen capture: <strong className="font-medium text-zinc-400">Ctrl+Enter</strong> attaches a screenshot to Ask.
+          Queue extra shots with <strong className="font-medium text-zinc-400">Ctrl+H</strong> (configure under Keybinds).
+        </p>
+      </SettingsSection>
+
+      <SettingsSection title="Interview session" description="When to auto-ask and how the overlay scrolls during live calls.">
+        <SettingsRow
+          label="Auto-answer questions"
+          hint="After speech silence, automatically Ask AI — same as mobile interview auto-answer."
+        >
+          <ToggleSwitch checked={assistAutoTriggerUi} onChange={onAssistAutoTriggerChange} />
+        </SettingsRow>
+
+        <div className={assistAutoTriggerUi ? '' : 'opacity-50 pointer-events-none'}>
+          <SettingsFieldLabel>Question detection</SettingsFieldLabel>
+          <p className="mb-2 text-[11px] text-zinc-600">
+            High triggers on short questions (~6 chars). Low waits for longer utterances.
+          </p>
+          <SegmentedControl
+            value={questionDetectionUi}
+            onChange={onQuestionDetectionChange}
+            options={QUESTION_DETECTION_LEVELS.map((o) => ({ id: o.value, label: o.label }))}
+          />
+        </div>
+
+        <SettingsRow
+          label="Auto-scroll answers"
+          hint="Keep the streaming answer in view. When on, text size follows Answer length above."
+        >
+          <ToggleSwitch checked={overlayAnswerAutoScrollUi} onChange={onOverlayAnswerAutoScrollChange} />
+        </SettingsRow>
+      </SettingsSection>
+
       <SettingsSection title="Overlay">
         <div>
           <div className="mb-2 flex flex-wrap items-center justify-between gap-2">
@@ -183,12 +328,19 @@ export default function DisplaySettingsPanel({
         </div>
 
         <div>
-          <SettingsFieldLabel>Answer text size</SettingsFieldLabel>
-          <SegmentedControl
+          <SettingsFieldLabel>Font size</SettingsFieldLabel>
+          <p className="mb-2 text-[11px] text-zinc-600">
+            Used when auto-scroll answers is off. When auto-scroll is on, text size follows Answer length above.
+          </p>
+          <select
             value={overlayFontUi}
-            onChange={onOverlayFontChange}
-            options={['small', 'medium', 'large'].map((sz) => ({ id: sz, label: sz }))}
-          />
+            onChange={(e) => onOverlayFontChange(e.target.value)}
+            className="input-shadow w-full px-3 py-2 text-sm"
+          >
+            <option value="small">Small</option>
+            <option value="medium">Medium</option>
+            <option value="large">Large</option>
+          </select>
         </div>
 
         <SettingsRow
