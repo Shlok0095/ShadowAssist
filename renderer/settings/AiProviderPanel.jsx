@@ -8,6 +8,7 @@ import {
   SettingsFieldLabel,
   SettingsPanelShell,
   SettingsSection,
+  SettingsSelect,
 } from './SettingsComponents'
 import { useBrand } from '../shared/branding'
 
@@ -46,25 +47,21 @@ export default function AiProviderPanel({
       title="AI Providers"
       description="Configure chat models and API keys. Speech transcription is under Audio."
     >
-      <SettingsSection title="Chat provider" description="Bring your own API key — answers never route through our servers.">
+      <SettingsSection title="Chat provider" description="Your API key. Answers go directly to the provider.">
         {!snap || !providerMeta.length ? (
           <p className="text-sm text-gray-500">Loading providers…</p>
         ) : (
           <>
             <div>
               <SettingsFieldLabel>Provider</SettingsFieldLabel>
-              <select
-                value={provider}
-                onChange={(e) => onSelectProvider(e.target.value)}
-                className="input-shadow w-full px-3 py-2.5 font-mono text-sm"
-              >
+              <SettingsSelect value={provider} onChange={(e) => onSelectProvider(e.target.value)} fullWidth>
                 {providerMeta.map((pm) => (
-                  <option key={pm.id} value={pm.id} className="bg-void-900">
+                  <option key={pm.id} value={pm.id}>
                     {pm.label}
                     {pm.keyField && keySetMap[pm.keyField] ? ' ✓' : ''}
                   </option>
                 ))}
-              </select>
+              </SettingsSelect>
             </div>
 
             {chatVendor && snap && (

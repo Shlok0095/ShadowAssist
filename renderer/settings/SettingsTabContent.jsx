@@ -39,14 +39,6 @@ export default function SettingsTabContent(props) {
 
         onOverlayFontChange={props.onOverlayFontChange}
 
-        overlayTeleprompterUi={props.overlayTeleprompterUi}
-
-        onTeleprompterChange={props.onTeleprompterChange}
-
-        overlayFocusModeUi={props.overlayFocusModeUi}
-
-        onFocusModeChange={props.onFocusModeChange}
-
         overlayLiveTranscriptUi={props.overlayLiveTranscriptUi}
 
         onLiveTranscriptChange={props.onLiveTranscriptChange}
@@ -130,16 +122,6 @@ export default function SettingsTabContent(props) {
         stealthModeUi={props.stealthModeUi}
 
         onStealthModeChange={props.onStealthModeChange}
-
-        overlayW={props.overlayW}
-
-        overlayH={props.overlayH}
-
-        onOverlayWChange={props.onOverlayWChange}
-
-        onOverlayHChange={props.onOverlayHChange}
-
-        onApplyOverlaySize={props.onApplyOverlaySize}
 
         onSnapOverlayPreset={props.onSnapOverlayPreset}
 

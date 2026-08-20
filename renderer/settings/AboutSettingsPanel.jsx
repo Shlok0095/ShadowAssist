@@ -5,7 +5,7 @@ import { SettingsPage, SettingsSection } from './SettingsComponents'
 
 export default function AboutSettingsPanel({ logoSrc, appVersion }) {
   return (
-    <SettingsPage title="About" description="VeilAssist — private AI overlay for meetings and interviews.">
+    <SettingsPage title="About" description="Private AI overlay for meetings and interviews.">
       <SettingsSection>
         <div className="flex flex-col items-center py-6 text-center">
           <img

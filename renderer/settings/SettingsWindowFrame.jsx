@@ -42,7 +42,7 @@ export default function SettingsWindowFrame({ children }) {
 
   return (
     <div
-      className="flex h-full min-h-0 w-full flex-col overflow-hidden rounded-[10px] border border-white/[0.08] bg-[#09090b] shadow-2xl"
+      className="flex h-full min-h-0 w-full flex-1 flex-col overflow-hidden rounded-[10px] border border-white/[0.08] bg-[#09090b] shadow-2xl"
       style={{ boxShadow: '0 25px 50px -12px rgba(0,0,0,0.75)' }}
     >
       <header

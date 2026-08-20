@@ -23,11 +23,11 @@ const ipc = createIpcShim()
 
 /** @type {SettingsTab[]} */
 export const SETTINGS_TABS = [
-  { id: 'display', label: 'General', icon: Monitor },
   { id: 'profile', label: 'Profile', icon: LayoutTemplate },
-  { id: 'advance', label: 'Advance', icon: SlidersHorizontal },
+  { id: 'display', label: 'General', icon: Monitor },
   { id: 'keybinds', label: 'Keybinds', icon: Keyboard },
   { id: 'meetings', label: 'Meeting', icon: Video },
+  { id: 'advance', label: 'Advance', icon: SlidersHorizontal },
   { id: 'privacy', label: 'Privacy', icon: Shield },
   { id: 'help', label: 'Help', icon: CircleHelp },
   { id: 'about', label: 'About', icon: Info },

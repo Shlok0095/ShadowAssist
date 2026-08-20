@@ -19,7 +19,7 @@ export default function ProfileSettingsPanel({ profilePanel = {} }) {
   return (
     <SettingsPage
       title="Profile"
-      description="Persona modes, resume context, and custom /skill-name prompts for the overlay."
+      description="Persona modes, resume context, and overlay skills."
       wide
     >
       <div className="space-y-3">

@@ -1,7 +1,8 @@
-// Copyright (c) 2026 VeilAssist. Advanced settings — AI, audio, phone, intelligence.
+// Copyright (c) 2026 VeilAssist. Advanced settings.
 
 import React from 'react'
-import { Bot, Brain, Mic, Smartphone } from 'lucide-react'
+import { Bot, Brain, Mic, Monitor, Smartphone } from 'lucide-react'
+import OverlayAdvancePanel from './OverlayAdvancePanel'
 import { SettingsCollapsible, SettingsPage } from './SettingsComponents'
 import AiProviderPanel from './AiProviderPanel'
 import SpeechSettingsPanel from './SpeechSettingsPanel'
@@ -14,21 +15,19 @@ export const ADVANCE_SECTIONS = [
   { id: 'speech', label: 'Audio' },
   { id: 'phone', label: 'Phone' },
   { id: 'intelligence', label: 'Intelligence' },
+  { id: 'overlay', label: 'Overlay' },
 ]
 
 export default function AdvanceSettingsPanel(props) {
   return (
-    <SettingsPage
-      title="Advance"
-      description="AI providers, audio, phone link, and intelligence — expand each section as needed."
-      wide
-    >
-      <div className="space-y-3">
+    <SettingsPage title="Advance" description="AI providers, audio, phone link, and intelligence." wide>
+      <div className="settings-advance-stack">
         <SettingsCollapsible
           title="AI Providers"
           description="Chat models and API keys."
           icon={Bot}
           defaultOpen={!!props.showSetupBanner}
+          className="settings-advance-section"
         >
           <div className="px-1 pb-1">
             <AiProviderPanel
@@ -62,7 +61,12 @@ export default function AdvanceSettingsPanel(props) {
           </div>
         </SettingsCollapsible>
 
-        <SettingsCollapsible title="Audio" description="Speech-to-text, mic, and listen language." icon={Mic}>
+        <SettingsCollapsible
+          title="Audio"
+          description="Speech-to-text, mic, and listen language."
+          icon={Mic}
+          className="settings-advance-section"
+        >
           <div className="px-1 pb-1">
             <SpeechSettingsPanel
               embedded
@@ -92,7 +96,12 @@ export default function AdvanceSettingsPanel(props) {
           </div>
         </SettingsCollapsible>
 
-        <SettingsCollapsible title="Phone" description="Phone Link companion and Android USB mirror." icon={Smartphone}>
+        <SettingsCollapsible
+          title="Phone"
+          description="Phone Link companion and Android USB mirror."
+          icon={Smartphone}
+          className="settings-advance-section"
+        >
           <div className="px-1 pb-1">
             <PhoneLinkSettingsPanel
               embedded
@@ -114,6 +123,7 @@ export default function AdvanceSettingsPanel(props) {
           title="Intelligence"
           description="Smart routing, memory, and meeting-aware features."
           icon={Brain}
+          className="settings-advance-section"
         >
           <div className="px-1 pb-1">
             <IntelligenceSettingsPanel
@@ -132,6 +142,27 @@ export default function AdvanceSettingsPanel(props) {
               onSaveHindsightApiKey={props.onSaveHindsightApiKey}
               hindsightKeySaved={props.hindsightKeySaved}
               onHindsightAutoStartChange={props.onHindsightAutoStartChange}
+            />
+          </div>
+        </SettingsCollapsible>
+
+        <SettingsCollapsible
+          title="Overlay"
+          description="Reading modes and custom panel dimensions."
+          icon={Monitor}
+          className="settings-advance-section"
+        >
+          <div className="px-1 pb-1">
+            <OverlayAdvancePanel
+              overlayTeleprompterUi={props.overlayTeleprompterUi}
+              onTeleprompterChange={props.onTeleprompterChange}
+              overlayFocusModeUi={props.overlayFocusModeUi}
+              onFocusModeChange={props.onFocusModeChange}
+              overlayW={props.overlayW}
+              overlayH={props.overlayH}
+              onOverlayWChange={props.onOverlayWChange}
+              onOverlayHChange={props.onOverlayHChange}
+              onApplyOverlaySize={props.onApplyOverlaySize}
             />
           </div>
         </SettingsCollapsible>

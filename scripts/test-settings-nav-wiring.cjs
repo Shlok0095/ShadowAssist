@@ -34,11 +34,26 @@ const meetingsSrc = read('renderer/settings/MeetingsSettingsPanel.jsx')
 const appSrc = read('renderer/settings/App.jsx')
 
 const tabIds = [...navSrc.matchAll(/id: '([^']+)'/g)].map((m) => m[1])
-const expectedTabs = ['display', 'profile', 'advance', 'keybinds', 'meetings', 'privacy', 'help', 'about']
+const expectedTabs = ['profile', 'display', 'keybinds', 'meetings', 'advance', 'privacy', 'help', 'about']
 if (JSON.stringify(tabIds) === JSON.stringify(expectedTabs)) {
   pass('SETTINGS_TABS order', tabIds.join(', '))
 } else {
   fail('SETTINGS_TABS order', `got ${tabIds.join(', ')}`)
+}
+
+const profileIdx = tabIds.indexOf('profile')
+const displayIdx = tabIds.indexOf('display')
+const meetingsIdx = tabIds.indexOf('meetings')
+const advanceIdx = tabIds.indexOf('advance')
+if (profileIdx >= 0 && displayIdx === profileIdx + 1) {
+  pass('General tab follows Profile')
+} else {
+  fail('General tab should follow Profile')
+}
+if (meetingsIdx >= 0 && advanceIdx === meetingsIdx + 1) {
+  pass('Advance tab follows Meeting')
+} else {
+  fail('Advance tab should follow Meeting')
 }
 
 if (navSrc.includes("label: 'Profile'") && navSrc.includes("label: 'Advance'") && navSrc.includes("label: 'Meeting'")) {
@@ -95,9 +110,22 @@ if (!advanceSrc.includes('ProfileModesPanel') && !advanceSrc.includes('SkillsSet
   fail('Advance still contains profile/skills')
 }
 
-for (const section of ['AI Providers', 'Audio', 'Phone', 'Intelligence']) {
+for (const section of ['AI Providers', 'Audio', 'Phone', 'Intelligence', 'Overlay']) {
   if (advanceSrc.includes(`title="${section}"`)) pass(`Advance section: ${section}`)
   else fail(`Advance section missing: ${section}`)
+}
+
+if (!displaySrc.includes('title="Advanced"') && !displaySrc.includes('SettingsCollapsible')) {
+  pass('General has no Advanced collapsible')
+} else {
+  fail('General still has Advanced collapsible')
+}
+
+const cssSrc = read('renderer/settings/index.css')
+if (cssSrc.includes('.settings-scroll-outer') && cssSrc.includes('overflow-y: auto') && cssSrc.includes('min-height: 0')) {
+  pass('main scroll region has constrained flex scroll styles')
+} else {
+  fail('main scroll region missing flex scroll styles')
 }
 
 if (displaySrc.includes('Answers & screenshots') && displaySrc.includes('Answer structure')) {

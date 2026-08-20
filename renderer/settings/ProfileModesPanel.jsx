@@ -206,7 +206,7 @@ export default function ProfileModesPanel({
 
     >
 
-      <div className="profile-modes-root flex min-h-[480px] w-full overflow-hidden rounded-xl border border-white/[0.06] bg-black/20">
+      <div className={`profile-modes-root flex min-h-[480px] w-full overflow-hidden rounded-xl border border-white/[0.06] bg-black/20${embedded ? ' profile-modes-root--embedded' : ''}`}>
 
         <aside className="mode-sidebar flex w-[220px] shrink-0 flex-col border-r border-white/[0.06] bg-black/25">
 

@@ -1145,11 +1145,11 @@ export default function Settings() {
 
   return (
     <SettingsWindowFrame>
-      <div className="settings-root flex min-h-0 flex-1 flex-col overflow-hidden">
+      <div className="settings-root flex h-full min-h-0 flex-1 flex-col overflow-hidden">
         {showSetupBanner && (
           <div className="settings-setup-banner shrink-0">
             <p>
-              First run — open <strong className="font-semibold text-white">AI Providers</strong>, set your API key and model, then launch.
+              First run: open <strong className="font-semibold text-white">AI Providers</strong>, add your API key and model, then launch.
             </p>
           </div>
         )}
@@ -1182,10 +1182,10 @@ export default function Settings() {
           </div>
         ) : null}
 
-        <div className="flex min-h-0 min-w-0 flex-1 overflow-hidden">
+        <div className="settings-flex-body flex min-h-0 min-w-0 flex-1 overflow-hidden">
           <SettingsNav activeTab={activeTab} onSelectTab={selectSettingsTab} />
 
-          <main className="settings-scroll-outer min-h-0 min-w-0 flex-1 overflow-y-auto overflow-x-hidden p-6">
+          <main className="settings-scroll-outer p-6">
           <SettingsTabContent
             activeTab={normalizeSettingsTabId(activeTab)}
             onSelectTab={selectSettingsTab}

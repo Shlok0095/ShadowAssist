@@ -49,8 +49,8 @@ Speaker labels use a heuristic (your mic vs system/loopback audio) — not true 
 
 | Setting | Location | Effect |
 |---------|----------|--------|
-| **Teleprompter mode** | General → Advanced | Larger type, minimal chrome for reading answers aloud |
-| **Focus mode** | General → Advanced | Hides input until you tap — less visual clutter |
+| **Teleprompter mode** | Advance → Overlay | Larger type, minimal chrome for reading answers aloud |
+| **Focus mode** | Advance → Overlay | Hides input until you tap — less visual clutter |
 | **Pin answers to top** | General | Streaming answers stay pinned at the top while scrolling history |
 
 ## Appearance
@@ -62,7 +62,7 @@ Speaker labels use a heuristic (your mic vs system/loopback audio) — not true 
 | **Accent color** | Applies to overlay and Global Chat (settings UI stays neutral) |
 | **Window opacity** | Subtle (65%), Balanced (85%), Clear (92%), or custom slider |
 | **Answer text size** | Small, medium, or large |
-| **Panel width / height** | Set dimensions and click Apply |
+| **Panel width / height** | Advance → Overlay — set dimensions and click Apply |
 
 ## Stealth and discretion
 
