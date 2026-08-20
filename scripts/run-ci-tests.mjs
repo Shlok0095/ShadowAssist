@@ -21,6 +21,7 @@ const plainTests = [
   'scripts/test-meeting-summary-format.mjs',
   'scripts/test-overlay-mouse-capture.mjs',
   'scripts/test-playbook-context.mjs',
+  'scripts/verify-background-process-config.cjs',
 ]
 
 const nodeTestFiles = [

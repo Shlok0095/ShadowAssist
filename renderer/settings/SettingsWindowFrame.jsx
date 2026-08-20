@@ -2,7 +2,7 @@
 // Settings window — Natively-style black professional chrome (overlay unchanged).
 
 import React, { useCallback, useState } from 'react'
-import { BrandLogo, BrandName } from '../shared/branding'
+import overlayBrandLogo from '../shared/overlayBrandLogo'
 
 const drag = { WebkitAppRegion: 'drag' }
 const noDrag = { WebkitAppRegion: 'no-drag' }
@@ -50,13 +50,15 @@ export default function SettingsWindowFrame({ children }) {
         style={drag}
       >
         <div className="flex min-h-0 min-w-0 flex-1 items-center gap-2 px-3" style={drag}>
-          <BrandLogo
-            alt=""
-            width={16}
-            height={16}
-            className="pointer-events-none h-4 w-4 shrink-0 rounded object-contain opacity-80"
+          <img
+            src={overlayBrandLogo}
+            alt="VeilAssist"
+            width={18}
+            height={18}
+            draggable={false}
+            className="pointer-events-none h-[18px] w-[18px] shrink-0 object-contain"
           />
-          <BrandName className="truncate text-[11px] font-medium text-zinc-500" fallback="VeilAssist" />
+          <span className="truncate text-[11px] font-medium text-zinc-400">VeilAssist</span>
         </div>
 
         <div className="flex shrink-0 items-stretch" style={noDrag}>

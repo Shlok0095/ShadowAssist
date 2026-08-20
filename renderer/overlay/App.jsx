@@ -1,7 +1,8 @@
 // Copyright (c) 2026 ShadowAssist. All rights reserved.
 // Unauthorized copying or distribution is prohibited.
 
-import React, { useState, useEffect, useRef, useCallback, startTransition } from 'react'
+import React, { useState, useEffect, useRef, useCallback } from 'react'
+import { flushSync } from 'react-dom'
 import { Eye, Glasses } from 'lucide-react'
 import StatusBar from './components/StatusBar'
 import ResponsePanel from './components/ResponsePanel'
@@ -27,6 +28,9 @@ import AppIcon from '../shared/AppIcon'
 import { applyUiAccentTheme, normalizeUiAccentId } from '../shared/uiAccentThemes'
 import { createIpcShim } from '../shared/ipcShim'
 import {
+  streamPreviewIntervalFor,
+} from './streamAnswerDisplay.js'
+import {
   AGGREGATE_DROP_HARD_MIN,
   filterWhisperVerboseJson,
 } from '../shared/whisperTranscriptGate'
@@ -39,6 +43,8 @@ import {
   watchMediaStream,
 } from '../shared/audioCaptureRecovery'
 import { parseTranscriptEchoForDisplay } from '../shared/formatTranscriptEcho'
+import { effectiveMinSpeechChars, fontSizeFromAnswerLength } from '../shared/interviewSettings'
+import { isLikelySelfReadback, stripSelfReadback } from '../shared/selfReadback'
 
 const ipc = createIpcShim()
 /** Inner status row height (px) — matches StatusBar `h-10` */
@@ -68,8 +74,8 @@ const MIN_RECORDING_BYTES = 8192
 const SPEECH_STABILITY_MS = 1500
 /** Clear rolling speech buffer after this long without a new chunk. */
 const MAX_SPEECH_WINDOW_MS = 20000
-/** Minimum buffered speech length before speech Assist may fire. */
-const MIN_SPEECH_LENGTH = 20
+/** Fallback when question detection not loaded yet. */
+const MIN_SPEECH_LENGTH_FALLBACK = 6
 /** Failsafe Assist poll interval when buffer stays large. */
 const SPEECH_FAILSAFE_MS = 4000
 /** Max rolling transcript chars sent to the LLM (tail window). */
@@ -98,17 +104,6 @@ function settleWithinAskFlushTimeout(promises) {
   ])
 }
 /**
- * Formatted-preview flush interval, scaled to answer length. Each flush reparses
- * the full accumulated markdown, so long answers flush less often — the raw DOM
- * mirror keeps painting every token regardless.
- */
-function streamPreviewIntervalFor(length) {
-  if (length > 6000) return 280
-  if (length > 2000) return 160
-  return 80
-}
-
-/**
  * Retained conversation turns. ResponsePanel parses markdown for every message,
  * so an unbounded array makes multi-hour sessions progressively slower.
  */
@@ -132,7 +127,8 @@ function speakerLabel(speaker) {
 
 /** Build chunked transcript for the model — not one flat merged blob. */
 function formatSegmentsForLLM(segments, maxSegments = MAX_LLM_SEGMENTS) {
-  return formatSegmentsForPrompt(segments, { maxSegments, speakerLabel })
+  const active = (Array.isArray(segments) ? segments : []).filter((segment) => !segment?.consumed)
+  return formatSegmentsForPrompt(active, { maxSegments, speakerLabel })
 }
 
 function formatTranscriptForPrompt(text, { background = false } = {}) {
@@ -599,6 +595,7 @@ export default function App() {
   const [overlayLiveTranscriptEnabled, setOverlayLiveTranscriptEnabled] = useState(true)
   const [overlayTranscriptAutoScroll, setOverlayTranscriptAutoScroll] = useState(true)
   const [overlayAnswerPinToTop, setOverlayAnswerPinToTop] = useState(true)
+  const [overlayAnswerAutoScroll, setOverlayAnswerAutoScroll] = useState(true)
   const [globalMeetingSearchEnabled, setGlobalMeetingSearchEnabled] = useState(false)
   const [focusInputOpen, setFocusInputOpen] = useState(false)
   const [streamPreview, setStreamPreview] = useState('')
@@ -685,6 +682,15 @@ export default function App() {
   const lastSpeechTimeRef = useRef(0)
   const lastChunkRef = useRef('')
   const assistAutoTriggerRef = useRef(false)
+  const questionDetectionRef = useRef('high')
+  const micSensitivityRef = useRef('standard')
+  const minSpeechLengthRef = useRef(MIN_SPEECH_LENGTH_FALLBACK)
+  const syncMinSpeechThreshold = useCallback(() => {
+    minSpeechLengthRef.current = effectiveMinSpeechChars(
+      questionDetectionRef.current,
+      micSensitivityRef.current,
+    )
+  }, [])
   const maybeTriggerAIRef = useRef(null)
   const processTranscribedTextRef = useRef(null)
   const maybeTriggerFromScreenRef = useRef(null)
@@ -717,13 +723,8 @@ export default function App() {
   const lastResponseRef = useRef('')
   const commitLockRef = useRef(false)
 
-  /** Full streamed text for commit to messages (DOM mirror lives in streamTextRef). */
+  /** Full streamed text for commit to messages. */
   const streamAccumRef = useRef('')
-  const streamTextRef = useRef(null)
-  const streamPulseRef = useRef(null)
-  /** "Composing answer…" node — hidden imperatively on the first token (raw writes skip React). */
-  const streamPlaceholderRef = useRef(null)
-  /** True once the formatted preview replaced the raw mirror; raw DOM writes stop then. */
   const streamPreviewActiveRef = useRef(false)
   /** False after commit/error/clear — blocks stale microtasks from mutating the stream DOM. */
   const streamDomAcceptingRef = useRef(false)
@@ -771,14 +772,17 @@ export default function App() {
       clearTimeout(liveTranscriptUiFlushRef.current)
       liveTranscriptUiFlushRef.current = null
     }
+    if (isThinkingRef.current) return
     setLiveTranscriptSegments([...speechSegmentsRef.current])
   }, [])
 
   /** Partials only — finals call flushLiveTranscriptUi immediately so Ask timing is unchanged. */
   const scheduleLiveTranscriptUi = useCallback(() => {
+    if (isThinkingRef.current) return
     if (liveTranscriptUiFlushRef.current != null) return
     liveTranscriptUiFlushRef.current = window.setTimeout(() => {
       liveTranscriptUiFlushRef.current = null
+      if (isThinkingRef.current) return
       setLiveTranscriptSegments([...speechSegmentsRef.current])
     }, LIVE_TRANSCRIPT_UI_MS)
   }, [])
@@ -788,13 +792,16 @@ export default function App() {
       clearTimeout(rollingBarUiFlushRef.current)
       rollingBarUiFlushRef.current = null
     }
+    if (isThinkingRef.current) return
     setRollingBar({ ...rollingBarDisplayRef.current })
   }, [])
 
   const scheduleRollingBarUi = useCallback(() => {
+    if (isThinkingRef.current) return
     if (rollingBarUiFlushRef.current != null) return
     rollingBarUiFlushRef.current = window.setTimeout(() => {
       rollingBarUiFlushRef.current = null
+      if (isThinkingRef.current) return
       setRollingBar({ ...rollingBarDisplayRef.current })
     }, LIVE_TRANSCRIPT_UI_MS)
   }, [])
@@ -982,11 +989,15 @@ export default function App() {
     const channel = meta.channel || (speaker === 'other' ? 'sys' : 'mic')
     const interimIndex = segs.findLastIndex((segment) => segment.channel === channel && segment.interim)
     const now = Date.now()
+    const segmentFlags = {
+      consumed: Boolean(meta.consumed),
+      readback: Boolean(meta.readback),
+    }
     let next
     if (interimIndex >= 0) {
       next = segs.map((segment, index) => (
         index === interimIndex
-          ? { ...segment, text: t, updatedAt: now, interim: false }
+          ? { ...segment, text: t, updatedAt: now, interim: false, ...segmentFlags }
           : segment
       ))
     } else {
@@ -998,6 +1009,7 @@ export default function App() {
         capturedAt: Number(meta.capturedAt) || now,
         updatedAt: now,
         interim: false,
+        ...segmentFlags,
       }]
     }
     const capped = next
@@ -1016,6 +1028,15 @@ export default function App() {
     ipc.invoke('get-store', 'assistAutoTrigger').then((v) => {
       assistAutoTriggerRef.current = v === true
     })
+    ipc.invoke('get-store', 'questionDetection').then((v) => {
+      questionDetectionRef.current = v === 'low' || v === 'medium' ? v : 'high'
+      syncMinSpeechThreshold()
+    })
+    ipc.invoke('get-store', 'micSensitivity').then((v) => {
+      micSensitivityRef.current = v === 'boost' ? 'boost' : 'standard'
+      syncMinSpeechThreshold()
+    })
+    ipc.invoke('get-store', 'overlayAnswerAutoScroll').then((v) => setOverlayAnswerAutoScroll(v !== false))
   }, [])
 
 
@@ -1028,50 +1049,29 @@ export default function App() {
 
   const clearStreamDom = useCallback(() => {
     streamPreviewActiveRef.current = false
-    const textEl = streamTextRef.current
-    if (textEl) {
-      textEl.replaceChildren()
-    }
-    if (streamPlaceholderRef.current) streamPlaceholderRef.current.style.display = ''
-    if (streamPulseRef.current) streamPulseRef.current.style.display = ''
   }, [])
 
   /**
-   * Low-priority formatted preview; the full token stream remains lossless in
-   * streamAccumRef. startTransition keeps the markdown reparse interruptible so
-   * scrolling and input stay responsive while long answers stream.
+   * Throttled stream UI refresh — plain teleprompter text (no raw markdown syntax).
+   * Full BriefAnswer layout is applied on commit only (Natively companion pattern).
    */
   const scheduleStreamPreviewFlush = useCallback(() => {
     if (streamPreviewFlushRef.current != null) return
+    const delay = streamPreviewIntervalFor(streamAccumRef.current.length)
     streamPreviewFlushRef.current = window.setTimeout(() => {
       streamPreviewFlushRef.current = null
-      const full = streamAccumRef.current
-      if (!streamDomAcceptingRef.current || !full) return
-      streamPreviewActiveRef.current = true
-      startTransition(() => {
-        setStreamPreview(full)
-      })
-    }, streamPreviewIntervalFor(streamAccumRef.current.length))
+      if (!streamDomAcceptingRef.current) return
+      setStreamPreview(streamAccumRef.current)
+    }, delay)
   }, [])
 
   const appendTokenToStreamDom = useCallback(
     (t) => {
       if (t == null || t === '' || !streamDomAcceptingRef.current) return
+      const prevLen = streamAccumRef.current.length
       streamAccumRef.current += t
-      // Raw mirror: append only the delta so each token is a cheap text-node write,
-      // and skip entirely once the formatted preview has replaced the mirror.
-      if (!streamPreviewActiveRef.current) {
-        const textEl = streamTextRef.current
-        if (textEl) {
-          const first = textEl.firstChild
-          if (first && first.nodeType === Node.TEXT_NODE) {
-            first.appendData(t)
-          } else {
-            // Element mounted after tokens started (or was cleared): sync full text.
-            textEl.replaceChildren(document.createTextNode(streamAccumRef.current))
-          }
-        }
-        if (streamPlaceholderRef.current) streamPlaceholderRef.current.style.display = 'none'
+      if (prevLen === 0) {
+        setStreamPreview(streamAccumRef.current)
       }
       scheduleStreamPreviewFlush()
       if (!perfFirstTokenLoggedRef.current) {
@@ -1121,17 +1121,19 @@ export default function App() {
       if (typeof echoCtxRaw === 'string' && echoCtxRaw.trim()) {
         heardContext = echoCtxRaw.trim()
       }
-      setIsThinking(true)
-      setExpanded(true)
-      setActiveAskSource(askSource)
-      if (heardQuestion) {
-        setMessages((m) =>
-          capMessages([
-            ...m,
-            { role: 'heard', text: heardQuestion, context: heardContext, id: ++msgId.current },
-          ]),
-        )
-      }
+      flushSync(() => {
+        setIsThinking(true)
+        setExpanded(true)
+        setActiveAskSource(askSource)
+        if (heardQuestion) {
+          setMessages((m) =>
+            capMessages([
+              ...m,
+              { role: 'heard', text: heardQuestion, context: heardContext, id: ++msgId.current },
+            ]),
+          )
+        }
+      })
       clearStreamDom()
       if (perfAskT0Ref.current) {
         console.log('UI_AI_START_MS', Date.now() - perfAskT0Ref.current)
@@ -1146,6 +1148,7 @@ export default function App() {
       try {
         cancelStreamScroll()
         streamDomAcceptingRef.current = false
+        ipc?.send('shadowassist-stream-ended')
         const full = streamAccumRef.current
         streamAccumRef.current = ''
         const turnMeta = activeTurnMetaRef.current
@@ -1193,6 +1196,8 @@ export default function App() {
       setStreamPreview('')
       // Resume mic chunk processing after AI finishes speaking
       setTimeout(() => { micPausedForAskRef.current = false }, 400)
+      setLiveTranscriptSegments([...speechSegmentsRef.current])
+      setRollingBar({ ...rollingBarDisplayRef.current })
     }
     const onAborted = () => {
       setIsThinking(false)
@@ -1205,6 +1210,7 @@ export default function App() {
     const onError = (_, msg) => {
       cancelStreamScroll()
       streamDomAcceptingRef.current = false
+      ipc?.send('shadowassist-stream-ended')
       streamAccumRef.current = ''
       clearStreamDom()
       setStreamPreview('')
@@ -1222,6 +1228,7 @@ export default function App() {
     const onClear = () => {
       cancelStreamScroll()
       streamDomAcceptingRef.current = false
+      ipc?.send('shadowassist-stream-ended')
       streamAccumRef.current = ''
       clearStreamDom()
       activeTurnMetaRef.current = null
@@ -1290,7 +1297,15 @@ export default function App() {
     if (!ipc) return
     ipc.invoke('get-store', 'uiAccentTheme').then((id) => applyUiAccentTheme(document.documentElement, normalizeUiAccentId(id)))
     ipc.invoke('get-store', 'overlayOpacity').then((o) => o != null && setOpacity(o))
-    ipc.invoke('get-store', 'overlayFontSize').then((f) => f && setFontSize(f))
+    Promise.all([
+      ipc.invoke('get-store', 'overlayFontSize'),
+      ipc.invoke('get-store', 'answerLength'),
+      ipc.invoke('get-store', 'overlayAnswerAutoScroll'),
+    ]).then(([font, length, autoScroll]) => {
+      const size =
+        autoScroll !== false ? fontSizeFromAnswerLength(length) : font && ['small', 'medium', 'large'].includes(font) ? font : 'medium'
+      setFontSize(size)
+    })
     ipc.invoke('get-store', 'answerStyle').then((v) => {
       const s = v === 'detailed' ? 'detailed' : 'brief'
       answerStyleRef.current = s
@@ -1348,8 +1363,17 @@ export default function App() {
       if (p?.overlayLiveTranscriptEnabled != null) setOverlayLiveTranscriptEnabled(!!p.overlayLiveTranscriptEnabled)
       if (p?.overlayTranscriptAutoScroll != null) setOverlayTranscriptAutoScroll(!!p.overlayTranscriptAutoScroll)
       if (p?.overlayAnswerPinToTop != null) setOverlayAnswerPinToTop(!!p.overlayAnswerPinToTop)
+      if (p?.overlayAnswerAutoScroll != null) setOverlayAnswerAutoScroll(!!p.overlayAnswerAutoScroll)
+      if (p?.questionDetection === 'low' || p?.questionDetection === 'medium' || p?.questionDetection === 'high') {
+        questionDetectionRef.current = p.questionDetection
+        syncMinSpeechThreshold()
+      }
       if (p?.width != null && p?.height != null) expandedSize.current = { w: p.width, h: p.height }
       if (p?.assistAutoTrigger != null) assistAutoTriggerRef.current = !!p.assistAutoTrigger
+      if (p?.micSensitivity === 'boost' || p?.micSensitivity === 'standard') {
+        micSensitivityRef.current = p.micSensitivity
+        syncMinSpeechThreshold()
+      }
     }
     const onUiAccent = (_, id) => applyUiAccentTheme(document.documentElement, normalizeUiAccentId(id))
     const u1 = ipc.on('overlay-display-update', onDisplay)
@@ -1358,7 +1382,7 @@ export default function App() {
       u1?.()
       u3?.()
     }
-  }, [])
+  }, [syncMinSpeechThreshold])
 
   useEffect(() => {
     if (!ipc) return
@@ -1427,6 +1451,7 @@ export default function App() {
     const onPurge = () => {
       cancelStreamScroll()
       streamDomAcceptingRef.current = false
+      ipc?.send('shadowassist-stream-ended')
       streamAccumRef.current = ''
       clearStreamDom()
       activeTurnMetaRef.current = null
@@ -1975,6 +2000,22 @@ export default function App() {
   function processTranscribedText(text, audioPathKey, { isFinal = true, capturedAt = 0 } = {}) {
     const trimmedChunk = text.trim()
     if (!trimmedChunk) return
+
+    let speechChunk = trimmedChunk
+    let readbackDrop = false
+    if (assistAutoTriggerRef.current) {
+      const answerText = `${String(lastResponseRef.current || '').trim()} ${String(streamAccumRef.current || '').trim()}`.trim()
+      if (answerText) {
+        const remainder = stripSelfReadback(trimmedChunk, answerText)
+        if (!remainder) {
+          readbackDrop = true
+          speechChunk = ''
+        } else {
+          speechChunk = remainder
+        }
+      }
+    }
+
     const tChunk = Date.now()
     const silenceBeforeMs = lastSpeechTimeRef.current > 0 ? tChunk - lastSpeechTimeRef.current : 0
     let speaker
@@ -1986,8 +2027,9 @@ export default function App() {
     const segmentMeta = { channel: audioPathKey, capturedAt: Number(capturedAt) || tChunk }
 
     if (!isFinal) {
-      setLiveSegmentInterim(speaker, trimmedChunk, segmentMeta)
-      updateRollingBarForPath(audioPathKey, trimmedChunk, { isFinal: false, speaker })
+      if (readbackDrop) return
+      setLiveSegmentInterim(speaker, speechChunk, segmentMeta)
+      updateRollingBarForPath(audioPathKey, speechChunk, { isFinal: false, speaker })
       emit('transcript-updated', { latest: `${labeled} …`, full: micTranscriptRef.current })
       const speechRecent =
         Date.now() - (pathSpeechAtRef.current.mic || 0) < 900 ||
@@ -2002,7 +2044,7 @@ export default function App() {
     lastSpeechActivityRef.current = stamp
 
     // Local STT finals are recorded in main via local-stt:transcript callback (avoids stop-order race).
-    if (sttModeRef.current !== 'local') {
+    if (sttModeRef.current !== 'local' && !readbackDrop) {
       ipc?.invoke('session-transcript-append', labeled, segmentMeta.capturedAt)
     }
 
@@ -2011,15 +2053,28 @@ export default function App() {
       speechTriggerDelayRef.current = null
     }
 
+    if (readbackDrop) {
+      commitLiveSegmentFinal(speaker, trimmedChunk, {
+        ...segmentMeta,
+        consumed: true,
+        readback: true,
+      })
+      updateRollingBarForPath(audioPathKey, trimmedChunk, { isFinal: true, speaker })
+      const combined = (micTranscriptRef.current + ' ' + trimmedChunk).trim().split(/\s+/).slice(-600).join(' ')
+      syncMicTranscriptRefs(combined)
+      emit('transcript-updated', { latest: labeled, full: combined })
+      return
+    }
+
     const mergedBuff = speechBufferRef.current
-      ? `${speechBufferRef.current} ${trimmedChunk}`
-      : trimmedChunk
+      ? `${speechBufferRef.current} ${speechChunk}`
+      : speechChunk
     speechBufferRef.current = trimBufferSmart(mergedBuff)
     lastSpeechTimeRef.current = Date.now()
-    commitLiveSegmentFinal(speaker, trimmedChunk, segmentMeta)
-    updateRollingBarForPath(audioPathKey, trimmedChunk, { isFinal: true, speaker })
+    commitLiveSegmentFinal(speaker, speechChunk, segmentMeta)
+    updateRollingBarForPath(audioPathKey, speechChunk, { isFinal: true, speaker })
 
-    const combined = (micTranscriptRef.current + ' ' + trimmedChunk).trim().split(/\s+/).slice(-600).join(' ')
+    const combined = (micTranscriptRef.current + ' ' + speechChunk).trim().split(/\s+/).slice(-600).join(' ')
     syncMicTranscriptRefs(combined)
     emit('transcript-updated', { latest: labeled, full: combined })
 
@@ -2247,7 +2302,11 @@ export default function App() {
       return
     }
     const speech = String(speechBufferRef.current || '').trim()
-    if (speech.length < MIN_SPEECH_LENGTH) return
+    if (speech.length < minSpeechLengthRef.current) return
+    if (assistAutoTriggerRef.current) {
+      const answerText = `${String(lastResponseRef.current || '').trim()} ${String(streamAccumRef.current || '').trim()}`.trim()
+      if (answerText && isLikelySelfReadback(speech, answerText)) return
+    }
     if (silenceMs <= SPEECH_STABILITY_MS) return
     if (Date.now() - lastTriggerTimeRef.current < SPEECH_TRIGGER_COOLDOWN_MS) return
     /** Don't re-trigger if buffer hasn't grown since last send (same text = same answer). */
@@ -2271,7 +2330,7 @@ export default function App() {
         return
       }
       const after = String(speechBufferRef.current || '').trim()
-      if (after.length < MIN_SPEECH_LENGTH) return
+      if (after.length < minSpeechLengthRef.current) return
       if (silenceNow <= SPEECH_STABILITY_MS) return
       if (Date.now() - lastTriggerTimeRef.current < SPEECH_TRIGGER_COOLDOWN_MS) return
       /** If new speech arrived during the 150ms lead-in, update the claim to the new content. */
@@ -2326,7 +2385,7 @@ export default function App() {
           if (sp.length <= 20) return
         } else if (assistSource !== 'screen') {
           const sp = String(speechBufferRef.current || '').trim()
-          if (sp.length < MIN_SPEECH_LENGTH) return
+          if (sp.length < minSpeechLengthRef.current) return
           if (Date.now() - lastSpeechTimeRef.current <= SPEECH_STABILITY_MS) return
         }
       }
@@ -2362,6 +2421,14 @@ export default function App() {
           if (flushChannels.length) await settleWithinAskFlushTimeout(flushChannels)
 
           const bufferedSpeech = String(speechBufferRef.current || '').trim()
+          if (isAuto && assistAutoTriggerRef.current && bufferedSpeech) {
+            const answerText = `${String(lastResponseRef.current || '').trim()} ${String(streamAccumRef.current || '').trim()}`.trim()
+            if (answerText && isLikelySelfReadback(bufferedSpeech, answerText)) {
+              isProcessingAskRef.current = false
+              micPausedForAskRef.current = false
+              return
+            }
+          }
           const segmentSnapshot = [...speechSegmentsRef.current]
             .sort((a, b) => (a.capturedAt - b.capturedAt) || (a.id - b.id))
           const transcriptWatermarkId = liveSegmentIdRef.current
@@ -2559,6 +2626,8 @@ export default function App() {
       applySpeechSilenceWindow()
       const fsBuffer = String(speechBufferRef.current || '').trim()
       if (fsBuffer.length <= 20) return
+      const answerText = `${String(lastResponseRef.current || '').trim()} ${String(streamAccumRef.current || '').trim()}`.trim()
+      if (answerText && isLikelySelfReadback(fsBuffer, answerText)) return
       if (Date.now() - lastTriggerTimeRef.current <= FAILSAFE_MIN_GAP_AFTER_TRIGGER_MS) return
       if (fsBuffer === lastSentSpeechRef.current) return
       // Claim synchronously — same race-condition fix as maybeTriggerAI
@@ -2800,13 +2869,11 @@ export default function App() {
                 ref={panelRef}
                 messages={messages}
                 isThinking={isThinking}
-                streamTextRef={streamTextRef}
-                streamPulseRef={streamPulseRef}
-                streamPlaceholderRef={streamPlaceholderRef}
                 fontSize={fontSize}
                 answerStyle={answerStyle}
                 overlayTeleprompter={overlayTeleprompter}
                 overlayAnswerPinToTop={overlayAnswerPinToTop}
+                overlayAnswerAutoScroll={overlayAnswerAutoScroll}
                 streamPreview={streamPreview}
                 activeAskSource={activeAskSource}
                 sessionOn={sessionOn}

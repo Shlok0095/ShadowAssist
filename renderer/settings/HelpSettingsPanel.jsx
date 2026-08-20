@@ -24,7 +24,7 @@ const FAQ = [
   },
   {
     q: 'What happens when I Stop Listen?',
-    a: 'Unless “Do not save meetings” is on in General, a session recap is generated and stored locally under Calendar → Session recaps.',
+    a: 'Unless “Do not save meetings” is on in General, a session recap is generated and stored locally under Meeting → Session recaps.',
   },
   {
     q: 'Where is debug logging?',

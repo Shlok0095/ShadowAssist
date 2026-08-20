@@ -31,10 +31,10 @@ for (const c of cases) {
   }
 }
 
-if (MEETING_POLL_MS !== 10000) {
-  console.error(`FAIL  MEETING_POLL_MS expected 10000, got ${MEETING_POLL_MS}`)
+if (MEETING_POLL_MS !== 2500) {
+  console.error(`FAIL  MEETING_POLL_MS expected 2500, got ${MEETING_POLL_MS}`)
 } else {
-  console.log('PASS  MEETING_POLL_MS = 10000')
+  console.log('PASS  MEETING_POLL_MS = 2500')
   passed++
 }
 

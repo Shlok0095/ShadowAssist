@@ -1,0 +1,11 @@
+version: 2026.820.901
+files:
+  - url: VeilAssist2026.08.20.09.01-arm64.zip
+    sha512: q4tDa9Hcijr74f6/MEGTsIl1W9l22mZaxgzcUI0t68TPJvSQqr76AxT+ihaDre9tDZMPYcOY/8GlOTzZt8pv3A==
+    size: 203115766
+  - url: VeilAssist2026.08.20.09.01-arm64.dmg
+    sha512: 2v7FWofhnILbAVwgypwbrutwP4AzUYg22lDVgT09t+I7/IXldjtKLAZfrghSoCThsNmwvUxwlSo4ioQWHHsN/A==
+    size: 212504758
+path: VeilAssist2026.08.20.09.01-arm64.zip
+sha512: q4tDa9Hcijr74f6/MEGTsIl1W9l22mZaxgzcUI0t68TPJvSQqr76AxT+ihaDre9tDZMPYcOY/8GlOTzZt8pv3A==
+releaseDate: '2026-08-20T04:03:37.844Z'

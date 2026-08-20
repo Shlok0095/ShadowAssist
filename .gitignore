@@ -1,4 +1,4 @@
-﻿# Dependencies & build output
+# Dependencies & build output
 node_modules/
 out/
 build/*
@@ -10,6 +10,11 @@ build/*
 .env
 .env.*
 !.env.example
+
+# Multimodal benchmark artifacts (may contain raw model output)
+landing/scripts/multimodal_bench/benchmark_results/
+landing/scripts/multimodal_bench/.env
+landing/scripts/multimodal_bench/dataset/images/
 .DS_Store
 Thumbs.db
 
@@ -39,6 +44,9 @@ eng.traineddata
 graphify-out/
 !build/version-state.json
 
-# Frontend build output
-landing/dist/
-dist/
+# Heavy build artifacts (only metadata tracked)
+dist/*.dmg
+dist/*.zip
+dist/*.blockmap
+dist/mac-arm64/
+dist/.icon-icns/

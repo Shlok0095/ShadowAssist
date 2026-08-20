@@ -66,18 +66,31 @@ jobs:
           VEILASSIST_GOOGLE_CAL_CLIENT_ID: ${{ secrets.GOOGLE_CAL_CLIENT_ID }}
           VEILASSIST_GOOGLE_CAL_CLIENT_SECRET: ${{ secrets.GOOGLE_CAL_CLIENT_SECRET }}
 
-      - name: Stable installer name for rolling release
-        if: "!startsWith(github.ref, 'refs/tags/v')"
+      - name: Use exact build version in installer names
         shell: pwsh
         run: |
-          $pkg = Get-Content package.json -Raw | ConvertFrom-Json
-          $ver = $pkg.version
-          $setup = "dist/VeilAssist-Setup-$ver.exe"
+          $ver = (& node -p "require('./build/version-state.json').last").Trim()
+          $setup = "dist/VeilAssistSetup$ver.exe"
           if (-not (Test-Path $setup)) {
             Get-ChildItem dist
             throw "Missing $setup"
           }
           Copy-Item $setup "dist/VeilAssist-Setup.exe" -Force
+          $portable = "dist/VeilAssist$ver.exe"
+          if (Test-Path $portable) { Copy-Item $portable "dist/VeilAssist.exe" -Force }
+
+      - name: Record build version state
+        if: "!startsWith(github.ref, 'refs/tags/v')"
+        shell: bash
+        run: |
+          git config user.name "veilassist-ci"
+          git config user.email "veilassist-ci@users.noreply.github.com"
+          git add build/version-state.json package.json package-lock.json
+          if git diff --cached --quiet; then
+            echo "No version state change to record"
+          else
+            git commit -m "chore: record build version state" || true
+          fi
 
       - name: SHA256 checksums
         run: npm run dist:checksums
@@ -87,8 +100,7 @@ jobs:
           name: veilassist-windows-${{ github.run_id }}
           if-no-files-found: warn
           path: |
-            dist/VeilAssist.exe
-            dist/VeilAssist-Setup*.exe
+            dist/VeilAssist*.exe
             dist/latest.yml
             dist/SHA256SUMS.txt
 
@@ -115,9 +127,7 @@ jobs:
           replacesArtifacts: true
           artifactErrorsFailBuild: true
           artifacts: |
-            dist/VeilAssist-Setup.exe
-            dist/VeilAssist-Setup-*.exe
-            dist/VeilAssist.exe
+            dist/VeilAssist*.exe
             dist/latest.yml
             dist/SHA256SUMS.txt
 
@@ -127,8 +137,7 @@ jobs:
         with:
           generate_release_notes: true
           files: |
-            dist/VeilAssist.exe
-            dist/VeilAssist-Setup-*.exe
+            dist/VeilAssist*.exe
             dist/latest.yml
             dist/SHA256SUMS.txt
         env:

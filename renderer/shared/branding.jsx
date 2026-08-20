@@ -93,26 +93,22 @@ export function useBrand() {
   return snapshot
 }
 
-/** `<img>` that resolves the active logo (custom brand → bundled fallback). */
+/** `<img>` that always uses the bundled VeilAssist logo (custom leftovers are ignored). */
 export function BrandLogo({ overlay = false, alt = '', draggable = false, ...props }) {
-  const brand = useBrand()
-  const hasCustom = overlay ? brand.hasOverlayLogo : brand.hasCustomLogo
-  const dataUrl = overlay ? brand.overlayLogoDataUrl : brand.logoDataUrl
   const fallback = overlay ? overlayLogoFallback : appLogoFallback
   return (
     <img
-      src={hasCustom && dataUrl ? dataUrl : fallback}
-      alt={alt}
+      src={fallback}
+      alt={alt || 'VeilAssist'}
       draggable={draggable}
       {...props}
     />
   )
 }
 
-/** `<span>` with the active display name (fallback text while seeding). */
-export function BrandName({ fallback = '', ...props }) {
-  const brand = useBrand()
-  return <span {...props}>{brand.name}</span>
+/** `<span>` with the VeilAssist display name. */
+export function BrandName({ fallback = 'VeilAssist', ...props }) {
+  return <span {...props}>{fallback || 'VeilAssist'}</span>
 }
 
 /** Imperative read for non-component code (e.g. meeting toast boot wiring). */

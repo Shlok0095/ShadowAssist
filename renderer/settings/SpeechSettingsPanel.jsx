@@ -10,10 +10,12 @@ import {
   SettingsCollapsible,
   SettingsFieldLabel,
   SettingsPage,
+  SettingsPanelShell,
   SettingsRow,
   SettingsSection,
   ToggleSwitch,
 } from './SettingsComponents'
+import { MEETING_LANGUAGES } from '../shared/interviewSettings'
 
 const ipc = createIpcShim()
 
@@ -55,6 +57,7 @@ function AdvancedSttKeyRow({ label, saved, placeholder, onSave, extra }) {
 }
 
 export default function SpeechSettingsPanel({
+  embedded = false,
   snap,
   audioEnabled,
   onAudioEnabledChange,
@@ -75,6 +78,8 @@ export default function SpeechSettingsPanel({
   onSaveKey,
   onPatchSnap,
   onSave,
+  meetingListenLanguageUi = 'en',
+  onMeetingListenLanguageChange,
 }) {
   const [audioInputs, setAudioInputs] = useState([])
   const [audioOutputs, setAudioOutputs] = useState([])
@@ -115,7 +120,8 @@ export default function SpeechSettingsPanel({
   const sttProviderOptions = sttCapableMeta.map((p) => ({ id: p.id, label: p.label }))
 
   return (
-    <SettingsPage
+    <SettingsPanelShell
+      embedded={embedded}
       title="Audio"
       description="Microphone capture and speech-to-text while Listen is active."
     >
@@ -139,6 +145,23 @@ export default function SpeechSettingsPanel({
             <option value="boost" className="bg-void-900">
               Boost (quiet mic)
             </option>
+          </select>
+        </SettingsRow>
+
+        <SettingsRow
+          label="Meeting / listen language"
+          hint="STT accent hint — use English (India) or Hinglish for Indian interviews. Restart Listen after changing."
+        >
+          <select
+            value={meetingListenLanguageUi}
+            onChange={(e) => onMeetingListenLanguageChange?.(e.target.value)}
+            className="input-shadow w-full px-3 py-2 text-sm sm:w-64"
+          >
+            {MEETING_LANGUAGES.map((opt) => (
+              <option key={opt.value} value={opt.value} className="bg-void-900">
+                {opt.label}
+              </option>
+            ))}
           </select>
         </SettingsRow>
       </SettingsSection>
@@ -345,14 +368,14 @@ export default function SpeechSettingsPanel({
               <div>
                 <SettingsFieldLabel>STT model</SettingsFieldLabel>
                 <select
-                  value={snap?.deepgramModel || 'nova-2'}
+                  value={snap?.deepgramModel || 'nova-3-general'}
                   onChange={(e) => {
                     onPatchSnap('deepgramModel', e.target.value)
                     onSave('deepgramModel', e.target.value)
                   }}
                   className="input-shadow w-full px-3 py-2 text-sm sm:w-52"
                 >
-                  {['nova-2', 'nova-3', 'enhanced', 'base'].map((m) => (
+                  {['nova-3-general', 'nova-3', 'nova-2', 'enhanced', 'base'].map((m) => (
                     <option key={m} value={m}>
                       {m}
                     </option>
@@ -454,14 +477,14 @@ export default function SpeechSettingsPanel({
             onSave={(v) => onSaveKey('deepgramKey', v)}
             extra={
               <select
-                value={snap?.deepgramModel || 'nova-2'}
+                value={snap?.deepgramModel || 'nova-3-general'}
                 onChange={(e) => {
                   onPatchSnap('deepgramModel', e.target.value)
                   onSave('deepgramModel', e.target.value)
                 }}
                 className="input-shadow px-2 py-1 text-xs"
               >
-                {['nova-2', 'nova-3', 'enhanced', 'base'].map((m) => (
+                {['nova-3-general', 'nova-3', 'nova-2', 'enhanced', 'base'].map((m) => (
                   <option key={m} value={m}>
                     {m}
                   </option>
@@ -563,6 +586,6 @@ export default function SpeechSettingsPanel({
           </p>
         </div>
       </SettingsCollapsible>
-    </SettingsPage>
+    </SettingsPanelShell>
   )
 }
