@@ -16,23 +16,28 @@ function parseLatestYml(text) {
 }
 
 function findLatestYml() {
-  const candidates = [
-    path.join(repoRoot, 'dist', 'latest.yml'),
-    path.join(repoRoot, 'dist-build-20260820', 'latest.yml'),
-  ]
+  const candidates = []
+  const distYml = path.join(repoRoot, 'dist', 'latest.yml')
+  if (fs.existsSync(distYml)) candidates.push(distYml)
   const buildDirs = fs
     .readdirSync(repoRoot, { withFileTypes: true })
     .filter((d) => d.isDirectory() && /^dist-build-\d+$/.test(d.name))
     .map((d) => path.join(repoRoot, d.name, 'latest.yml'))
-  for (const file of [...candidates, ...buildDirs.reverse()]) {
-    if (fs.existsSync(file)) return file
-  }
-  return null
+    .filter((p) => fs.existsSync(p))
+  candidates.push(...buildDirs)
+  if (!candidates.length) return null
+  candidates.sort((a, b) => fs.statSync(b).mtimeMs - fs.statSync(a).mtimeMs)
+  return candidates[0]
 }
 
 function findExeSize(dir, name) {
   const file = path.join(dir, name)
-  return fs.existsSync(file) ? fs.statSync(file).size : null
+  if (fs.existsSync(file)) return fs.statSync(file).size
+  const compact = fs.readdirSync(dir).find((n) => /^VeilAssistSetup\d/.test(n) && n.endsWith('.exe'))
+  if (name === 'VeilAssist-Setup.exe' && compact) return fs.statSync(path.join(dir, compact)).size
+  const portable = fs.readdirSync(dir).find((n) => /^VeilAssist\d/.test(n) && n.endsWith('.exe') && !/Setup/.test(n))
+  if (name === 'VeilAssist.exe' && portable) return fs.statSync(path.join(dir, portable)).size
+  return null
 }
 
 function findDistDirForYml(ymlPath) {
