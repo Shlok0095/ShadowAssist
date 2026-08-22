@@ -1,5 +1,6 @@
 const fs = require('fs')
 const path = require('path')
+const crypto = require('crypto')
 
 const repoRoot = path.join(__dirname, '..', '..')
 const landingRoot = path.join(__dirname, '..')
@@ -89,8 +90,19 @@ function findExeSize(dir, name) {
   return null
 }
 
-function findDistDirForYml(ymlPath) {
-  return ymlPath ? path.dirname(ymlPath) : null
+function findInstallerExe(dir) {
+  if (!dir) return null
+  const setup = path.join(dir, 'VeilAssist-Setup.exe')
+  if (fs.existsSync(setup)) return setup
+  const compact = fs.readdirSync(dir).find((n) => /^VeilAssistSetup\d/.test(n) && n.endsWith('.exe'))
+  return compact ? path.join(dir, compact) : null
+}
+
+function sha256File(filePath) {
+  if (!filePath || !fs.existsSync(filePath)) return null
+  const hash = crypto.createHash('sha256')
+  hash.update(fs.readFileSync(filePath))
+  return hash.digest('hex')
 }
 
 const ymlPath = findLatestYml()
@@ -106,9 +118,15 @@ try {
   stampVersion = null
 }
 
+function findDistDirForYml(ymlPath) {
+  return ymlPath ? path.dirname(ymlPath) : null
+}
+
 const distDir = findDistDirForYml(ymlPath)
+const installerExe = findInstallerExe(distDir)
 const portableSize = distDir ? findExeSize(distDir, 'VeilAssist.exe') : null
 const installerSize = yml.installerSize || (distDir ? findExeSize(distDir, 'VeilAssist-Setup.exe') : null)
+const installerSha256 = sha256File(installerExe)
 
 const compactVersion = yml.version || stampVersion || ''
 const releaseTag = compactVersion ? `v${compactVersion}` : 'v2026.820.207'
@@ -124,6 +142,7 @@ const manifest = {
   builtAt: yml.releaseDate || new Date().toISOString(),
   installerSize: installerSize || 0,
   portableSize: portableSize || 0,
+  installerSha256: installerSha256 || '',
 }
 
 const publicDir = path.join(landingRoot, 'public', 'downloads')

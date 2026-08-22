@@ -86,6 +86,14 @@ function DownloadCard({ item, recommended }: { item: LatestDownload; recommended
             <dd className="text-right text-zinc-400">{formatDateTime(item.builtAt)}</dd>
           </>
         ) : null}
+        {item.platform === 'windows' && SITE_WINDOWS_BUILD_MANIFEST.installerSha256 ? (
+          <>
+            <dt className="text-zinc-600">SHA-256</dt>
+            <dd className="break-all text-right text-[10px] text-zinc-500">
+              {SITE_WINDOWS_BUILD_MANIFEST.installerSha256}
+            </dd>
+          </>
+        ) : null}
       </dl>
       <a
         href={item.downloadUrl}
@@ -116,9 +124,11 @@ export function DownloadsPage() {
               One latest build per platform — Windows desktop, macOS, Linux, and Android interview app.
               Bring your own API key. No bot joins your meeting.
             </p>
-            <p className="mt-3 font-mono text-xs text-zinc-600">
-              Windows release {SITE_WINDOWS_BUILD_MANIFEST.version} ·{' '}
-              {SITE_WINDOWS_BUILD_MANIFEST.releaseTag}
+            <p className="mt-3 font-mono text-xs text-zinc-500">
+              Windows release{' '}
+              <strong className="text-zinc-300">{SITE_WINDOWS_BUILD_MANIFEST.version}</strong> ·{' '}
+              {SITE_WINDOWS_BUILD_MANIFEST.releaseTag} ·{' '}
+              {SITE_WINDOWS_BUILD_MANIFEST.installerSize.toLocaleString()} bytes
             </p>
           </ScrollReveal>
         </div>
