@@ -1,11 +1,8 @@
 import { useEffect, useRef, useState, type MouseEvent as ReactMouseEvent } from 'react'
 import { AnimatePresence, motion, useReducedMotion } from 'motion/react'
-import { LinuxIcon, MacIcon, WindowsIcon } from '@/components/marketing/LightButton'
 import { getPlatformById, sortPlatformsForUser } from '@/config/platforms'
 import { marketingAnchor, scrollToMarketingSection } from '@/utils/marketingNav'
 import { useDetectedPlatform } from '@/hooks/useDetectedPlatform'
-
-const ICONS = { windows: WindowsIcon, macos: MacIcon, linux: LinuxIcon } as const
 
 type Props = { className?: string; variant?: 'light' | 'dark' }
 
@@ -15,7 +12,7 @@ export function PlatformDownloadMenu({ className = '', variant = 'dark' }: Props
   const [open, setOpen] = useState(false)
   const rootRef = useRef<HTMLDivElement>(null)
   const active = getPlatformById(preferred)
-  const ActiveIcon = ICONS[preferred]
+  const ActiveIcon = active.icon
 
   useEffect(() => {
     if (!open) return
@@ -73,7 +70,7 @@ export function PlatformDownloadMenu({ className = '', variant = 'dark' }: Props
               {isDetected ? `Detected ${active.name}. All platforms:` : 'Choose your platform:'}
             </p>
             {sortPlatformsForUser(preferred).map((p) => {
-              const Icon = ICONS[p.id]
+              const Icon = p.icon
               const isActive = p.id === preferred
               return (
                 <div key={p.id} className={`lm-download-menu__row${isActive ? ' is-active' : ''}`}>
@@ -111,7 +108,7 @@ export function PlatformDownloadDrawerLinks({ onNavigate }: { onNavigate?: () =>
   return (
     <div className="lm-drawer-downloads">
       {sortPlatformsForUser(preferred).map((p) => {
-        const Icon = ICONS[p.id]
+        const Icon = p.icon
         return (
           <div key={p.id} className="lm-drawer-downloads__block">
             <div className="lm-drawer-downloads__label">
