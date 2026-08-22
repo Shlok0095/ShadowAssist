@@ -90,12 +90,28 @@ function findExeSize(dir, name) {
   return null
 }
 
-function findInstallerExe(dir) {
+function findInstallerExe(dir, compactVersion) {
   if (!dir) return null
+  if (compactVersion) {
+    const exact = path.join(dir, `VeilAssistSetup${compactVersion}.exe`)
+    if (fs.existsSync(exact)) return exact
+  }
   const setup = path.join(dir, 'VeilAssist-Setup.exe')
   if (fs.existsSync(setup)) return setup
   const compact = fs.readdirSync(dir).find((n) => /^VeilAssistSetup\d/.test(n) && n.endsWith('.exe'))
   return compact ? path.join(dir, compact) : null
+}
+
+function findPortableExe(dir, compactVersion) {
+  if (!dir) return null
+  if (compactVersion) {
+    const exact = path.join(dir, `VeilAssist${compactVersion}.exe`)
+    if (fs.existsSync(exact)) return exact
+  }
+  const portable = path.join(dir, 'VeilAssist.exe')
+  if (fs.existsSync(portable)) return portable
+  const match = fs.readdirSync(dir).find((n) => /^VeilAssist\d/.test(n) && n.endsWith('.exe') && !/Setup/.test(n))
+  return match ? path.join(dir, match) : null
 }
 
 function sha256File(filePath) {
@@ -127,22 +143,28 @@ function findDistDirForYml(ymlPath) {
 }
 
 const distDir = findDistDirForYml(ymlPath)
-const installerExe = findInstallerExe(distDir)
-const portableSize = distDir ? findExeSize(distDir, 'VeilAssist.exe') : null
-const installerSize = yml.installerSize || (distDir ? findExeSize(distDir, 'VeilAssist-Setup.exe') : null)
+const compactVersion = yml.version || stampVersion || ''
+const installerExe = findInstallerExe(distDir, compactVersion)
+const portableExe = findPortableExe(distDir, compactVersion)
+const portableSize = portableExe && fs.existsSync(portableExe) ? fs.statSync(portableExe).size : null
+const installerSize =
+  yml.installerSize || (installerExe && fs.existsSync(installerExe) ? fs.statSync(installerExe).size : null)
 const installerSha256 = sha256File(installerExe)
 
-const compactVersion = yml.version || stampVersion || ''
-const releaseTag = compactVersion ? `v${compactVersion}` : 'v2026.820.207'
+// Interview releases use `interview-v*` tags and versioned filenames so stag/main CI
+// cannot overwrite generic VeilAssist-Setup.exe on the same release.
+const releaseTag = compactVersion ? `interview-v${compactVersion}` : 'interview-v2026.820.207'
 const repo = 'Shlok0095/VeilAssist'
 const releaseBase = `https://github.com/${repo}/releases/download/${releaseTag}`
+const installerFile = compactVersion ? `VeilAssistSetup${compactVersion}.exe` : 'VeilAssist-Setup.exe'
+const portableFile = compactVersion ? `VeilAssist${compactVersion}.exe` : 'VeilAssist.exe'
 
 const manifest = {
   version: compactVersion ? compactToDotted(compactVersion) : stampVersion || '',
   compactVersion: compactVersion || stampVersion || '',
   releaseTag,
-  installerDownloadUrl: `${releaseBase}/VeilAssist-Setup.exe`,
-  portableDownloadUrl: `${releaseBase}/VeilAssist.exe`,
+  installerDownloadUrl: `${releaseBase}/${installerFile}`,
+  portableDownloadUrl: `${releaseBase}/${portableFile}`,
   builtAt: yml.releaseDate || new Date().toISOString(),
   installerSize: installerSize || 0,
   portableSize: portableSize || 0,

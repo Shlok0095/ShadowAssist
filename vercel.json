@@ -52,12 +52,12 @@
     },
     {
       "source": "/download/beta",
-      "destination": "https://github.com/Shlok0095/VeilAssist/releases/download/v2026.823.302/VeilAssist-Setup.exe",
+      "destination": "https://github.com/Shlok0095/VeilAssist/releases/download/interview-v2026.823.302/VeilAssistSetup2026.823.302.exe",
       "permanent": false
     },
     {
       "source": "/download/portable",
-      "destination": "https://github.com/Shlok0095/VeilAssist/releases/download/v2026.823.302/VeilAssist.exe",
+      "destination": "https://github.com/Shlok0095/VeilAssist/releases/download/interview-v2026.823.302/VeilAssist2026.823.302.exe",
       "permanent": false
     },
     {

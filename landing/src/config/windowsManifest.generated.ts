@@ -2,9 +2,9 @@
 export const SITE_WINDOWS_BUILD_MANIFEST = {
   "version": "2026.08.23.03.02",
   "compactVersion": "2026.823.302",
-  "releaseTag": "v2026.823.302",
-  "installerDownloadUrl": "https://github.com/Shlok0095/VeilAssist/releases/download/v2026.823.302/VeilAssist-Setup.exe",
-  "portableDownloadUrl": "https://github.com/Shlok0095/VeilAssist/releases/download/v2026.823.302/VeilAssist.exe",
+  "releaseTag": "interview-v2026.823.302",
+  "installerDownloadUrl": "https://github.com/Shlok0095/VeilAssist/releases/download/interview-v2026.823.302/VeilAssistSetup2026.823.302.exe",
+  "portableDownloadUrl": "https://github.com/Shlok0095/VeilAssist/releases/download/interview-v2026.823.302/VeilAssist2026.823.302.exe",
   "builtAt": "2026-08-22T21:34:32.374Z",
   "installerSize": 139877598,
   "portableSize": 139606407,
