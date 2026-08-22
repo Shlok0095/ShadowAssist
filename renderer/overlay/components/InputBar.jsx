@@ -61,7 +61,7 @@ function InputBarInner({ onAsk, onAbort, isThinking, sessionOn = false, focusMod
         <button
           type="button"
           onClick={() => onAbort?.()}
-          title="Stop generating"
+          aria-label="Stop generating"
           className="cursor-default flex h-[34px] shrink-0 items-center justify-center rounded-xl border border-rose-400/30 bg-rose-500/10 px-3 text-[11px] font-medium text-rose-200 hover:bg-rose-500/20"
         >
           Stop
@@ -71,7 +71,6 @@ function InputBarInner({ onAsk, onAbort, isThinking, sessionOn = false, focusMod
           type="button"
           onClick={submitText}
           disabled={!sessionOn || (isThinking && !value.trim())}
-          title="Send"
           aria-label="Send"
           className={[
             'crystal-send-btn cursor-default flex h-[34px] w-[34px] shrink-0 items-center justify-center rounded-full transition-all duration-150 active:scale-95',

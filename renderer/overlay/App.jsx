@@ -2921,7 +2921,6 @@ export default function App() {
                 >
                   <button
                     type="button"
-                    title="Visible — may appear in screen share"
                     aria-label="Visible mode"
                     aria-pressed={!stealthMode}
                     onClick={() => void setProtectionMode(false)}
@@ -2934,7 +2933,6 @@ export default function App() {
                   </button>
                   <button
                     type="button"
-                    title="Stealth — hidden from screen capture"
                     aria-label="Stealth mode"
                     aria-pressed={stealthMode}
                     onClick={() => void setProtectionMode(true)}

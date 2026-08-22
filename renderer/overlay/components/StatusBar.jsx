@@ -31,7 +31,6 @@ function StatusBar({ sessionOn, ocrStatus, onToggleSession, onOpenSettings, onQu
             className={`crystal-sublabel text-[10px] font-medium normal-case ${
               ocrStatus === 'error' ? 'text-red-400' : 'text-white/55'
             }`}
-            title={ocrStatus === 'error' ? 'Restart app or reinstall if screen reading stays broken' : 'First launch loads ONNX models (10–30s)'}
           >
             {ocrHint}
           </span>
@@ -47,7 +46,6 @@ function StatusBar({ sessionOn, ocrStatus, onToggleSession, onOpenSettings, onQu
             e.stopPropagation()
             onToggleSession()
           }}
-          title={sessionOn ? 'Listening on — tap to stop' : 'Listening off — tap to start'}
           aria-label={sessionOn ? 'Listening on' : 'Listening off'}
           className="crystal-listen-switch cursor-default shrink-0"
         >
@@ -68,7 +66,7 @@ function StatusBar({ sessionOn, ocrStatus, onToggleSession, onOpenSettings, onQu
             e.stopPropagation()
             onOpenSettings()
           }}
-          title="Settings"
+          aria-label="Settings"
           className="crystal-icon-btn cursor-default flex h-7 w-7 shrink-0 items-center justify-center rounded-lg active:scale-95"
         >
           <AppIcon icon={SlidersHorizontal} size={15} strokeWidth={2} />
@@ -80,7 +78,7 @@ function StatusBar({ sessionOn, ocrStatus, onToggleSession, onOpenSettings, onQu
             e.stopPropagation()
             onQuit?.()
           }}
-          title={`Quit ${name} — fully exit`}
+          aria-label={`Quit ${name}`}
           className="crystal-quit-btn cursor-default flex h-7 shrink-0 items-center justify-center rounded-lg px-2.5 text-[10px] font-semibold transition-all duration-150 active:scale-95"
         >
           Quit

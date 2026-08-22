@@ -13,7 +13,7 @@ function ActionChips({ onChip, disabled = false, sessionOn = false }) {
         <button
           key={chip.id}
           type="button"
-          title={chip.hint || chip.label}
+          aria-label={chip.label}
           disabled={disabled}
           onClick={() => onChip?.(chip)}
           className={[

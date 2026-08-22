@@ -28,7 +28,7 @@ export default function RollingTranscript({
   return (
     <div className="crystal-caption-row">
       {label ? (
-        <span className={chipClass} title={speaker === 'me' ? 'Microphone' : 'System audio'}>
+        <span className={chipClass}>
           {label}
         </span>
       ) : null}
@@ -37,20 +37,18 @@ export default function RollingTranscript({
           {text || (isActive ? 'Listening…' : 'Paused')}
         </span>
       </div>
-      <div className="flex shrink-0 items-center gap-1 pr-0.5" aria-hidden title="Channel status">
+      <div className="flex shrink-0 items-center gap-1 pr-0.5" aria-hidden>
         <span
           className={[
             'h-1.5 w-1.5 rounded-full',
             sysCaptureActive ? 'bg-red-400/90' : 'bg-zinc-600',
           ].join(' ')}
-          title={sysCaptureActive ? 'Them (system audio)' : 'Them — no system audio'}
         />
         <span
           className={[
             'h-1.5 w-1.5 rounded-full',
             micCaptureActive ? 'bg-sky-400/90' : 'bg-zinc-600',
           ].join(' ')}
-          title={micCaptureActive ? 'Me (microphone)' : 'Me — no microphone'}
         />
       </div>
     </div>
