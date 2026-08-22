@@ -15,6 +15,7 @@
 
 import { SITE } from './site'
 import { SITE_ANDROID_APK_MANIFEST } from './apkManifest.generated'
+import { SITE_WINDOWS_BUILD_MANIFEST } from './windowsManifest.generated'
 
 export type DownloadPlatform = 'windows' | 'macos' | 'linux' | 'android'
 export type DownloadKind = 'installer' | 'portable' | 'archive'
@@ -59,8 +60,21 @@ type RawRelease = {
   assets: RawAsset[]
 }
 
-const ROLLING_BUILD = /(\d{4}\.\d{2}\.\d{2}\.\d{2})/
+const ROLLING_BUILD = /(\d{4}(?:\.\d{2}){4})/
 const SEMVER = /(\d+\.\d+\.\d+)/
+const TAG_VERSION = /^v?(\d{4}\.\d+\.\d+)/
+
+function versionFromTag(tag: string): string | null {
+  const match = tag.match(TAG_VERSION)
+  return match ? match[1] : null
+}
+
+function parseLatestYml(text: string): { version: string; releaseDate: string | null } | null {
+  const versionMatch = text.match(/^version:\s*(\S+)/m)
+  if (!versionMatch) return null
+  const dateMatch = text.match(/^releaseDate:\s*['"]?([^'"\n]+)/m)
+  return { version: versionMatch[1], releaseDate: dateMatch?.[1]?.trim() ?? null }
+}
 
 function classify(name: string): {
   platform: DownloadPlatform
@@ -142,8 +156,21 @@ export function channelFromRelease(raw: RawRelease): ReleaseChannel {
     const key = a.checksum
       ? `${a.platform}|${a.kind}|${a.checksum}`
       : `${a.platform}|${a.kind}|${a.fileName.toLowerCase()}`
-    if (!unique.has(key)) unique.set(key, a)
+    const prev = unique.get(key)
+    if (!prev) {
+      unique.set(key, a)
+      continue
+    }
+    // Keep the bare download URL but inherit build version from the versioned duplicate.
+    if (!prev.version && a.version) {
+      unique.set(key, { ...prev, version: a.version })
+    }
   }
+
+  const deduped = [...unique.values()]
+  const tagVersion = versionFromTag(raw.tag_name)
+  const knownVersions = deduped.map((a) => a.version).filter((v): v is string => v != null)
+  const fallbackVersion = knownVersions.sort().reverse()[0] ?? tagVersion
 
   return {
     tag: raw.tag_name,
@@ -151,8 +178,33 @@ export function channelFromRelease(raw: RawRelease): ReleaseChannel {
     prerelease: raw.prerelease,
     publishedAt: raw.published_at,
     htmlUrl: raw.html_url,
-    artifacts: [...unique.values()],
+    artifacts: deduped.map((a) => ({
+      ...a,
+      version: a.version ?? (a.platform === 'windows' ? fallbackVersion : null),
+    })),
     checksumsUrl,
+  }
+}
+
+async function enrichFromLatestYml(channel: ReleaseChannel, url: string): Promise<ReleaseChannel> {
+  try {
+    const res = await fetch(url)
+    if (!res.ok) return channel
+    const parsed = parseLatestYml(await res.text())
+    if (!parsed) return channel
+    return {
+      ...channel,
+      artifacts: channel.artifacts.map((a) => {
+        if (a.platform !== 'windows') return a
+        return {
+          ...a,
+          version: a.version ?? parsed.version,
+          releasedAt: parsed.releaseDate ?? a.releasedAt,
+        }
+      }),
+    }
+  } catch {
+    return channel
   }
 }
 
@@ -168,8 +220,46 @@ export async function fetchChannel(owner: string, repo: string, tag: string): Pr
   })
   if (!res.ok) return null
   const raw = (await res.json()) as RawRelease
-  const channel = channelFromRelease(raw)
-  return channel.artifacts.length > 0 ? applySiteAndroidApk(channel) : null
+  let channel = channelFromRelease(raw)
+  if (channel.artifacts.length === 0) return null
+
+  const ymlAsset = raw.assets.find((a) => a.name.toLowerCase() === 'latest.yml')
+  if (ymlAsset) {
+    channel = await enrichFromLatestYml(channel, ymlAsset.browser_download_url)
+  }
+  return applySiteManifests(channel)
+}
+
+function applySiteManifests(channel: ReleaseChannel): ReleaseChannel {
+  return applySiteWindowsBuild(applySiteAndroidApk(channel))
+}
+
+/** Site-hosted Windows build metadata (see windowsManifest.generated.ts). */
+export function applySiteWindowsBuild(channel: ReleaseChannel): ReleaseChannel {
+  const winVersion = SITE_WINDOWS_BUILD_MANIFEST.version || SITE_WINDOWS_BUILD_MANIFEST.compactVersion
+  if (!winVersion) return channel
+
+  return {
+    ...channel,
+    artifacts: channel.artifacts.map((a) => {
+      if (a.platform !== 'windows') return a
+      const size =
+        a.kind === 'installer'
+          ? SITE_WINDOWS_BUILD_MANIFEST.installerSize || a.size
+          : SITE_WINDOWS_BUILD_MANIFEST.portableSize || a.size
+      const downloadUrl =
+        a.kind === 'installer'
+          ? SITE_WINDOWS_BUILD_MANIFEST.installerDownloadUrl || a.downloadUrl
+          : SITE_WINDOWS_BUILD_MANIFEST.portableDownloadUrl || a.downloadUrl
+      return {
+        ...a,
+        version: winVersion || a.version,
+        size: size > 0 ? size : a.size,
+        releasedAt: SITE_WINDOWS_BUILD_MANIFEST.builtAt || a.releasedAt,
+        downloadUrl,
+      }
+    }),
+  }
 }
 
 /** Site-hosted interview APK metadata (see apkManifest.generated.ts). */
@@ -222,6 +312,21 @@ export function formatDate(iso: string | null): string {
   }
 }
 
+export function formatDateTime(iso: string | null): string {
+  if (!iso) return '—'
+  try {
+    return new Date(iso).toLocaleString(undefined, {
+      year: 'numeric',
+      month: 'short',
+      day: 'numeric',
+      hour: '2-digit',
+      minute: '2-digit',
+    })
+  } catch {
+    return iso
+  }
+}
+
 export const KIND_LABELS: Record<DownloadKind, string> = {
   installer: 'Installer',
   portable: 'Portable',
@@ -236,16 +341,16 @@ export const PLATFORM_LABELS: Record<DownloadPlatform, string> = {
 }
 
 /**
- * Last-known artifact snapshot (channel: latest-stag, updated 2026-08-09).
+ * Last-known artifact snapshot (channel: latest-stag, updated 2026-08-16).
  * Rendered only when the GitHub API is unreachable or rate-limited, so the
  * page never shows an empty state. Refresh when the artifact naming scheme
  * changes — not on every release.
  */
-export const FALLBACK_CHANNEL: ReleaseChannel = applySiteAndroidApk({
+export const FALLBACK_CHANNEL: ReleaseChannel = applySiteManifests({
   tag: 'latest-stag',
   name: 'VeilAssist — latest-stag',
   prerelease: true,
-  publishedAt: '2026-08-09T20:13:22Z',
+  publishedAt: SITE_WINDOWS_BUILD_MANIFEST.builtAt,
   htmlUrl: 'https://github.com/Shlok0095/VeilAssist/releases/tag/latest-stag',
   artifacts: [
     {
@@ -253,10 +358,10 @@ export const FALLBACK_CHANNEL: ReleaseChannel = applySiteAndroidApk({
       platform: 'windows',
       arch: 'x64',
       kind: 'installer',
-      version: '1.0.1',
-      size: 139475002,
-      releasedAt: '2026-08-09T20:13:22Z',
-      downloadUrl: 'https://github.com/Shlok0095/VeilAssist/releases/download/latest-stag/VeilAssist-Setup.exe',
+      version: SITE_WINDOWS_BUILD_MANIFEST.version,
+      size: SITE_WINDOWS_BUILD_MANIFEST.installerSize > 0 ? SITE_WINDOWS_BUILD_MANIFEST.installerSize : null,
+      releasedAt: SITE_WINDOWS_BUILD_MANIFEST.builtAt,
+      downloadUrl: SITE_WINDOWS_BUILD_MANIFEST.installerDownloadUrl,
       checksum: null,
     },
     {
@@ -264,10 +369,10 @@ export const FALLBACK_CHANNEL: ReleaseChannel = applySiteAndroidApk({
       platform: 'windows',
       arch: 'x64',
       kind: 'portable',
-      version: '1.0.1',
-      size: 139203812,
-      releasedAt: '2026-08-09T20:13:22Z',
-      downloadUrl: 'https://github.com/Shlok0095/VeilAssist/releases/download/latest-stag/VeilAssist.exe',
+      version: SITE_WINDOWS_BUILD_MANIFEST.version,
+      size: SITE_WINDOWS_BUILD_MANIFEST.portableSize > 0 ? SITE_WINDOWS_BUILD_MANIFEST.portableSize : null,
+      releasedAt: SITE_WINDOWS_BUILD_MANIFEST.builtAt,
+      downloadUrl: SITE_WINDOWS_BUILD_MANIFEST.portableDownloadUrl,
       checksum: null,
     },
     {

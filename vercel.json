@@ -35,12 +35,12 @@
     },
     {
       "source": "/download/beta",
-      "destination": "https://github.com/Shlok0095/VeilAssist/releases/download/latest-stag/VeilAssist-Setup.exe",
+      "destination": "https://github.com/Shlok0095/VeilAssist/releases/download/v2026.822.1602/VeilAssist-Setup.exe",
       "permanent": false
     },
     {
       "source": "/download/portable",
-      "destination": "https://github.com/Shlok0095/VeilAssist/releases/download/latest/VeilAssist.exe",
+      "destination": "https://github.com/Shlok0095/VeilAssist/releases/download/v2026.822.1602/VeilAssist.exe",
       "permanent": false
     },
     {
