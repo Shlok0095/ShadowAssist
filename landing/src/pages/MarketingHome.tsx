@@ -1,5 +1,8 @@
 import { LiveField } from '@/components/marketing/LiveField'
 import { Hero3D } from '@/components/marketing/Hero3D'
+import { VaAnimeHero } from '@/components/marketing/VaAnimeHero'
+import { VaButton } from '@/components/marketing/VaButton'
+import { VaParticleCta } from '@/components/marketing/VaParticleCta'
 import { VaReveal, VaSection } from '@/components/marketing/VaSection'
 import { VaStatsLive } from '@/components/marketing/VaStatsLive'
 import { DownloadHub } from '@/components/marketing/DownloadHub'
@@ -8,6 +11,7 @@ import { LightFooter } from '@/components/marketing/LightFooter'
 import { CompatLogos, DockIcons, MacosCard } from '@/components/marketing/MacosCard'
 import { LiquidGlassCard } from '@/components/kokonutui/liquid-glass-card'
 import { MEDIA } from '@/config/mediaManifest'
+import { useRevealObserver } from '@/hooks/useReveal'
 import { GlowCta } from '@/components/marketing/GlowCta'
 import { SITE } from '@/config/site'
 
@@ -27,39 +31,39 @@ const STEPS = [
   {
     n: '03',
     title: 'Recap',
-    body: 'End the session for local summaries and action items — without a bot joining the meeting.',
+    body: 'End the session for local summaries and action items â without a bot joining the meeting.',
     img: MEDIA.notesScreenshot,
   },
 ] as const
 
 const BENTO = [
   {
-    icon: '◌',
+    icon: 'â',
     title: 'Never joins the meeting',
     body: 'No guest bot, no meeting link, and no presence on the attendee list.',
   },
   {
-    icon: '⛨',
+    icon: 'â¨',
     title: 'Hidden from screen share',
     body: 'Content protection keeps the overlay off recordings and shared screens until you summon it.',
   },
   {
-    icon: '⌨',
+    icon: 'â¨',
     title: 'Ctrl+Enter shortcut',
     body: 'Request help mid-conversation without breaking flow or eye contact.',
   },
   {
-    icon: '◎',
+    icon: 'â',
     title: '12+ languages',
-    body: 'English, Hindi, Hinglish, and cloud speech-to-text — local or with your own API keys.',
+    body: 'English, Hindi, Hinglish, and cloud speech-to-text â local or with your own API keys.',
   },
   {
-    icon: '⚡',
+    icon: 'â¡',
     title: 'Low-latency streaming',
     body: 'Token-batched overlay updates deliver answers in roughly 300ms during the call.',
   },
   {
-    icon: '⊞',
+    icon: 'â',
     title: 'Works with major meeting apps',
     body: 'Zoom, Google Meet, Microsoft Teams, Webex, Slack huddles, and more.',
     compat: true,
@@ -85,7 +89,7 @@ const FAQ = [
   },
   {
     q: 'Which platforms are supported?',
-    a: 'Windows, macOS, Linux, and Android — desktop overlay plus a mobile interview APK.',
+    a: 'Windows, macOS, and Linux, with the same real-time assist experience on each.',
   },
   {
     q: 'How do I get support?',
@@ -115,7 +119,7 @@ export function MarketingHome() {
             </h1>
 
             <p className="lm-hero__sub">
-              VeilAssist gives real-time answers and meeting notes — completely undetectable on your screen. No bots.
+              VeilAssist gives real-time answers and meeting notes â completely undetectable on your screen. No bots.
               No waiting until after the call.
             </p>
 
@@ -128,7 +132,7 @@ export function MarketingHome() {
               </a>
             </div>
 
-            <p className="lm-hero__platform">Windows · macOS · Linux · Android — get the build for your device</p>
+            <p className="lm-hero__platform">Windows Â· macOS Â· Linux â get the build for your device</p>
           </div>
 
           <div className="lm-hero-product reveal">
@@ -139,14 +143,14 @@ export function MarketingHome() {
             <div className="lm-hero-shimmer" aria-hidden />
           </div>
         </div>
-        <p className="va-hero-platform">Available on Windows, macOS, Linux, and Android</p>
+        <p className="va-hero-platform">Available on Windows, macOS, and Linux</p>
       </Hero3D>
 
       <VaSection
         id="how-it-works"
         eyebrow="How it works"
         title="Listen, assist, and recap"
-        subtitle="A simple workflow that stays on your desktop — never in your meeting invite."
+        subtitle="A simple workflow that stays on your desktop â never in your meeting invite."
       >
         <div className="va-steps">
           {STEPS.map((s, i) => (
@@ -207,19 +211,18 @@ export function MarketingHome() {
           <div className="lm-kbd-row" aria-hidden>
             <span className="lm-kbd">Ctrl</span>
             <span className="lm-kbd-plus">+</span>
-            <span className="lm-kbd">↵</span>
+            <span className="lm-kbd">âµ</span>
           </div>
           <h2 className="lm-final-cta__title">Meeting AI that helps during the call, not after.</h2>
           <p className="lm-final-cta__sub">Try VeilAssist on your next meeting today.</p>
-          <DownloadHub />
           <div className="lm-final-cta__btns">
             <GlowCta href={SITE.downloadPageUrl} size="md" external={false}>
-              View all downloads
+              Download the desktop app
             </GlowCta>
           </div>
           <p className="lm-final-cta__hint">
-            Windows installer, macOS DMG, Linux AppImage &amp; DEB, plus the Android interview APK — pick the build
-            for your device on the <strong>Download</strong> page.
+            Windows installer, macOS DMG, Linux AppImage &amp; DEB â pick the build for your device on the
+            <strong> Download</strong> page.
           </p>
         </div>
       </section>

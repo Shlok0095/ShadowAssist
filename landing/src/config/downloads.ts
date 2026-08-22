@@ -230,13 +230,27 @@ export async function fetchChannel(owner: string, repo: string, tag: string): Pr
   return applySiteManifests(channel)
 }
 
+/** Site-hosted interview APK metadata (see apkManifest.generated.ts). */
+export function siteAndroidArtifact(): DownloadArtifact {
+  return {
+    fileName: SITE_ANDROID_APK_MANIFEST.fileName,
+    platform: 'android',
+    arch: null,
+    kind: 'installer',
+    version: SITE_ANDROID_APK_MANIFEST.version,
+    size: SITE_ANDROID_APK_MANIFEST.size > 0 ? SITE_ANDROID_APK_MANIFEST.size : null,
+    releasedAt: SITE_ANDROID_APK_MANIFEST.builtAt,
+    downloadUrl: SITE.downloadAndroidApkSiteUrl,
+    checksum: null,
+  }
+}
+
 function ensureSiteAndroidArtifact(channel: ReleaseChannel): ReleaseChannel {
   const withMeta = applySiteAndroidApk(channel)
-  const hasAndroid = withMeta.artifacts.some((a) => a.platform === 'android')
-  if (hasAndroid) return withMeta
+  if (withMeta.artifacts.some((a) => a.platform === 'android')) return withMeta
   return {
     ...withMeta,
-    artifacts: [siteAndroidArtifact(), ...withMeta.artifacts],
+    artifacts: [...withMeta.artifacts, siteAndroidArtifact()],
   }
 }
 
@@ -273,20 +287,6 @@ export function applySiteWindowsBuild(channel: ReleaseChannel): ReleaseChannel {
 }
 
 /** Site-hosted interview APK metadata (see apkManifest.generated.ts). */
-export function siteAndroidArtifact(): DownloadArtifact {
-  return {
-    fileName: SITE_ANDROID_APK_MANIFEST.fileName,
-    platform: 'android',
-    arch: null,
-    kind: 'installer',
-    version: SITE_ANDROID_APK_MANIFEST.version,
-    size: SITE_ANDROID_APK_MANIFEST.size > 0 ? SITE_ANDROID_APK_MANIFEST.size : null,
-    releasedAt: SITE_ANDROID_APK_MANIFEST.builtAt,
-    downloadUrl: SITE.downloadAndroidApkSiteUrl,
-    checksum: null,
-  }
-}
-
 export function applySiteAndroidApk(channel: ReleaseChannel): ReleaseChannel {
   const apkVersion = SITE_ANDROID_APK_MANIFEST.version
   const apkSize = SITE_ANDROID_APK_MANIFEST.size > 0 ? SITE_ANDROID_APK_MANIFEST.size : null

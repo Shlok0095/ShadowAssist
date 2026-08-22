@@ -3,7 +3,6 @@ import { Link } from 'react-router-dom'
 import { ScrollReveal } from '@/components/marketing/ScrollReveal'
 import { LightFooter } from '@/components/marketing/LightFooter'
 import { SITE } from '@/config/site'
-import { SITE_ANDROID_APK_MANIFEST } from '@/config/apkManifest.generated'
 import {
   detectPlatform,
   fetchChannel,
@@ -12,7 +11,6 @@ import {
   formatDateTime,
   KIND_LABELS,
   PLATFORM_LABELS,
-  siteAndroidArtifact,
   type DownloadArtifact,
   type DownloadPlatform,
   type ReleaseChannel,
@@ -162,71 +160,6 @@ function PlatformGroup({
   )
 }
 
-function AndroidPackageSection() {
-  const artifact = siteAndroidArtifact()
-  const recommended = detectPlatform() === 'android'
-
-  return (
-    <section className="mx-auto w-full max-w-5xl px-4 py-4 sm:px-8">
-      <ScrollReveal>
-        <div className="mb-6">
-          <p className="font-mono text-xs font-medium uppercase tracking-[0.24em] text-cyan-400/70">
-            Mobile interview
-          </p>
-          <h2 className="mt-2 font-display text-2xl font-semibold tracking-[-0.02em] text-white">
-            Android interview app
-          </h2>
-          <p className="mt-2 max-w-2xl text-sm leading-relaxed text-zinc-500">
-            Install the APK on your phone — not a browser tab. Paste your resume, start a session, and VeilAssist
-            listens, transcribes, and generates answers when you finish speaking.
-          </p>
-        </div>
-        <div className="grid gap-6 lg:grid-cols-[minmax(0,22rem)_1fr] lg:items-start">
-          <ArtifactCard artifact={artifact} recommended={recommended} />
-          <div className="rounded-2xl border border-white/[0.08] bg-white/[0.03] p-5 sm:p-6">
-            <p className="font-mono text-[11px] uppercase tracking-wider text-zinc-500">Package</p>
-            <p className="mt-1 font-mono text-sm text-zinc-300">{SITE_ANDROID_APK_MANIFEST.fileName}</p>
-            <dl className="mt-4 grid grid-cols-2 gap-x-3 gap-y-2 font-mono text-[11px]">
-              <dt className="text-zinc-600">Version</dt>
-              <dd className="text-right text-zinc-400">v{SITE_ANDROID_APK_MANIFEST.version}</dd>
-              <dt className="text-zinc-600">Build</dt>
-              <dd className="text-right text-zinc-400">{SITE_ANDROID_APK_MANIFEST.versionCode}</dd>
-              <dt className="text-zinc-600">Size</dt>
-              <dd className="text-right text-zinc-400">{formatBytes(SITE_ANDROID_APK_MANIFEST.size)}</dd>
-              <dt className="text-zinc-600">Built</dt>
-              <dd className="text-right text-zinc-400">{formatDateTime(SITE_ANDROID_APK_MANIFEST.builtAt)}</dd>
-            </dl>
-            <div className="mt-5 flex flex-wrap gap-3">
-              <a
-                href={SITE.downloadAndroidApkSiteUrl}
-                className="lm-btn lm-btn--primary"
-                download={SITE_ANDROID_APK_MANIFEST.fileName}
-              >
-                Download APK
-              </a>
-              <a href={ANDROID_APK_GITHUB} className={ghostBtnClass} target="_blank" rel="noreferrer">
-                GitHub mirror
-              </a>
-            </div>
-            <p className="mt-3 text-xs text-zinc-500">
-              Use the primary button for a normal Chrome download from veilassist.vercel.app (recommended on Android).
-            </p>
-            <ol className="mt-5 list-decimal space-y-2 pl-5 text-sm text-zinc-400">
-              <li>
-                Tap <strong className="text-zinc-300">Download APK</strong> on your phone.
-              </li>
-              <li>Open the downloaded file and allow install from this source if Android asks.</li>
-              <li>
-                Open <strong className="text-zinc-300">VeilAssist Interview</strong> and grant microphone permission.
-              </li>
-            </ol>
-          </div>
-        </div>
-      </ScrollReveal>
-    </section>
-  )
-}
-
 function ChannelSection({ channel, note }: { channel: ReleaseChannel; note?: string }) {
   const grouped = useMemo(() => {
     const map: Record<DownloadPlatform, DownloadArtifact[]> = {
@@ -235,10 +168,7 @@ function ChannelSection({ channel, note }: { channel: ReleaseChannel; note?: str
       linux: [],
       android: [],
     }
-    for (const a of channel.artifacts) {
-      if (a.platform === 'android') continue
-      map[a.platform].push(a)
-    }
+    for (const a of channel.artifacts) map[a.platform].push(a)
     return map
   }, [channel])
   const recommended = detectPlatform()
@@ -248,7 +178,7 @@ function ChannelSection({ channel, note }: { channel: ReleaseChannel; note?: str
       <div className="mb-6 flex flex-wrap items-end justify-between gap-3">
         <div>
           <h2 className="font-display text-2xl font-semibold tracking-[-0.02em] text-white">
-            {channel.tag === 'latest-stag' && channel.prerelease ? 'Latest desktop builds' : 'Latest desktop release'}
+            {channel.tag === 'latest-stag' && channel.prerelease ? 'Latest builds' : 'Latest release'}
           </h2>
           <p className="mt-1 font-mono text-xs tracking-wide text-zinc-500">
             {channel.name} · published {formatDate(channel.publishedAt)}
@@ -271,6 +201,7 @@ function ChannelSection({ channel, note }: { channel: ReleaseChannel; note?: str
         </p>
       ) : null}
       <div className="space-y-10">
+        <PlatformGroup platform="android" artifacts={grouped.android} recommendedPlatform={recommended} />
         <PlatformGroup platform="windows" artifacts={grouped.windows} recommendedPlatform={recommended} />
         <PlatformGroup platform="macos" artifacts={grouped.macos} recommendedPlatform={recommended} />
         <PlatformGroup platform="linux" artifacts={grouped.linux} recommendedPlatform={recommended} />
@@ -337,20 +268,19 @@ export function DownloadsPage() {
         <div className="relative z-[1] mx-auto w-full max-w-5xl">
           <ScrollReveal>
             <p className="font-mono text-xs font-medium uppercase tracking-[0.24em] text-cyan-400/70">
-              Desktop &amp; mobile
+              Desktop app
             </p>
             <h1 className="mt-3 font-display text-3xl font-semibold tracking-[-0.02em] sm:text-4xl">
               Download VeilAssist
             </h1>
             <p className="mt-4 max-w-2xl text-sm leading-relaxed tracking-wide text-zinc-500">
-              Free desktop app for Windows, macOS and Linux, plus the Android interview APK. Bring your own API
-              key — your meetings stay on your device, and answers stream live into the overlay.
+              Free desktop app for Windows, macOS and Linux. Bring your own API
+              key — your meetings stay on your device, and answers stream live
+              into the overlay.
             </p>
           </ScrollReveal>
         </div>
       </section>
-
-      <AndroidPackageSection />
 
       {!loaded ? (
         <LoadingSkeleton />
@@ -362,6 +292,46 @@ export function DownloadsPage() {
       ) : (
         channels.map((channel) => <ChannelSection key={channel.tag} channel={channel} />)
       )}
+
+      <section className="mx-auto w-full max-w-5xl px-4 pb-10 sm:px-8">
+        <ScrollReveal>
+          <div className="rounded-2xl border border-white/[0.08] bg-white/[0.03] p-6 sm:p-8">
+            <p className="font-mono text-xs font-medium uppercase tracking-[0.24em] text-cyan-400/70">
+              Mobile interview
+            </p>
+            <h2 className="mt-2 text-xl font-semibold tracking-tight text-white">Android interview app</h2>
+            <p className="mt-3 max-w-2xl text-sm leading-relaxed text-zinc-400">
+              Download the APK and install it on your phone — not a browser tab. Paste your resume, start a
+              session, and VeilAssist listens, transcribes, and generates answers when you finish speaking.
+            </p>
+            <div className="mt-5 flex flex-wrap gap-3">
+              <a
+                href={SITE.downloadAndroidApkSiteUrl}
+                className="inline-flex items-center rounded-xl bg-blue-600 px-5 py-3 text-sm font-semibold text-white no-underline hover:bg-blue-500"
+                download="VeilAssist-Interview.apk"
+              >
+                Download Android APK
+              </a>
+              <a href={ANDROID_APK_GITHUB} className={ghostBtnClass} target="_blank" rel="noreferrer">
+                GitHub mirror
+              </a>
+            </div>
+            <p className="mt-3 text-xs text-zinc-500">
+              Use the blue button for a normal Chrome download from veilassist.vercel.app (recommended on Android).
+            </p>
+            <ol className="mt-5 list-decimal space-y-2 pl-5 text-sm text-zinc-400">
+              <li>Tap <strong className="text-zinc-300">Download Android APK</strong> on your phone.</li>
+              <li>Open the downloaded file and allow install from this source if Android asks.</li>
+              <li>Open <strong className="text-zinc-300">VeilAssist Interview</strong> and grant microphone permission.</li>
+            </ol>
+            <p className="mt-4 text-xs text-zinc-500">
+              Beta builds publish to the rolling <code className="text-zinc-400">latest-stag</code> release.
+              The button downloads the APK file directly once CI has published it (first build may take ~15 minutes after push).
+              Bring your own API key in the app — same as the desktop overlay.
+            </p>
+          </div>
+        </ScrollReveal>
+      </section>
 
       <section className="mx-auto w-full max-w-5xl px-4 pb-16 pt-6 sm:px-8">
         <ScrollReveal>

@@ -32,14 +32,6 @@ export function LinuxIcon() {
   )
 }
 
-export function AndroidIcon() {
-  return (
-    <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor" aria-hidden>
-      <path d="M17.6 9.48l1.84-3.18c.16-.31.04-.69-.26-.85a.637.637 0 0 0-.83.22l-1.88 3.24a11.463 11.463 0 0 0-8.94 0L5.65 5.67a.643.643 0 0 0-.87-.2.566.566 0 0 0-.22.87l1.84 3.18C4.4 11.22 3 13.29 3 15.5V18h18v-2.5c0-2.21-1.4-4.28-3.4-5.02zM8.5 14c-.83 0-1.5-.67-1.5-1.5S7.67 11 8.5 11s1.5.67 1.5 1.5S9.33 14 8.5 14zm7 0c-.83 0-1.5-.67-1.5-1.5S14.67 11 15.5 11s1.5.67 1.5 1.5-.67 1.5-1.5 1.5z" />
-    </svg>
-  )
-}
-
 export function LightButton({ href, variant = 'primary', size = 'lg', className = '', children }: Props) {
   return (
     <a

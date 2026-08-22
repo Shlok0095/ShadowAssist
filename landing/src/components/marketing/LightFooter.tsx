@@ -1,5 +1,6 @@
 import { type MouseEvent } from 'react'
 import { Link } from 'react-router-dom'
+import { LinuxIcon, MacIcon, WindowsIcon } from '@/components/marketing/LightButton'
 import { PLATFORMS } from '@/config/platforms'
 import { SITE } from '@/config/site'
 import { marketingAnchor, scrollToMarketingSection } from '@/utils/marketingNav'
@@ -12,6 +13,8 @@ function GitHubIcon() {
     </svg>
   )
 }
+
+const FOOTER_ICONS = { windows: WindowsIcon, macos: MacIcon, linux: LinuxIcon } as const
 
 function FooterDownloadLink({
   href,
@@ -67,7 +70,7 @@ export function LightFooter() {
               All platforms
             </a>
             {PLATFORMS.map((p) => {
-              const Icon = p.icon
+              const Icon = FOOTER_ICONS[p.id]
               return (
                 <div key={p.id} className="lm-footer__dl-row">
                   <span className="lm-footer__dl-icon">

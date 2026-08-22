@@ -1474,14 +1474,6 @@ body.light-marketing .glow {
   color: rgba(255, 255, 255, 0.58);
 }
 
-.dl-hub__panel-meta {
-  margin: 0.35rem 0 0;
-  font-family: ui-monospace, monospace;
-  font-size: 0.7rem;
-  letter-spacing: 0.04em;
-  color: rgba(103, 232, 249, 0.85);
-}
-
 .dl-hub__actions {
   display: flex;
   justify-content: stretch;
