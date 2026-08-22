@@ -15,19 +15,67 @@ function parseLatestYml(text) {
   return { version, releaseDate, installerSize }
 }
 
+function parseCompactVersion(v) {
+  return String(v || '')
+    .replace(/^v/, '')
+    .split('.')
+    .map((n) => Number(n) || 0)
+}
+
+function compareCompactVersions(a, b) {
+  const pa = parseCompactVersion(a)
+  const pb = parseCompactVersion(b)
+  const len = Math.max(pa.length, pb.length)
+  for (let i = 0; i < len; i += 1) {
+    const diff = (pb[i] || 0) - (pa[i] || 0)
+    if (diff !== 0) return diff
+  }
+  return 0
+}
+
+function compactToDotted(compact) {
+  const [y, md, hm] = String(compact).replace(/^v/, '').split('.')
+  if (!y || !md || !hm) return String(compact)
+  const mdNum = Number(md)
+  const hmNum = Number(hm)
+  const month = Math.floor(mdNum / 100)
+  const day = mdNum % 100
+  const hour = Math.floor(hmNum / 100)
+  const min = hmNum % 100
+  return `${y}.${String(month).padStart(2, '0')}.${String(day).padStart(2, '0')}.${String(hour).padStart(2, '0')}.${String(min).padStart(2, '0')}`
+}
+
 function findLatestYml() {
   const candidates = []
   const distYml = path.join(repoRoot, 'dist', 'latest.yml')
   if (fs.existsSync(distYml)) candidates.push(distYml)
   const buildDirs = fs
     .readdirSync(repoRoot, { withFileTypes: true })
-    .filter((d) => d.isDirectory() && /^dist-build-\d+$/.test(d.name))
+    .filter((d) => d.isDirectory() && (/^dist-build-\d+$/.test(d.name) || /^dist-fresh-\d+$/.test(d.name)))
     .map((d) => path.join(repoRoot, d.name, 'latest.yml'))
     .filter((p) => fs.existsSync(p))
   candidates.push(...buildDirs)
   if (!candidates.length) return null
-  candidates.sort((a, b) => fs.statSync(b).mtimeMs - fs.statSync(a).mtimeMs)
-  return candidates[0]
+
+  const ranked = candidates
+    .map((filePath) => {
+      const text = readText(filePath)
+      const parsed = text ? parseLatestYml(text) : { version: null }
+      return { filePath, version: parsed.version }
+    })
+    .filter((entry) => entry.version)
+    .sort((a, b) => {
+      const byVersion = compareCompactVersions(a.version, b.version)
+      if (byVersion !== 0) return byVersion
+      const score = (p) => {
+        if (p.includes(`${path.sep}dist-fresh-`)) return 3
+        if (p.endsWith(`${path.sep}dist${path.sep}latest.yml`)) return 2
+        return 1
+      }
+      return score(b.filePath) - score(a.filePath)
+    })
+
+  return ranked[0]?.filePath || null
 }
 
 function findExeSize(dir, name) {
@@ -61,13 +109,13 @@ const distDir = findDistDirForYml(ymlPath)
 const portableSize = distDir ? findExeSize(distDir, 'VeilAssist.exe') : null
 const installerSize = yml.installerSize || (distDir ? findExeSize(distDir, 'VeilAssist-Setup.exe') : null)
 
-const compactVersion = yml.version || ''
+const compactVersion = yml.version || stampVersion || ''
 const releaseTag = compactVersion ? `v${compactVersion}` : 'v2026.820.207'
 const repo = 'Shlok0095/VeilAssist'
 const releaseBase = `https://github.com/${repo}/releases/download/${releaseTag}`
 
 const manifest = {
-  version: stampVersion || compactVersion || '',
+  version: compactVersion ? compactToDotted(compactVersion) : stampVersion || '',
   compactVersion: compactVersion || stampVersion || '',
   releaseTag,
   installerDownloadUrl: `${releaseBase}/VeilAssist-Setup.exe`,

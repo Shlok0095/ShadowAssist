@@ -2,6 +2,8 @@
  * Build-time config (GitHub Actions / local .env / Vercel).
  * Fallbacks match the primary VeilAssist repo when env is unset.
  */
+import { SITE_WINDOWS_BUILD_MANIFEST } from './windowsManifest.generated'
+
 const repoOwner = import.meta.env.VITE_REPO_OWNER ?? 'Shlok0095'
 const repoName = import.meta.env.VITE_REPO_NAME ?? 'VeilAssist'
 const rollingTag = import.meta.env.VITE_ROLLING_TAG ?? 'latest-stag'
@@ -17,6 +19,7 @@ export const DOWNLOAD_ROUTES = {
   androidApk: '/download/android',
   androidApkBeta: '/download/android-beta',
   androidApkSite: '/downloads/VeilAssist-Interview.apk',
+  windowsSetupSite: '/download/beta',
 } as const
 
 function releaseAssetUrl(file: string, tag = rollingTag) {
@@ -51,11 +54,11 @@ export const SITE = {
   get downloadPageUrl() {
     return '/download'
   },
-  /** Primary installer CTA — beta path on stag, production path on main/latest. */
+  /** Primary installer CTA — always the pinned versioned GitHub build from windowsManifest. */
   get downloadSetupExeUrl() {
-    const path =
-      rollingTag === 'latest-stag' ? DOWNLOAD_ROUTES.windowsSetupBeta : DOWNLOAD_ROUTES.windowsSetup
-    return vanityDownloadPath(path)
+    const override = import.meta.env.VITE_DOWNLOAD_SETUP_URL
+    if (override) return override
+    return SITE_WINDOWS_BUILD_MANIFEST.installerDownloadUrl
   },
   /** Staging / beta installer — vanity /download/beta (Vercel → GitHub latest-stag). */
   get downloadSetupBetaExeUrl() {
