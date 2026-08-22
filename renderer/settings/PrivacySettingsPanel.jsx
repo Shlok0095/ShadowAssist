@@ -19,7 +19,7 @@ export default function PrivacySettingsPanel({ onSelectIntelligenceTab }) {
             onClick={() => onSelectIntelligenceTab?.()}
             className="text-accent underline underline-offset-2 hover:opacity-90"
           >
-            Intelligence
+            Advance → Intelligence
           </button>
           .
         </p>
@@ -44,7 +44,7 @@ export default function PrivacySettingsPanel({ onSelectIntelligenceTab }) {
 
       <SettingsSection title="Your data">
         <p className="text-[12px] leading-relaxed" style={{ color: 'var(--text-secondary)' }}>
-          Export includes profile text, consent record, and preferences — not API keys, raw audio, or live buffers.
+          Export includes profile text, consent record, and preferences. API keys and audio are not included.
         </p>
         <div className="mt-4 flex flex-wrap gap-3">
           <button

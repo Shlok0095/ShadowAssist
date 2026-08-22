@@ -4,17 +4,16 @@ import React from 'react'
 import {
   ModelInput,
   ModelSelect,
-  SegmentedControl,
   SettingsBadge,
   SettingsFieldLabel,
-  SettingsPage,
+  SettingsPanelShell,
   SettingsSection,
-  ToggleSwitch,
+  SettingsSelect,
 } from './SettingsComponents'
-import { listAiResponseLanguages } from '../../lib/aiResponseLanguage.js'
 import { useBrand } from '../shared/branding'
 
 export default function AiProviderPanel({
+  embedded = false,
   snap,
   providerMeta,
   provider,
@@ -38,40 +37,31 @@ export default function AiProviderPanel({
   chatTest,
   chatTesting,
   onTestConnection,
-  answerStyleUi,
-  onAnswerStyleChange,
-  aiResponseLanguageUi,
-  onAiResponseLanguageChange,
-  conversationFollowUpsEnabled,
-  onConversationFollowUpsChange,
   showSetupBanner,
   onLaunchFromSetup,
 }) {
   const { name } = useBrand()
   return (
-    <SettingsPage
+    <SettingsPanelShell
+      embedded={embedded}
       title="AI Providers"
       description="Configure chat models and API keys. Speech transcription is under Audio."
     >
-      <SettingsSection title="Chat provider" description="Bring your own API key — answers never route through our servers.">
+      <SettingsSection title="Chat provider" description="Your API key. Answers go directly to the provider.">
         {!snap || !providerMeta.length ? (
           <p className="text-sm text-gray-500">Loading providers…</p>
         ) : (
           <>
             <div>
               <SettingsFieldLabel>Provider</SettingsFieldLabel>
-              <select
-                value={provider}
-                onChange={(e) => onSelectProvider(e.target.value)}
-                className="input-shadow w-full px-3 py-2.5 font-mono text-sm"
-              >
+              <SettingsSelect value={provider} onChange={(e) => onSelectProvider(e.target.value)} fullWidth>
                 {providerMeta.map((pm) => (
-                  <option key={pm.id} value={pm.id} className="bg-void-900">
+                  <option key={pm.id} value={pm.id}>
                     {pm.label}
                     {pm.keyField && keySetMap[pm.keyField] ? ' ✓' : ''}
                   </option>
                 ))}
-              </select>
+              </SettingsSelect>
             </div>
 
             {chatVendor && snap && (
@@ -139,7 +129,7 @@ export default function AiProviderPanel({
 
                 {chatMf && chatOpts.length > 0 && (
                   <div className="space-y-2">
-                    {(chatVendor.id === 'groq' || chatVendor.id === 'nvidia') && (
+                    {(chatVendor.id === 'groq' || chatVendor.id === 'nvidia' || chatVendor.id === 'openrouter') && (
                       <p className="text-[11px] leading-relaxed text-zinc-500">
                         Vision models only — Ask AI sends screen captures with your question.
                       </p>
@@ -237,57 +227,11 @@ export default function AiProviderPanel({
         )}
       </SettingsSection>
 
-      <SettingsSection
-        title="Response style"
-        description="How the assistant formats answers in the overlay — independent of overlay font size."
-      >
-        <div>
-          <SettingsFieldLabel>Detail level</SettingsFieldLabel>
-          <p className="mb-2 text-[11px] text-zinc-600">
-            Brief: multi-paragraph depth + visible code; lists tuck under “Show lists &amp; steps”. Detailed: full markdown.
-          </p>
-          <SegmentedControl
-            value={answerStyleUi}
-            onChange={onAnswerStyleChange}
-            options={[
-              { id: 'brief', label: 'Brief (summary)' },
-              { id: 'detailed', label: 'Detailed' },
-            ]}
-          />
-        </div>
-        <div className="mt-4">
-          <SettingsFieldLabel>Response language</SettingsFieldLabel>
-          <p className="mb-2 text-[11px] text-zinc-600">
-            Optional — append a language instruction to the system prompt. Default follows your question language.
-          </p>
-          <select
-            value={aiResponseLanguageUi || ''}
-            onChange={(e) => onAiResponseLanguageChange?.(e.target.value)}
-            className="input-shadow w-full max-w-md px-3 py-2 text-sm"
-          >
-            {listAiResponseLanguages().map((opt) => (
-              <option key={opt.id || 'auto'} value={opt.id} className="bg-void-900">
-                {opt.label}
-              </option>
-            ))}
-          </select>
-        </div>
-        <div className="mt-4 flex items-start justify-between gap-4 rounded-lg border border-white/[0.07] bg-white/[0.025] px-3 py-3">
-          <div>
-            <SettingsFieldLabel>Conversation follow-ups</SettingsFieldLabel>
-            <p className="text-[11px] leading-relaxed text-zinc-500">
-              Resolve short continuations and references against the most relevant question and answer in this session.
-            </p>
-          </div>
-          <ToggleSwitch checked={conversationFollowUpsEnabled} onChange={onConversationFollowUpsChange} />
-        </div>
-      </SettingsSection>
-
       {showSetupBanner && (
         <button type="button" onClick={onLaunchFromSetup} className="btn-glow w-full py-4 text-base">
           Launch {name}
         </button>
       )}
-    </SettingsPage>
+    </SettingsPanelShell>
   )
 }

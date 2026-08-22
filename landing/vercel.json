@@ -1,12 +1,31 @@
 {
+  "installCommand": "npm ci",
   "buildCommand": "npm run build",
   "outputDirectory": "dist",
-  "installCommand": "npm ci",
   "framework": "vite",
   "env": {
     "VITE_SITE_ORIGIN": "https://veilassist.vercel.app",
     "VITE_ROLLING_TAG": "latest"
   },
+  "functions": {
+    "api/**/*.js": {
+      "maxDuration": 60,
+      "includeFiles": "api/**"
+    }
+  },
+  "rewrites": [
+    { "source": "/((?!api/).*)", "destination": "/index.html" }
+  ],
+  "headers": [
+    {
+      "source": "/downloads/(.*\\.apk)",
+      "headers": [
+        { "key": "Content-Type", "value": "application/vnd.android.package-archive" },
+        { "key": "Content-Disposition", "value": "attachment; filename=\"VeilAssist-Interview.apk\"" },
+        { "key": "Cache-Control", "value": "public, max-age=600" }
+      ]
+    }
+  ],
   "redirects": [
     {
       "source": "/:path*",
@@ -15,18 +34,13 @@
       "permanent": true
     },
     {
-      "source": "/download",
-      "destination": "https://github.com/Shlok0095/VeilAssist/releases/download/latest/VeilAssist-Setup.exe",
-      "permanent": false
-    },
-    {
       "source": "/download/beta",
-      "destination": "https://github.com/Shlok0095/VeilAssist/releases/download/latest-stag/VeilAssist-Setup.exe",
+      "destination": "https://github.com/Shlok0095/VeilAssist/releases/download/v2026.822.1304/VeilAssist-Setup.exe",
       "permanent": false
     },
     {
       "source": "/download/portable",
-      "destination": "https://github.com/Shlok0095/VeilAssist/releases/download/latest/VeilAssist.exe",
+      "destination": "https://github.com/Shlok0095/VeilAssist/releases/download/v2026.822.1304/VeilAssist.exe",
       "permanent": false
     },
     {
@@ -35,23 +49,13 @@
       "permanent": false
     },
     {
-      "source": "/download/macos",
-      "destination": "https://github.com/Shlok0095/VeilAssist/releases/download/latest-stag/VeilAssist-mac.dmg",
+      "source": "/download/android-beta",
+      "destination": "/downloads/VeilAssist-Interview.apk",
       "permanent": false
     },
     {
-      "source": "/download/macos/zip",
-      "destination": "https://github.com/Shlok0095/VeilAssist/releases/download/latest-stag/VeilAssist-mac.zip",
-      "permanent": false
-    },
-    {
-      "source": "/download/linux",
-      "destination": "https://github.com/Shlok0095/VeilAssist/releases/download/latest-stag/VeilAssist-linux.AppImage",
-      "permanent": false
-    },
-    {
-      "source": "/download/linux/deb",
-      "destination": "https://github.com/Shlok0095/VeilAssist/releases/download/latest-stag/VeilAssist-linux.deb",
+      "source": "/download/android",
+      "destination": "/downloads/VeilAssist-Interview.apk",
       "permanent": false
     }
   ]

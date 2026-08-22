@@ -11,7 +11,9 @@ import { LightFooter } from '@/components/marketing/LightFooter'
 import { CompatLogos } from '@/components/marketing/MacosCard'
 import { LiquidGlassCard } from '@/components/kokonutui/liquid-glass-card'
 import { MEDIA } from '@/config/mediaManifest'
-import { marketingAnchor } from '@/utils/marketingNav'
+import { useRevealObserver } from '@/hooks/useReveal'
+import { GlowCta } from '@/components/marketing/GlowCta'
+import { SITE } from '@/config/site'
 
 const STEPS = [
   {
@@ -100,21 +102,45 @@ export function MarketingHome() {
     <div className="va-page">
       <LiveField />
 
-      <Hero3D>
-        <p className="va-eyebrow va-eyebrow--live">
-          <span className="va-eyebrow__pulse" />
-          Real-time meeting assistant
-        </p>
-        <VaAnimeHero />
-        <p className="va-hero-sub">
-          VeilAssist listens, transcribes, and surfaces answers while you talk — without a bot in the room or
-          anything visible on screen share.
-        </p>
-        <div className="va-hero-ctas">
-          <VaParticleCta href={marketingAnchor('download')}>Download for free</VaParticleCta>
-          <VaButton href={marketingAnchor('how-it-works')} variant="ghost">
-            How it works
-          </VaButton>
+        <div className="lm-container">
+          <div className="lm-hero__content reveal">
+            <div className="sp-welcome-box">
+              <span className="lm-eyebrow__dot" aria-hidden />
+              <span>Undetectable AI for live meetings</span>
+            </div>
+
+            <h1 className="lm-hero__title">
+              Your AI copilot,
+              <br />
+              always <span className="sp-gradient-text">invisible</span>,
+              <br />
+              always <span className="sp-gradient-text">ready</span>.
+            </h1>
+
+            <p className="lm-hero__sub">
+              VeilAssist gives real-time answers and meeting notes — completely undetectable on your screen. No bots.
+              No waiting until after the call.
+            </p>
+
+            <div className="lm-hero__ctas">
+              <GlowCta href={SITE.downloadPageUrl} size="md" external={false}>
+                Download the app
+              </GlowCta>
+              <a href="#how-it-works" className="sp-btn-glow">
+                See how it works
+              </a>
+            </div>
+
+            <p className="lm-hero__platform">Windows · macOS · Linux — get the build for your device</p>
+          </div>
+
+          <div className="lm-hero-product reveal">
+            <div className="lm-hero-product__stage">
+              <DockIcons />
+              <MacosCard src={MEDIA.heroOverlayScreenshot || undefined} />
+            </div>
+            <div className="lm-hero-shimmer" aria-hidden />
+          </div>
         </div>
         <p className="va-hero-platform">Available on Windows, macOS, and Linux</p>
       </Hero3D>
@@ -179,15 +205,26 @@ export function MarketingHome() {
         </div>
       </VaSection>
 
-      <VaSection
-        id="download"
-        className="va-download-section"
-        eyebrow="Download"
-        title="Get VeilAssist"
-        subtitle="Free for Windows, macOS, and Linux."
-      >
-        <DownloadHub />
-      </VaSection>
+      <section id="download" className="lm-final-cta scroll-mt-nav">
+        <div className="lm-container reveal">
+          <div className="lm-kbd-row" aria-hidden>
+            <span className="lm-kbd">Ctrl</span>
+            <span className="lm-kbd-plus">+</span>
+            <span className="lm-kbd">↵</span>
+          </div>
+          <h2 className="lm-final-cta__title">Meeting AI that helps during the call, not after.</h2>
+          <p className="lm-final-cta__sub">Try VeilAssist on your next meeting today.</p>
+          <div className="lm-final-cta__btns">
+            <GlowCta href={SITE.downloadPageUrl} size="md" external={false}>
+              Download the desktop app
+            </GlowCta>
+          </div>
+          <p className="lm-final-cta__hint">
+            Windows installer, macOS DMG, Linux AppImage &amp; DEB — pick the build for your device on the
+            <strong> Download</strong> page.
+          </p>
+        </div>
+      </section>
 
       <LightFooter />
     </div>

@@ -1,0 +1,106 @@
+# Pushes to `stag` → rolling prerelease "latest-stag" (VeilAssist-Interview.apk).
+# Pushes to `main` / `master` → rolling release "latest".
+
+name: Release Android
+
+on:
+  workflow_dispatch:
+  push:
+    branches:
+      - stag
+      - main
+      - master
+    paths-ignore:
+      - 'landing/public/downloads/**'
+
+permissions:
+  contents: write
+
+concurrency:
+  group: release-android-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  build-release:
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: npm
+          cache-dependency-path: landing/package-lock.json
+
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '21'
+
+      - name: Set release tag
+        id: tag
+        shell: bash
+        run: |
+          if [ "${{ github.ref_name }}" = "main" ] || [ "${{ github.ref_name }}" = "master" ]; then
+            echo "TAG=latest" >> "$GITHUB_OUTPUT"
+            echo "PRERELEASE=false" >> "$GITHUB_OUTPUT"
+          else
+            echo "TAG=latest-stag" >> "$GITHUB_OUTPUT"
+            echo "PRERELEASE=true" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Install landing dependencies
+        working-directory: landing
+        run: npm ci
+
+      - name: Build Android APK
+        working-directory: landing
+        env:
+          VITE_API_ORIGIN: https://veilassist.vercel.app
+        run: npm run build:android-apk
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: veilassist-android-${{ github.run_id }}
+          if-no-files-found: error
+          path: landing/release-android/VeilAssist-Interview.apk
+
+      - name: Rolling GitHub Release (stag / main)
+        uses: ncipollo/release-action@v1
+        with:
+          token: ${{ secrets.GITHUB_TOKEN }}
+          tag: ${{ steps.tag.outputs.TAG }}
+          commit: ${{ github.sha }}
+          name: VeilAssist — ${{ steps.tag.outputs.TAG }}
+          body: |
+            Automated Android interview APK from **${{ github.ref_name }}** @ [`${{ github.sha }}`](${{ github.server_url }}/${{ github.repository }}/commit/${{ github.sha }}).
+
+            **Version:** see `landing/public/downloads/apk-manifest.json` on this commit.
+
+            | Asset | Use |
+            |------|-----|
+            | **VeilAssist-Interview.apk** | Android interview app (install on phone) |
+
+            **APK:** `${{ github.server_url }}/${{ github.repository }}/releases/download/${{ steps.tag.outputs.TAG }}/VeilAssist-Interview.apk`
+            **Website download:** https://veilassist.vercel.app/downloads/VeilAssist-Interview.apk
+          prerelease: ${{ steps.tag.outputs.PRERELEASE }}
+          allowUpdates: true
+          replacesArtifacts: false
+          artifactErrorsFailBuild: true
+          artifacts: landing/release-android/VeilAssist-Interview.apk
+
+      - name: Publish APK on VeilAssist site (normal Chrome download)
+        shell: bash
+        run: |
+          mkdir -p landing/public/downloads
+          cp landing/release-android/VeilAssist-Interview.apk landing/public/downloads/VeilAssist-Interview.apk
+          git config user.name "veilassist-ci"
+          git config user.email "veilassist-ci@users.noreply.github.com"
+          git add landing/public/downloads/VeilAssist-Interview.apk
+          if git diff --cached --quiet; then
+            echo "APK already published on site"
+          else
+            git commit -m "chore: publish VeilAssist-Interview.apk for website download [skip ci]"
+            git push
+          fi

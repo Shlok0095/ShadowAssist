@@ -1,0 +1,62 @@
+{
+  "$schema": "https://openapi.vercel.sh/vercel.json",
+  "installCommand": "npm ci --prefix landing",
+  "buildCommand": "npm run build --prefix landing",
+  "outputDirectory": "landing/dist",
+  "env": {
+    "VITE_SITE_ORIGIN": "https://veilassist.vercel.app",
+    "VITE_ROLLING_TAG": "latest"
+  },
+  "functions": {
+    "api/**/*.js": {
+      "maxDuration": 60,
+      "includeFiles": "landing/api/**"
+    }
+  },
+  "rewrites": [
+    { "source": "/((?!api/).*)", "destination": "/index.html" }
+  ],
+  "headers": [
+    {
+      "source": "/downloads/(.*\\.apk)",
+      "headers": [
+        { "key": "Content-Type", "value": "application/vnd.android.package-archive" },
+        { "key": "Content-Disposition", "value": "attachment; filename=\"VeilAssist-Interview.apk\"" },
+        { "key": "Cache-Control", "value": "public, max-age=600" }
+      ]
+    }
+  ],
+  "redirects": [
+    {
+      "source": "/:path*",
+      "has": [{ "type": "host", "value": "shadow-assist.vercel.app" }],
+      "destination": "https://veilassist.vercel.app/:path*",
+      "permanent": true
+    },
+    {
+      "source": "/download/beta",
+      "destination": "https://github.com/Shlok0095/VeilAssist/releases/download/v2026.822.1304/VeilAssist-Setup.exe",
+      "permanent": false
+    },
+    {
+      "source": "/download/portable",
+      "destination": "https://github.com/Shlok0095/VeilAssist/releases/download/v2026.822.1304/VeilAssist.exe",
+      "permanent": false
+    },
+    {
+      "source": "/download/checksums",
+      "destination": "https://github.com/Shlok0095/VeilAssist/releases/download/latest/SHA256SUMS.txt",
+      "permanent": false
+    },
+    {
+      "source": "/download/android-beta",
+      "destination": "/downloads/VeilAssist-Interview.apk",
+      "permanent": false
+    },
+    {
+      "source": "/download/android",
+      "destination": "/downloads/VeilAssist-Interview.apk",
+      "permanent": false
+    }
+  ]
+}

@@ -1,6 +1,6 @@
 {
   "name": "veilassist",
-  "version": "1.0.1",
+  "version": "2026.822.1304",
   "description": "Undetectable AI for live meetings — discreet on-screen meeting assistant",
   "author": "VeilAssist",
   "license": "UNLICENSED",
@@ -82,6 +82,7 @@
       "lib/meetingScanMeet.ps1",
       "lib/localStt/inferenceWorker.mjs",
       "**/*.node",
+      "node_modules/koffi/**",
       "node_modules/sqlite-vec*/**",
       "node_modules/onnxruntime-node/**"
     ],
@@ -131,8 +132,8 @@
         "LSUIElement": true
       },
       "artifactName": "VeilAssist${version}-${arch}.${ext}",
-      "bundleShortVersion": "1.0.1",
-      "bundleVersion": "1.0.1"
+      "bundleShortVersion": "2026.822.1304",
+      "bundleVersion": "2026.822.1304"
     },
     "linux": {
       "icon": "build/icons",
@@ -185,12 +186,14 @@
     "electron-store": "^8.1.0",
     "electron-updater": "^6.8.3",
     "highlight.js": "^11.11.1",
+    "koffi": "^3.1.4",
     "lucide-react": "^0.525.0",
     "openai": "^4.20.0",
     "pdf-parse": "^1.1.1",
     "react": "^18.2.0",
     "react-dom": "^18.2.0",
     "react-qr-code": "^2.2.0",
-    "sqlite-vec": "^0.1.9"
+    "sqlite-vec": "^0.1.9",
+    "ws": "^8.21.3"
   }
 }

@@ -2,6 +2,7 @@
 // Shared settings UI — aligned with Natively SettingsOverlay patterns.
 
 import React, { memo, useId, useMemo, useState } from 'react'
+import { polishCopy } from './settingsCopy'
 
 export const SettingsPage = memo(function SettingsPage({ title, description, children, wide }) {
   return (
@@ -9,7 +10,7 @@ export const SettingsPage = memo(function SettingsPage({ title, description, chi
       {(title || description) && (
         <header className="settings-page-header">
           {title ? <h2 className="settings-page-title">{title}</h2> : null}
-          {description ? <p className="settings-page-desc">{description}</p> : null}
+          {description ? <p className="settings-page-desc">{polishCopy(description)}</p> : null}
         </header>
       )}
       {children}
@@ -17,13 +18,23 @@ export const SettingsPage = memo(function SettingsPage({ title, description, chi
   )
 })
 
+/** When embedded inside Advance collapsibles, skip duplicate page chrome. */
+export function SettingsPanelShell({ embedded = false, title, description, wide, children }) {
+  if (embedded) return <div className="space-y-5">{children}</div>
+  return (
+    <SettingsPage title={title} description={description} wide={wide}>
+      {children}
+    </SettingsPage>
+  )
+}
+
 export function SettingsSection({ title, description, children, className = '' }) {
   return (
     <section className={`glass-panel ${className}`}>
       {(title || description) && (
         <div className="nat-section-head">
           {title ? <h3 className="nat-section-head-title">{title}</h3> : null}
-          {description ? <p className="nat-section-head-desc">{description}</p> : null}
+          {description ? <p className="nat-section-head-desc">{polishCopy(description)}</p> : null}
         </div>
       )}
       <div className="nat-section-body space-y-0">{children}</div>
@@ -36,17 +47,17 @@ export function SettingsRow({ label, hint, children, htmlFor }) {
     <div className="nat-row">
       <div className="min-w-0 flex-1 pr-2">
         {htmlFor ? (
-          <label htmlFor={htmlFor} className="text-[13px] font-medium" style={{ color: 'var(--text-primary)' }}>
+          <label htmlFor={htmlFor} className="settings-row-label">
             {label}
           </label>
         ) : (
-          <span className="text-[13px] font-medium" style={{ color: 'var(--text-primary)' }}>
+          <span className="settings-row-label">
             {label}
           </span>
         )}
         {hint ? (
-          <p className="mt-1 max-w-xl text-[12px] leading-relaxed" style={{ color: 'var(--text-secondary)' }}>
-            {hint}
+          <p className="settings-row-hint">
+            {polishCopy(hint)}
           </p>
         ) : null}
       </div>
@@ -57,6 +68,10 @@ export function SettingsRow({ label, hint, children, htmlFor }) {
 
 export function SettingsFieldLabel({ children, className = '' }) {
   return <label className={`settings-field-label ${className}`}>{children}</label>
+}
+
+export function SettingsFieldHint({ children, className = '' }) {
+  return <p className={`settings-field-hint ${className}`.trim()}>{polishCopy(children)}</p>
 }
 
 export function SettingsBadge({ children, tone = 'neutral' }) {
@@ -94,6 +109,35 @@ export const ToggleSwitch = memo(function ToggleSwitch({ checked, onChange, disa
   )
 })
 
+export const SettingsSelect = memo(function SettingsSelect({
+  value,
+  onChange,
+  children,
+  className = '',
+  disabled = false,
+  id,
+  name,
+  'aria-label': ariaLabel,
+  fullWidth = false,
+  mono = false,
+}) {
+  return (
+    <div className={`settings-select-wrap ${fullWidth ? 'w-full max-w-md' : ''}`}>
+      <select
+        id={id}
+        name={name}
+        value={value}
+        onChange={onChange}
+        disabled={disabled}
+        aria-label={ariaLabel}
+        className={`settings-select input-shadow ${mono ? 'settings-select-mono' : ''} ${fullWidth ? 'settings-select-full' : ''} ${className}`.trim()}
+      >
+        {children}
+      </select>
+    </div>
+  )
+})
+
 export const ModelSelect = memo(function ModelSelect({ label, value, models, onChange, listbox }) {
   const [filter, setFilter] = useState('')
   const filtered = useMemo(() => {
@@ -116,17 +160,13 @@ export const ModelSelect = memo(function ModelSelect({ label, value, models, onC
           autoComplete="off"
         />
       ) : null}
-      <select
-        value={safeVal}
-        onChange={(e) => onChange(e.target.value)}
-        className="input-shadow w-full px-3 py-2.5 font-mono text-xs"
-      >
+      <SettingsSelect value={safeVal} onChange={(e) => onChange(e.target.value)} mono fullWidth>
         {display.map((m) => (
-          <option key={m} value={m} style={{ background: '#1c1c1f' }}>
+          <option key={m} value={m}>
             {m}
           </option>
         ))}
-      </select>
+      </SettingsSelect>
       {filter.trim() && !filtered.length ? (
         <p className="mt-1 text-[11px] text-amber-400">No match — clear filter or type the model ID directly.</p>
       ) : null}
@@ -162,7 +202,7 @@ export const ModelInput = memo(function ModelInput({ label, value, onChange, onC
 
 export function SegmentedControl({ options, value, onChange, className = '' }) {
   return (
-    <div className={`flex flex-wrap gap-2 ${className}`}>
+    <div className={`settings-segmented ${className}`} role="group">
       {options.map((opt) => {
         const id = typeof opt === 'string' ? opt : opt.id
         const label = typeof opt === 'string' ? opt : opt.label
@@ -170,6 +210,8 @@ export function SegmentedControl({ options, value, onChange, className = '' }) {
           <button
             key={id}
             type="button"
+            role="radio"
+            aria-checked={value === id}
             onClick={() => onChange(id)}
             className={`settings-chip settings-chip-sm !normal-case ${value === id ? 'settings-chip-active' : ''}`}
           >
@@ -189,10 +231,11 @@ export function SettingsCollapsible({
   badge = null,
   defaultOpen = false,
   icon: HeaderIcon = null,
+  className = '',
   children,
 }) {
   return (
-    <details className="glass-panel group overflow-hidden" open={defaultOpen || undefined}>
+    <details className={`glass-panel group overflow-hidden ${className}`.trim()} open={defaultOpen || undefined}>
       <summary className="flex cursor-pointer list-none items-start gap-3 px-5 py-4 transition-colors [&::-webkit-details-marker]:hidden">
         {HeaderIcon ? (
           <span
@@ -217,8 +260,8 @@ export function SettingsCollapsible({
             ) : null}
           </div>
           {description ? (
-            <p className="mt-1 text-[12px] leading-relaxed" style={{ color: 'var(--text-secondary)' }}>
-              {description}
+            <p className="settings-collapsible-desc">
+              {polishCopy(description)}
             </p>
           ) : null}
         </div>

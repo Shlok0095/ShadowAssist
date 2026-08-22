@@ -8,6 +8,7 @@ import {
   SettingsCollapsible,
   SettingsFieldLabel,
   SettingsPage,
+  SettingsPanelShell,
   SettingsRow,
   SettingsSection,
   ToggleSwitch,
@@ -41,6 +42,7 @@ function FlagToggleRow({ flag, snap, onPatchSnap, onSave, disabled = false }) {
 }
 
 export default function IntelligenceSettingsPanel({
+  embedded = false,
   snap,
   onPatchSnap,
   onSave,
@@ -105,7 +107,8 @@ export default function IntelligenceSettingsPanel({
   }
 
   return (
-    <SettingsPage
+    <SettingsPanelShell
+      embedded={embedded}
       title="Intelligence"
       description="Smart routing, memory, and meeting-aware features — aligned with Natively Intelligence OS (lite)."
     >
@@ -251,6 +254,6 @@ export default function IntelligenceSettingsPanel({
           ))}
         </div>
       </SettingsCollapsible>
-    </SettingsPage>
+    </SettingsPanelShell>
   )
 }

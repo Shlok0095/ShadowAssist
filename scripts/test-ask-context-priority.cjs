@@ -154,6 +154,24 @@ test('new substantive turn wins over an older question', () => {
   assert.match(formatted, /ACTIVE QUESTION[^\n]*\nParticipant: We need to finish this by Friday\./)
 })
 
+test('system prompt forbids reciting VeilAssist as the candidate intro', () => {
+  const { DEFAULT_SYSTEM_PROMPT } = require('../lib/defaultSystemPrompt')
+  assert.match(DEFAULT_SYSTEM_PROMPT, /never the subject/i)
+  assert.doesNotMatch(
+    DEFAULT_SYSTEM_PROMPT,
+    /Your sole purpose is to analyze and solve problems asked by the user/,
+  )
+})
+
+test('default Interview mode is treated as interviewee, not general', () => {
+  const { isIntervieweeMode, detectLiveModeKind, DEFAULT_CONTEXT_PROMPTS } = require('../lib/contextPrompts')
+  const interview = DEFAULT_CONTEXT_PROMPTS.find((p) => p.id === 'cp-default-interview')
+  assert.ok(interview)
+  assert.equal(isIntervieweeMode(interview), true)
+  assert.equal(detectLiveModeKind(interview), 'interviewee')
+  assert.equal(isIntervieweeMode({ name: 'Recruiting', content: 'I am interviewing a candidate.' }), false)
+})
+
 test('system prompt no longer primes the rejected unclear-answer phrase', () => {
   const promptFiles = ['defaultSystemPrompt.js', 'contextPrompts.js']
   for (const filename of promptFiles) {

@@ -5,12 +5,12 @@ import React, { useCallback, useEffect, useState } from 'react'
 import { Plus, Trash2 } from 'lucide-react'
 import { createIpcShim } from '../shared/ipcShim'
 import AppIcon from '../shared/AppIcon'
-import { SettingsFieldLabel, SettingsPage, SettingsSection } from './SettingsComponents'
+import { SettingsFieldLabel, SettingsPanelShell, SettingsSection } from './SettingsComponents'
 import { normalizeSkillSlug } from '../../lib/skillInvoke.js'
 
 const ipc = createIpcShim()
 
-export default function SkillsSettingsPanel() {
+export default function SkillsSettingsPanel({ embedded = false }) {
   const [skills, setSkills] = useState([])
   const [loading, setLoading] = useState(true)
   const [selectedSlug, setSelectedSlug] = useState('')
@@ -119,7 +119,8 @@ export default function SkillsSettingsPanel() {
   }
 
   return (
-    <SettingsPage
+    <SettingsPanelShell
+      embedded={embedded}
       title="Skills"
       description="Custom instructions invoked from the overlay with /skill-name — e.g. /interview or /sales what should I say?"
     >
@@ -235,7 +236,7 @@ export default function SkillsSettingsPanel() {
           </button>
         </div>
       </SettingsSection>
-    </SettingsPage>
+    </SettingsPanelShell>
   )
 }
 

@@ -1,7 +1,7 @@
 // Copyright (c) 2026 VeilAssist. All rights reserved.
 
 import React, { useCallback, useState } from 'react'
-import { BrandLogo, BrandName } from './branding'
+import overlayBrandLogo from './overlayBrandLogo'
 
 const drag = { WebkitAppRegion: 'drag' }
 const noDrag = { WebkitAppRegion: 'no-drag' }
@@ -47,13 +47,15 @@ export default function AppWindowFrame({ children }) {
         style={drag}
       >
         <div className="flex min-h-0 min-w-0 flex-1 items-center gap-2 px-3" style={drag}>
-          <BrandLogo
-            alt=""
+          <img
+            src={overlayBrandLogo}
+            alt="VeilAssist"
             width={20}
             height={20}
-            className="pointer-events-none h-5 w-5 shrink-0 rounded-md object-contain"
+            draggable={false}
+            className="pointer-events-none h-5 w-5 shrink-0 object-contain"
           />
-          <BrandName className="truncate text-[12px] font-medium text-zinc-400" fallback="VeilAssist" />
+          <span className="truncate text-[12px] font-medium text-zinc-400">VeilAssist</span>
         </div>
 
         <div className="flex shrink-0 items-stretch" style={noDrag}>

@@ -14,14 +14,10 @@ export const DOWNLOAD_ROUTES = {
   windowsSetup: '/download',
   windowsSetupBeta: '/download/beta',
   windowsPortable: '/download/portable',
-  macDmg: '/download/macos',
-  macZip: '/download/macos/zip',
-  linuxAppImage: '/download/linux',
-  linuxDeb: '/download/linux/deb',
+  androidApk: '/download/android',
+  androidApkBeta: '/download/android-beta',
+  androidApkSite: '/downloads/VeilAssist-Interview.apk',
 } as const
-
-/** App marketing version — keep in sync with electron package.json. */
-export const APP_VERSION = '1.0.1'
 
 function releaseAssetUrl(file: string, tag = rollingTag) {
   return `https://github.com/${repoOwner}/${repoName}/releases/download/${tag}/${file}`
@@ -42,11 +38,18 @@ export const SITE = {
   get repoUrl() {
     return `https://github.com/${this.repoOwner}/${this.repoName}`
   },
+  get releasesUrl() {
+    return `${this.repoUrl}/releases`
+  },
   get releasesLatestUrl() {
     return `${this.repoUrl}/releases/tag/latest`
   },
   get releasesRollingUrl() {
     return `${this.repoUrl}/releases/tag/${this.rollingTag}`
+  },
+  /** Download center — lists every platform/artifact currently published. */
+  get downloadPageUrl() {
+    return '/download'
   },
   /** Primary installer CTA — beta path on stag, production path on main/latest. */
   get downloadSetupExeUrl() {
@@ -83,11 +86,21 @@ export const SITE = {
   get downloadPortableExeUrl() {
     return releaseAssetUrl('VeilAssist.exe')
   },
-  get downloadMacDmgDirectUrl() {
-    return releaseAssetUrl('VeilAssist-mac.dmg')
+  /** Android interview APK — vanity /download/android-beta on stag. */
+  get downloadAndroidApkUrl() {
+    const path =
+      rollingTag === 'latest-stag' ? DOWNLOAD_ROUTES.androidApkBeta : DOWNLOAD_ROUTES.androidApk
+    return vanityDownloadPath(path)
   },
-  get downloadLinuxAppImageDirectUrl() {
-    return releaseAssetUrl('VeilAssist-linux.AppImage')
+  get downloadAndroidApkBetaUrl() {
+    return vanityDownloadPath(DOWNLOAD_ROUTES.androidApkBeta)
+  },
+  /** Same-origin APK — normal Chrome download on Android (recommended). */
+  get downloadAndroidApkSiteUrl() {
+    return vanityDownloadPath(DOWNLOAD_ROUTES.androidApkSite)
+  },
+  get downloadAndroidApkDirectUrl() {
+    return releaseAssetUrl('VeilAssist-Interview.apk')
   },
   get checksumsTxtUrl() {
     return releaseAssetUrl('SHA256SUMS.txt')
