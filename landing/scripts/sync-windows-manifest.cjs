@@ -52,7 +52,7 @@ function findLatestYml() {
   if (fs.existsSync(distYml)) candidates.push(distYml)
   const buildDirs = fs
     .readdirSync(repoRoot, { withFileTypes: true })
-    .filter((d) => d.isDirectory() && (/^dist-build-\d+$/.test(d.name) || /^dist-fresh-\d+$/.test(d.name) || /^dist-interview-\d+$/.test(d.name)))
+    .filter((d) => d.isDirectory() && (/^dist-fresh-\d+$/.test(d.name) || /^dist-interview-\d+$/.test(d.name)))
     .map((d) => path.join(repoRoot, d.name, 'latest.yml'))
     .filter((p) => fs.existsSync(p))
   candidates.push(...buildDirs)
@@ -107,7 +107,7 @@ function sha256File(filePath) {
 
 const ymlPath = findLatestYml()
 if (!ymlPath) {
-  console.log('[sync-windows-manifest] no local Windows build found — keeping committed manifest')
+  console.log('[sync-windows-manifest] no trusted Windows build found — keeping committed manifest')
   process.exit(0)
 }
 const ymlText = ymlPath ? readText(ymlPath) : null

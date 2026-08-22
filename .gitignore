@@ -1,4 +1,4 @@
-# Dependencies & build output
+﻿# Dependencies & build output
 node_modules/
 out/
 build/*
@@ -39,6 +39,13 @@ eng.traineddata
 .vscode/
 *.swp
 .vercel/
+
+# Desktop build output (never commit — Vercel ignores dist/ via .vercelignore)
+dist/
+dist-build-*/
+dist-fresh-*/
+dist-interview-*/
+dist-release/
 
 # Graphify knowledge graph (local dev artifact)
 graphify-out/
