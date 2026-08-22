@@ -1,24 +1,14 @@
-import { useEffect, useMemo, useState } from 'react'
-import { Link } from 'react-router-dom'
 import { ScrollReveal } from '@/components/marketing/ScrollReveal'
 import { LightFooter } from '@/components/marketing/LightFooter'
-import { SITE } from '@/config/site'
+import { formatBytes, formatDateTime } from '@/config/downloads'
 import {
-  detectPlatform,
-  fetchChannel,
-  formatBytes,
-  formatDate,
-  formatDateTime,
-  KIND_LABELS,
-  PLATFORM_LABELS,
-  type DownloadArtifact,
-  type DownloadPlatform,
-  type ReleaseChannel,
-} from '@/config/downloads'
-import { FALLBACK_CHANNEL } from '@/config/downloads'
-
-const ANDROID_APK_GITHUB =
-  'https://github.com/Shlok0095/VeilAssist/releases/download/latest-stag/VeilAssist-Interview.apk'
+  detectLatestPlatform,
+  LATEST_DOWNLOADS,
+  type LatestDownload,
+  type LatestPlatform,
+} from '@/config/latestDownloads'
+import { Link } from 'react-router-dom'
+import { SITE_WINDOWS_BUILD_MANIFEST } from '@/config/windowsManifest.generated'
 
 const ghostBtnClass =
   'inline-flex items-center justify-center rounded-xl border border-white/[0.08] bg-white/[0.03] px-5 py-3 text-sm font-medium text-zinc-200 no-underline transition-colors hover:border-cyan-500/20 hover:text-white'
@@ -55,212 +45,61 @@ function AndroidIcon() {
   )
 }
 
-function PlatformIcon({ platform }: { platform: DownloadPlatform }) {
+function PlatformIcon({ platform }: { platform: LatestPlatform }) {
   if (platform === 'windows') return <WindowsIcon />
   if (platform === 'macos') return <AppleIcon />
   if (platform === 'android') return <AndroidIcon />
   return <LinuxIcon />
 }
 
-function ArtifactCard({
-  artifact,
-  recommended,
-}: {
-  artifact: DownloadArtifact
-  recommended: boolean
-}) {
-  const platformLabel = PLATFORM_LABELS[artifact.platform]
-  const arch = artifact.arch ? artifact.arch.toUpperCase() : null
-  const version = artifact.version ?? 'Rolling build'
-
+function DownloadCard({ item, recommended }: { item: LatestDownload; recommended: boolean }) {
   return (
     <div
-      className={`relative rounded-2xl border p-5 text-left transition-colors ${
+      className={`relative rounded-2xl border p-6 text-left transition-colors ${
         recommended ? 'border-cyan-400/40 bg-cyan-400/[0.06]' : 'border-white/[0.07] bg-white/[0.03]'
       }`}
     >
-      {recommended && (
+      {recommended ? (
         <span className="absolute -top-2.5 right-4 rounded-full border border-cyan-400/40 bg-[#0a0f1a] px-2.5 py-0.5 font-mono text-[10px] font-medium uppercase tracking-wider text-cyan-300">
-          Recommended for your device
+          Recommended
         </span>
-      )}
+      ) : null}
       <div className="flex items-center gap-2.5 text-white">
         <span className="text-cyan-300/90">
-          <PlatformIcon platform={artifact.platform} />
+          <PlatformIcon platform={item.platform} />
         </span>
-        <span className="font-display text-base font-semibold tracking-[-0.01em]">
-          {platformLabel}
-          {arch ? ` · ${arch}` : ''}
-        </span>
+        <span className="font-display text-lg font-semibold tracking-[-0.01em]">{item.title}</span>
       </div>
-      <div className="mt-3 flex flex-wrap gap-1.5">
-        <span className="rounded-md border border-white/[0.08] bg-white/[0.04] px-2 py-0.5 font-mono text-[10.5px] uppercase tracking-wider text-zinc-400">
-          {KIND_LABELS[artifact.kind]}
-        </span>
-        <span className="rounded-md border border-white/[0.08] bg-white/[0.04] px-2 py-0.5 font-mono text-[10.5px] uppercase tracking-wider text-zinc-400">
-          {version}
-        </span>
-      </div>
-      <dl className="mt-3 grid grid-cols-2 gap-x-3 gap-y-1 font-mono text-[11px] text-zinc-500">
-        <dt className="text-zinc-600">Size</dt>
-        <dd className="text-right text-zinc-400">{formatBytes(artifact.size)}</dd>
-        <dt className="text-zinc-600">Released</dt>
-        <dd className="text-right text-zinc-400">{formatDateTime(artifact.releasedAt)}</dd>
-        {artifact.checksum ? (
+      <p className="mt-2 text-sm leading-relaxed text-zinc-400">{item.description}</p>
+      <dl className="mt-4 grid grid-cols-2 gap-x-3 gap-y-1 font-mono text-[11px] text-zinc-500">
+        <dt className="text-zinc-600">Version</dt>
+        <dd className="text-right text-zinc-400">{item.version}</dd>
+        {item.size ? (
           <>
-            <dt className="truncate text-zinc-600" title={artifact.checksum}>
-              SHA-256
-            </dt>
-            <dd className="truncate text-right font-mono text-[10px] text-zinc-500" title={artifact.checksum}>
-              {artifact.checksum.slice(0, 12)}…
-            </dd>
+            <dt className="text-zinc-600">Size</dt>
+            <dd className="text-right text-zinc-400">{formatBytes(item.size)}</dd>
+          </>
+        ) : null}
+        {item.builtAt ? (
+          <>
+            <dt className="text-zinc-600">Built</dt>
+            <dd className="text-right text-zinc-400">{formatDateTime(item.builtAt)}</dd>
           </>
         ) : null}
       </dl>
       <a
-        href={artifact.downloadUrl}
-        className="lm-btn lm-btn--primary mt-4 w-full justify-center"
-        download={artifact.fileName}
+        href={item.downloadUrl}
+        className="lm-btn lm-btn--primary mt-5 w-full justify-center"
+        download={item.fileName}
       >
-        Download
+        Download {item.title}
       </a>
     </div>
   )
 }
 
-function PlatformGroup({
-  platform,
-  artifacts,
-  recommendedPlatform,
-}: {
-  platform: DownloadPlatform
-  artifacts: DownloadArtifact[]
-  recommendedPlatform: DownloadPlatform | null
-}) {
-  if (artifacts.length === 0) return null
-  return (
-    <div>
-      <div className="mb-3 flex items-center gap-2 text-white">
-        <PlatformIcon platform={platform} />
-        <h3 className="font-display text-lg font-semibold tracking-[-0.01em]">
-          {PLATFORM_LABELS[platform]}
-        </h3>
-        <span className="h-px flex-1 bg-white/[0.06]" />
-      </div>
-      <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-1 xl:grid-cols-2">
-        {artifacts.map((a) => (
-          <ArtifactCard
-            key={a.fileName}
-            artifact={a}
-            recommended={recommendedPlatform === platform && artifacts.indexOf(a) === 0}
-          />
-        ))}
-      </div>
-    </div>
-  )
-}
-
-function ChannelSection({ channel, note }: { channel: ReleaseChannel; note?: string }) {
-  const grouped = useMemo(() => {
-    const map: Record<DownloadPlatform, DownloadArtifact[]> = {
-      windows: [],
-      macos: [],
-      linux: [],
-      android: [],
-    }
-    for (const a of channel.artifacts) map[a.platform].push(a)
-    return map
-  }, [channel])
-  const recommended = detectPlatform()
-
-  return (
-    <section className="mx-auto w-full max-w-5xl px-4 py-4 sm:px-8">
-      <div className="mb-6 flex flex-wrap items-end justify-between gap-3">
-        <div>
-          <h2 className="font-display text-2xl font-semibold tracking-[-0.02em] text-white">
-            {channel.tag === 'latest-stag' && channel.prerelease ? 'Latest builds' : 'Latest release'}
-          </h2>
-          <p className="mt-1 font-mono text-xs tracking-wide text-zinc-500">
-            {channel.name} · published {formatDate(channel.publishedAt)}
-          </p>
-        </div>
-        <div className="flex gap-2">
-          {channel.checksumsUrl ? (
-            <a href={channel.checksumsUrl} className={ghostBtnClass} target="_blank" rel="noreferrer">
-              SHA-256 checksums
-            </a>
-          ) : null}
-          <a href={channel.htmlUrl} className={ghostBtnClass} target="_blank" rel="noreferrer">
-            View release
-          </a>
-        </div>
-      </div>
-      {note ? (
-        <p className="mb-4 rounded-xl border border-white/[0.07] bg-white/[0.02] px-4 py-2.5 text-xs leading-relaxed text-zinc-500">
-          {note}
-        </p>
-      ) : null}
-      <div className="space-y-10">
-        <PlatformGroup platform="android" artifacts={grouped.android} recommendedPlatform={recommended} />
-        <PlatformGroup platform="windows" artifacts={grouped.windows} recommendedPlatform={recommended} />
-        <PlatformGroup platform="macos" artifacts={grouped.macos} recommendedPlatform={recommended} />
-        <PlatformGroup platform="linux" artifacts={grouped.linux} recommendedPlatform={recommended} />
-      </div>
-    </section>
-  )
-}
-
-function LoadingSkeleton() {
-  return (
-    <div className="mx-auto w-full max-w-5xl px-4 py-4 sm:px-8">
-      <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
-        {[0, 1, 2, 3, 4, 5].map((i) => (
-          <div key={i} className="rounded-2xl border border-white/[0.06] bg-white/[0.02] p-5">
-            <div className="h-4 w-1/2 animate-pulse rounded bg-white/[0.07]" />
-            <div className="mt-3 h-3 w-1/3 animate-pulse rounded bg-white/[0.05]" />
-            <div className="mt-4 h-9 animate-pulse rounded-xl bg-white/[0.05]" />
-          </div>
-        ))}
-      </div>
-    </div>
-  )
-}
-
 export function DownloadsPage() {
-  const [channels, setChannels] = useState<ReleaseChannel[]>([])
-  const [loaded, setLoaded] = useState(false)
-  const [usedFallback, setUsedFallback] = useState(false)
-
-  useEffect(() => {
-    let cancelled = false
-
-    async function load() {
-      const candidates = Array.from(
-        new Set([SITE.rollingTag, 'latest-stag', 'latest'].filter(Boolean)),
-      )
-      const settled = await Promise.allSettled(
-        candidates.map((tag) => fetchChannel(SITE.repoOwner, SITE.repoName, tag)),
-      )
-      const found = settled
-        .map((s) => (s.status === 'fulfilled' ? s.value : null))
-        .filter((c): c is ReleaseChannel => c != null)
-
-      if (cancelled) return
-      if (found.length > 0) {
-        setChannels(found)
-        setUsedFallback(false)
-      } else {
-        setChannels([FALLBACK_CHANNEL])
-        setUsedFallback(true)
-      }
-      setLoaded(true)
-    }
-
-    void load()
-    return () => {
-      cancelled = true
-    }
-  }, [])
+  const recommended = detectLatestPlatform()
 
   return (
     <div className="relative min-w-0 font-sans text-white antialiased">
@@ -268,83 +107,39 @@ export function DownloadsPage() {
         <div className="relative z-[1] mx-auto w-full max-w-5xl">
           <ScrollReveal>
             <p className="font-mono text-xs font-medium uppercase tracking-[0.24em] text-cyan-400/70">
-              Desktop app
+              Download
             </p>
             <h1 className="mt-3 font-display text-3xl font-semibold tracking-[-0.02em] sm:text-4xl">
-              Download VeilAssist
+              Get VeilAssist for your device
             </h1>
             <p className="mt-4 max-w-2xl text-sm leading-relaxed tracking-wide text-zinc-500">
-              Free desktop app for Windows, macOS and Linux. Bring your own API
-              key — your meetings stay on your device, and answers stream live
-              into the overlay.
+              One latest build per platform — Windows desktop, macOS, Linux, and Android interview app.
+              Bring your own API key. No bot joins your meeting.
+            </p>
+            <p className="mt-3 font-mono text-xs text-zinc-600">
+              Windows release {SITE_WINDOWS_BUILD_MANIFEST.version} ·{' '}
+              {SITE_WINDOWS_BUILD_MANIFEST.releaseTag}
             </p>
           </ScrollReveal>
         </div>
       </section>
 
-      {!loaded ? (
-        <LoadingSkeleton />
-      ) : usedFallback ? (
-        <ChannelSection
-          channel={FALLBACK_CHANNEL}
-          note="Release data is temporarily unavailable — showing the last known build snapshot."
-        />
-      ) : (
-        channels.map((channel) => <ChannelSection key={channel.tag} channel={channel} />)
-      )}
+      <section className="mx-auto w-full max-w-5xl px-4 pb-16 sm:px-8">
+        <div className="grid gap-4 sm:grid-cols-2">
+          {LATEST_DOWNLOADS.map((item) => (
+            <DownloadCard key={item.platform} item={item} recommended={recommended === item.platform} />
+          ))}
+        </div>
 
-      <section className="mx-auto w-full max-w-5xl px-4 pb-10 sm:px-8">
-        <ScrollReveal>
-          <div className="rounded-2xl border border-white/[0.08] bg-white/[0.03] p-6 sm:p-8">
-            <p className="font-mono text-xs font-medium uppercase tracking-[0.24em] text-cyan-400/70">
-              Mobile interview
+        <ScrollReveal className="mt-10">
+          <div className="rounded-2xl border border-white/[0.08] bg-white/[0.03] p-6 text-center sm:p-8">
+            <p className="text-sm text-zinc-400">
+              Android: tap <strong className="text-zinc-200">Download Android</strong> on your phone, open the APK,
+              and allow install from this source if prompted.
             </p>
-            <h2 className="mt-2 text-xl font-semibold tracking-tight text-white">Android interview app</h2>
-            <p className="mt-3 max-w-2xl text-sm leading-relaxed text-zinc-400">
-              Download the APK and install it on your phone — not a browser tab. Paste your resume, start a
-              session, and VeilAssist listens, transcribes, and generates answers when you finish speaking.
-            </p>
-            <div className="mt-5 flex flex-wrap gap-3">
-              <a
-                href={SITE.downloadAndroidApkSiteUrl}
-                className="inline-flex items-center rounded-xl bg-blue-600 px-5 py-3 text-sm font-semibold text-white no-underline hover:bg-blue-500"
-                download="VeilAssist-Interview.apk"
-              >
-                Download Android APK
-              </a>
-              <a href={ANDROID_APK_GITHUB} className={ghostBtnClass} target="_blank" rel="noreferrer">
-                GitHub mirror
-              </a>
-            </div>
-            <p className="mt-3 text-xs text-zinc-500">
-              Use the blue button for a normal Chrome download from veilassist.vercel.app (recommended on Android).
-            </p>
-            <ol className="mt-5 list-decimal space-y-2 pl-5 text-sm text-zinc-400">
-              <li>Tap <strong className="text-zinc-300">Download Android APK</strong> on your phone.</li>
-              <li>Open the downloaded file and allow install from this source if Android asks.</li>
-              <li>Open <strong className="text-zinc-300">VeilAssist Interview</strong> and grant microphone permission.</li>
-            </ol>
-            <p className="mt-4 text-xs text-zinc-500">
-              Beta builds publish to the rolling <code className="text-zinc-400">latest-stag</code> release.
-              The button downloads the APK file directly once CI has published it (first build may take ~15 minutes after push).
-              Bring your own API key in the app — same as the desktop overlay.
-            </p>
-          </div>
-        </ScrollReveal>
-      </section>
-
-      <section className="mx-auto w-full max-w-5xl px-4 pb-16 pt-6 sm:px-8">
-        <ScrollReveal>
-          <div className="flex flex-col items-center gap-3 text-center">
-            <p className="font-mono text-xs tracking-wide text-zinc-600">
-              Builds are produced automatically by the release pipeline and published to GitHub Releases.
-            </p>
-            <Link to="/docs/getting-started" className={ghostBtnClass}>
+            <Link to="/docs/getting-started" className={`${ghostBtnClass} mt-5 inline-flex`}>
               Install & setup guide →
             </Link>
-            <p className="text-xs text-zinc-600">
-              Across platforms, the overlay, keyboard shortcuts and AI features behave identically.
-            </p>
           </div>
         </ScrollReveal>
       </section>
