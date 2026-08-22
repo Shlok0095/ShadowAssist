@@ -1,10 +1,10 @@
 {
-  "version": "2026.08.21.00.02",
-  "compactVersion": "2026.821.2",
-  "releaseTag": "v2026.821.2",
-  "installerDownloadUrl": "https://github.com/Shlok0095/VeilAssist/releases/download/v2026.821.2/VeilAssist-Setup.exe",
-  "portableDownloadUrl": "https://github.com/Shlok0095/VeilAssist/releases/download/v2026.821.2/VeilAssist.exe",
-  "builtAt": "2026-08-20T19:30:24.416Z",
-  "installerSize": 139875556,
-  "portableSize": 139604368
+  "version": "2026.08.22.13.04",
+  "compactVersion": "2026.822.1304",
+  "releaseTag": "v2026.822.1304",
+  "installerDownloadUrl": "https://github.com/Shlok0095/VeilAssist/releases/download/v2026.822.1304/VeilAssist-Setup.exe",
+  "portableDownloadUrl": "https://github.com/Shlok0095/VeilAssist/releases/download/v2026.822.1304/VeilAssist.exe",
+  "builtAt": "2026-08-22T08:22:18.560Z",
+  "installerSize": 139879418,
+  "portableSize": 139608264
 }
