@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react'
 
-export type DetectedPlatform = 'windows' | 'macos' | 'linux' | 'unknown'
+export type DetectedPlatform = 'windows' | 'macos' | 'linux' | 'android' | 'unknown'
 export type PlatformId = Exclude<DetectedPlatform, 'unknown'>
 
 function detectPlatform(): DetectedPlatform {
@@ -8,6 +8,7 @@ function detectPlatform(): DetectedPlatform {
   const ua = navigator.userAgent.toLowerCase()
   const platform = (navigator.platform || '').toLowerCase()
 
+  if (/android/i.test(ua)) return 'android'
   if (/win/.test(platform) || ua.includes('windows')) return 'windows'
   if (/mac/.test(platform) || ua.includes('mac os') || ua.includes('macintosh')) return 'macos'
   if (/linux/.test(platform) || ua.includes('linux') || ua.includes('cros')) return 'linux'

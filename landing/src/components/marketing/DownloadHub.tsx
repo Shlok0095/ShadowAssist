@@ -1,14 +1,14 @@
 import { useEffect, useRef, useState } from 'react'
 import { AnimatePresence, motion, useReducedMotion } from 'motion/react'
 import { animate, stagger } from 'animejs'
-import { LinuxIcon, MacIcon, WindowsIcon } from '@/components/marketing/LightButton'
+import { AndroidIcon, LinuxIcon, MacIcon, WindowsIcon } from '@/components/marketing/LightButton'
 import { PLATFORMS, type PlatformDownload } from '@/config/platforms'
 import type { PlatformId } from '@/config/platforms'
 import { useDetectedPlatform } from '@/hooks/useDetectedPlatform'
 
-const ICONS = { windows: WindowsIcon, macos: MacIcon, linux: LinuxIcon } as const
+const ICONS = { windows: WindowsIcon, macos: MacIcon, linux: LinuxIcon, android: AndroidIcon } as const
 
-const TAB_ORDER: PlatformId[] = ['windows', 'macos', 'linux']
+const TAB_ORDER: PlatformId[] = ['windows', 'macos', 'linux', 'android']
 
 function PlatformPanel({ platform }: { platform: PlatformDownload }) {
   const Icon = platform.icon
@@ -21,6 +21,7 @@ function PlatformPanel({ platform }: { platform: PlatformDownload }) {
         <div>
           <h3>{platform.name}</h3>
           <p>{platform.desc}</p>
+          {platform.meta ? <p className="dl-hub__panel-meta">{platform.meta}</p> : null}
         </div>
       </div>
       <div className="dl-hub__actions">

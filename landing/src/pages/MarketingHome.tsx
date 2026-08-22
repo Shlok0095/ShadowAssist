@@ -8,7 +8,7 @@ import { VaStatsLive } from '@/components/marketing/VaStatsLive'
 import { DownloadHub } from '@/components/marketing/DownloadHub'
 import { LightFaq } from '@/components/marketing/LightFaq'
 import { LightFooter } from '@/components/marketing/LightFooter'
-import { CompatLogos } from '@/components/marketing/MacosCard'
+import { CompatLogos, DockIcons, MacosCard } from '@/components/marketing/MacosCard'
 import { LiquidGlassCard } from '@/components/kokonutui/liquid-glass-card'
 import { MEDIA } from '@/config/mediaManifest'
 import { useRevealObserver } from '@/hooks/useReveal'
@@ -89,7 +89,7 @@ const FAQ = [
   },
   {
     q: 'Which platforms are supported?',
-    a: 'Windows, macOS, and Linux, with the same real-time assist experience on each.',
+    a: 'Windows, macOS, Linux, and Android — desktop overlay plus a mobile interview APK.',
   },
   {
     q: 'How do I get support?',
@@ -102,6 +102,7 @@ export function MarketingHome() {
     <div className="va-page">
       <LiveField />
 
+      <Hero3D>
         <div className="lm-container">
           <div className="lm-hero__content reveal">
             <div className="sp-welcome-box">
@@ -131,7 +132,7 @@ export function MarketingHome() {
               </a>
             </div>
 
-            <p className="lm-hero__platform">Windows · macOS · Linux — get the build for your device</p>
+            <p className="lm-hero__platform">Windows · macOS · Linux · Android — get the build for your device</p>
           </div>
 
           <div className="lm-hero-product reveal">
@@ -142,7 +143,7 @@ export function MarketingHome() {
             <div className="lm-hero-shimmer" aria-hidden />
           </div>
         </div>
-        <p className="va-hero-platform">Available on Windows, macOS, and Linux</p>
+        <p className="va-hero-platform">Available on Windows, macOS, Linux, and Android</p>
       </Hero3D>
 
       <VaSection
@@ -214,14 +215,15 @@ export function MarketingHome() {
           </div>
           <h2 className="lm-final-cta__title">Meeting AI that helps during the call, not after.</h2>
           <p className="lm-final-cta__sub">Try VeilAssist on your next meeting today.</p>
+          <DownloadHub />
           <div className="lm-final-cta__btns">
             <GlowCta href={SITE.downloadPageUrl} size="md" external={false}>
-              Download the desktop app
+              View all downloads
             </GlowCta>
           </div>
           <p className="lm-final-cta__hint">
-            Windows installer, macOS DMG, Linux AppImage &amp; DEB — pick the build for your device on the
-            <strong> Download</strong> page.
+            Windows installer, macOS DMG, Linux AppImage &amp; DEB, plus the Android interview APK — pick the build
+            for your device on the <strong>Download</strong> page.
           </p>
         </div>
       </section>
