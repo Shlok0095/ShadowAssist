@@ -51,7 +51,7 @@ function findLatestYml() {
   if (fs.existsSync(distYml)) candidates.push(distYml)
   const buildDirs = fs
     .readdirSync(repoRoot, { withFileTypes: true })
-    .filter((d) => d.isDirectory() && (/^dist-build-\d+$/.test(d.name) || /^dist-fresh-\d+$/.test(d.name)))
+    .filter((d) => d.isDirectory() && (/^dist-build-\d+$/.test(d.name) || /^dist-fresh-\d+$/.test(d.name) || /^dist-interview-\d+$/.test(d.name)))
     .map((d) => path.join(repoRoot, d.name, 'latest.yml'))
     .filter((p) => fs.existsSync(p))
   candidates.push(...buildDirs)
@@ -68,6 +68,7 @@ function findLatestYml() {
       const byVersion = compareCompactVersions(a.version, b.version)
       if (byVersion !== 0) return byVersion
       const score = (p) => {
+        if (p.includes(`${path.sep}dist-interview-`)) return 4
         if (p.includes(`${path.sep}dist-fresh-`)) return 3
         if (p.endsWith(`${path.sep}dist${path.sep}latest.yml`)) return 2
         return 1
