@@ -161,6 +161,35 @@ fs.writeFileSync(
   'utf8',
 )
 
+function syncVercelDownloadRedirects() {
+  const vercelFiles = [
+    path.join(landingRoot, 'vercel.json'),
+    path.join(repoRoot, 'vercel.json'),
+  ]
+  for (const filePath of vercelFiles) {
+    if (!fs.existsSync(filePath)) continue
+    const raw = JSON.parse(fs.readFileSync(filePath, 'utf8'))
+    if (!Array.isArray(raw.redirects)) continue
+    let changed = false
+    for (const redirect of raw.redirects) {
+      if (redirect.source === '/download/beta' && redirect.destination !== manifest.installerDownloadUrl) {
+        redirect.destination = manifest.installerDownloadUrl
+        changed = true
+      }
+      if (redirect.source === '/download/portable' && redirect.destination !== manifest.portableDownloadUrl) {
+        redirect.destination = manifest.portableDownloadUrl
+        changed = true
+      }
+    }
+    if (changed) {
+      fs.writeFileSync(filePath, `${JSON.stringify(raw, null, 2)}\n`, 'utf8')
+      console.log(`[sync-windows-manifest] updated ${filePath} download redirects`)
+    }
+  }
+}
+
+syncVercelDownloadRedirects()
+
 console.log(`[sync-windows-manifest] ${generatedTs}`)
 console.log(`[sync-windows-manifest] version=${manifest.version} builtAt=${manifest.builtAt}`)
 if (ymlPath) console.log(`[sync-windows-manifest] source ${ymlPath}`)
