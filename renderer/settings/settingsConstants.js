@@ -19,6 +19,7 @@ export const DEFAULT_HOTKEYS_MAP = {
   copyResponse: 'CommandOrControl+Shift+C',
   captureScreenshot: 'CommandOrControl+H',
   focusOverlayInput: 'CommandOrControl+Shift+T',
+  toggleMousePassthrough: 'CommandOrControl+Shift+P',
 }
 
 export const HOTKEY_DEFS = [
@@ -31,6 +32,7 @@ export const HOTKEY_DEFS = [
   { action: 'toggleSession', label: 'Start / stop listening session' },
   { action: 'captureScreenshot', label: 'Capture screenshot (queue)' },
   { action: 'focusOverlayInput', label: 'Focus overlay input (stealth typing)' },
+  { action: 'toggleMousePassthrough', label: 'Toggle mouse passthrough' },
   { action: 'settings', label: 'Open this settings window' },
   { action: 'copyResponse', label: 'Copy last assistant reply' },
   { action: 'moveUp', label: 'Nudge overlay up' },

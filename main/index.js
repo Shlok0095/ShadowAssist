@@ -86,7 +86,7 @@ function win32Bg() {
   }
   return win32BackgroundWindowModule
 }
-const { isPointInBounds, resolveOverlayMouseCapture } = require('../lib/overlayMousePolicy')
+const { resolveOverlayMouseCapture } = require('../lib/overlayMousePolicy')
 const { resolveSystemPrompt } = require('../lib/defaultSystemPrompt')
 const { getInterviewAnswerSuffixFromStore } = require('../lib/interviewAnswerPrompt.cjs')
 const {
@@ -528,9 +528,7 @@ function isSessionActive() {
   return sessionActive === true
 }
 let overlayVisible = true
-/** Polls cursor vs overlay bounds when mouse passthrough is enabled. */
-let mousePassthroughPollTimer = null
-/** Last applied capture mode ΓÇö avoids spamming setIgnoreMouseEvents every poll tick. */
+/** Last applied capture mode — avoids spamming setIgnoreMouseEvents every tick. */
 let overlayMouseCaptureApplied = null
 let savedOpacity = 0.92
 /** Last protection value pushed to the overlay HWND ΓÇö Natively dedupes to avoid DWM churn/blinks. */
@@ -1402,21 +1400,15 @@ function hideOverlay() {
 
 function toggleOverlay() { overlayVisible ? hideOverlay() : showOverlay() }
 
-const MOUSE_PASSTHROUGH_POLL_MS = 50
-
 function stopMousePassthroughPoll() {
-  if (mousePassthroughPollTimer != null) {
-    clearInterval(mousePassthroughPollTimer)
-    mousePassthroughPollTimer = null
-  }
+  /* legacy no-op — passthrough is renderer-driven (Natively pattern) */
 }
 
-function applyOverlayMouseCapturePolicy(cursorInsideOverlay = false) {
+function applyOverlayMouseCapturePolicy() {
   if (!overlayWindow || overlayWindow.isDestroyed()) return
   const policy = resolveOverlayMouseCapture({
     overlayVisible,
     passthroughEnabled: store.get('overlayMousePassthroughEnabled') === true,
-    cursorInsideOverlay,
   })
   const mode = policy.forward ? 'forward' : policy.ignore ? 'ignore' : 'capture'
   if (overlayMouseCaptureApplied === mode) return
@@ -1428,34 +1420,9 @@ function applyOverlayMouseCapturePolicy(cursorInsideOverlay = false) {
   }
 }
 
-function tickMousePassthroughPoll() {
-  if (!overlayWindow || overlayWindow.isDestroyed() || !overlayVisible) {
-    stopMousePassthroughPoll()
-    return
-  }
-  if (store.get('overlayMousePassthroughEnabled') !== true) {
-    stopMousePassthroughPoll()
-    applyOverlayMouseCapturePolicy(false)
-    return
-  }
-  let inside = false
-  try {
-    const point = screen.getCursorScreenPoint()
-    inside = isPointInBounds(point, overlayWindow.getBounds())
-  } catch (_) {}
-  applyOverlayMouseCapturePolicy(inside)
-}
-
-function startMousePassthroughPoll() {
-  stopMousePassthroughPoll()
-  tickMousePassthroughPoll()
-  mousePassthroughPollTimer = setInterval(tickMousePassthroughPoll, MOUSE_PASSTHROUGH_POLL_MS)
-}
-
 /**
- * Overlay mouse capture ΓÇö hidden overlay ignores all input.
- * Passthrough mode polls cursor position: forward clicks only when cursor is outside the overlay
- * window bounds so notch buttons remain clickable on hover.
+ * Overlay mouse capture — hidden overlay ignores all input.
+ * Passthrough: ignore+forward at OS level; renderer captures on hover over [data-overlay-hit].
  */
 function isSettingsWindowActive() {
   return !!(
@@ -1736,18 +1703,10 @@ function applyDockPolicy() {
 
 function syncOverlayMouseCapture() {
   if (!overlayWindow || overlayWindow.isDestroyed()) return
-  stopMousePassthroughPoll()
   overlayMouseCaptureApplied = null
-  const policy = resolveOverlayMouseCapture({
-    overlayVisible,
-    passthroughEnabled: store.get('overlayMousePassthroughEnabled') === true,
-    cursorInsideOverlay: false,
-  })
-  if (policy.usePassthroughPoll) {
-    startMousePassthroughPoll()
-    return
-  }
-  applyOverlayMouseCapturePolicy(false)
+  const passthrough = store.get('overlayMousePassthroughEnabled') === true
+  applyOverlayMouseCapturePolicy()
+  sendToOverlay('overlay-mouse-passthrough', passthrough && overlayVisible)
 }
 
 let appQuitting = false
@@ -3175,6 +3134,12 @@ function applyVerboseDebugLoggingSetting(enabled) {
   }
 }
 
+function toggleMousePassthrough() {
+  const next = !(store.get('overlayMousePassthroughEnabled') === true)
+  store.set('overlayMousePassthroughEnabled', next)
+  syncOverlayMouseCapture()
+}
+
 function setupHotkeys() {
   hotkeys.register('toggleOverlay', toggleOverlay)
   hotkeys.register('hideOverlay', hideOverlay)
@@ -3221,6 +3186,7 @@ function setupHotkeys() {
     showOverlay()
     sendToOverlay('overlay:focus-input')
   })
+  hotkeys.register('toggleMousePassthrough', toggleMousePassthrough)
   hotkeys.register('captureScreenshot', async () => {
     if (!isSessionActive()) return
     try {
@@ -3275,6 +3241,25 @@ function setupIPC() {
     return setStealthProtectionMode(enabled)
   })
   ipcMain.handle('protection:get', () => !!store.get('stealth_mode'))
+  ipcMain.handle('overlay:set-ignore-mouse-events', (event, ignore, options) => {
+    if (!overlayWindow || overlayWindow.isDestroyed()) return
+    if (event.sender !== overlayWindow.webContents) return
+    if (!overlayVisible) return
+    const passthrough = store.get('overlayMousePassthroughEnabled') === true
+    if (!passthrough) {
+      overlayWindow.setIgnoreMouseEvents(false)
+      overlayMouseCaptureApplied = 'capture'
+      return
+    }
+    if (ignore) {
+      const forward = options && typeof options === 'object' ? options : { forward: true }
+      overlayWindow.setIgnoreMouseEvents(true, forward)
+      overlayMouseCaptureApplied = 'forward'
+      return
+    }
+    overlayWindow.setIgnoreMouseEvents(false)
+    overlayMouseCaptureApplied = 'capture'
+  })
   ipcMain.handle('get-app-info', () => ({
     name: getBrandName(),
     version: app.getVersion(),

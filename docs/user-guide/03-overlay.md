@@ -69,7 +69,7 @@ Speaker labels use a heuristic (your mic vs system/loopback audio) — not true 
 | Setting | What it does |
 |---------|--------------|
 | **Hide from screen capture** | Windows content protection — harder to capture in shares and recordings |
-| **Mouse passthrough** | Clicks pass through outside the overlay; move cursor over the notch/panel to interact |
+| **Mouse passthrough** | Clicks pass through transparent overlay areas; hover the notch or panel to interact |
 | **Hide from taskbar** | No taskbar icon for the overlay window |
 
 ## Audio consent

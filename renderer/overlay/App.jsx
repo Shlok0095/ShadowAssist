@@ -27,6 +27,7 @@ import RollingTranscript from './components/RollingTranscript'
 import AppIcon from '../shared/AppIcon'
 import { applyUiAccentTheme, normalizeUiAccentId } from '../shared/uiAccentThemes'
 import { createIpcShim } from '../shared/ipcShim'
+import { useOverlayMousePassthrough } from './useOverlayMousePassthrough'
 import {
   streamPreviewIntervalFor,
 } from './streamAnswerDisplay.js'
@@ -625,9 +626,18 @@ export default function App() {
   /** Mirrors main-process overlayVisible — instant hide/show without waiting on window opacity. */
   const [overlayMainVisible, setOverlayMainVisible] = useState(true)
   const [stealthMode, setStealthMode] = useState(false)
-
-
+  const [overlayMousePassthrough, setOverlayMousePassthrough] = useState(false)
   const [showAudioConsent, setShowAudioConsent] = useState(false)
+
+  useOverlayMousePassthrough(overlayMousePassthrough && overlayMainVisible, [
+    expanded,
+    showAudioConsent,
+  ])
+
+  useEffect(() => {
+    if (!ipc) return undefined
+    return ipc.on('overlay-mouse-passthrough', (_, on) => setOverlayMousePassthrough(on === true))
+  }, [])
   const panelRef = useRef(null)
   const inputBarRef = useRef(null)
   const audioSessionAcknowledgedRef = useRef(false)
@@ -1386,6 +1396,9 @@ export default function App() {
     ipc.invoke('get-store', 'overlayTranscriptAutoScroll').then((v) => setOverlayTranscriptAutoScroll(v !== false))
     ipc.invoke('get-store', 'overlayAnswerPinToTop').then((v) => setOverlayAnswerPinToTop(v !== false))
     ipc.invoke('get-store', 'globalMeetingSearchEnabled').then((v) => setGlobalMeetingSearchEnabled(v === true))
+    ipc.invoke('get-store', 'overlayMousePassthroughEnabled').then((v) =>
+      setOverlayMousePassthrough(v === true),
+    )
     ipc.invoke('get-store', 'sttMode').then((m) => {
       sttModeRef.current = m === 'cloud' ? 'cloud' : 'local'
     })
@@ -2779,7 +2792,10 @@ export default function App() {
     >
       {/* ── Fixed-width notch — centered above panel ── */}
       <div className="flex w-full shrink-0 justify-center">
-        <div className="crystal-pill crystal-notch-shell relative z-20 shrink-0 overflow-hidden">
+        <div
+          className="crystal-pill crystal-notch-shell relative z-20 shrink-0 overflow-hidden"
+          data-overlay-hit=""
+        >
           <StatusBar
             sessionOn={sessionOn}
 
@@ -2793,6 +2809,7 @@ export default function App() {
       {showAudioConsent && !expanded && (
         <div
           className="relative z-[100] mt-2 flex shrink-0 justify-center px-3 pointer-events-auto"
+          data-overlay-hit=""
           style={{ WebkitAppRegion: 'no-drag' }}
         >
           {audioConsentCard}
@@ -2804,6 +2821,7 @@ export default function App() {
           {/* ── Floating panel — separate crystal card below pill ── */}
           <div
             className="crystal-panel relative z-10 mt-[10px] flex min-h-0 flex-1 flex-col overflow-hidden"
+            data-overlay-hit=""
             style={{ WebkitAppRegion: 'no-drag' }}
           >
             <div className="crystal-panel-edge shrink-0" aria-hidden />

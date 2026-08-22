@@ -140,7 +140,7 @@ export default function DisplaySettingsPanel({
       <SettingsSection title="Overlay behavior">
         <SettingsRow
           label="Mouse passthrough"
-          hint="When on, clicks pass through only when the cursor is outside the overlay window. Move over the notch or panel to click buttons again."
+          hint="When on, clicks pass through transparent areas behind the overlay. Hover the notch or panel to interact. Toggle anytime with Ctrl+Shift+P."
         >
           <ToggleSwitch checked={overlayMousePassthroughUi} onChange={onOverlayMousePassthroughChange} />
         </SettingsRow>
