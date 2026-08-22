@@ -16,6 +16,7 @@ export type LatestDownload = {
 }
 
 const GITHUB_RELEASE = `https://github.com/${SITE.repoOwner}/${SITE.repoName}/releases/download`
+const STAG = `${GITHUB_RELEASE}/latest-stag`
 
 /** One canonical download per platform — no duplicate installers or archives. */
 export const LATEST_DOWNLOADS: LatestDownload[] = [
@@ -25,7 +26,7 @@ export const LATEST_DOWNLOADS: LatestDownload[] = [
     description: 'NSIS installer for Windows 10 or later.',
     fileName: 'VeilAssist-Setup.exe',
     downloadUrl: SITE_WINDOWS_BUILD_MANIFEST.installerDownloadUrl,
-    version: SITE_WINDOWS_BUILD_MANIFEST.version || SITE_WINDOWS_BUILD_MANIFEST.compactVersion,
+    version: SITE_WINDOWS_BUILD_MANIFEST.version,
     size: SITE_WINDOWS_BUILD_MANIFEST.installerSize || null,
     builtAt: SITE_WINDOWS_BUILD_MANIFEST.builtAt,
   },
@@ -34,20 +35,20 @@ export const LATEST_DOWNLOADS: LatestDownload[] = [
     title: 'macOS',
     description: 'Apple Silicon or Intel — drag to Applications.',
     fileName: 'VeilAssist-mac.dmg',
-    downloadUrl: `${GITHUB_RELEASE}/latest-stag/VeilAssist-mac.dmg`,
-    version: 'Rolling build',
-    size: null,
-    builtAt: null,
+    downloadUrl: `${STAG}/VeilAssist-mac.dmg`,
+    version: '2026.08.22.10.01',
+    size: 209_879_762,
+    builtAt: '2026-08-22T10:01:00.000Z',
   },
   {
     platform: 'linux',
     title: 'Linux',
     description: 'AppImage for most distros — no install required.',
     fileName: 'VeilAssist-linux.AppImage',
-    downloadUrl: `${GITHUB_RELEASE}/latest-stag/VeilAssist-linux.AppImage`,
-    version: 'Rolling build',
-    size: null,
-    builtAt: null,
+    downloadUrl: `${STAG}/VeilAssist-linux.AppImage`,
+    version: '2026.08.22.10.01',
+    size: 218_220_917,
+    builtAt: '2026-08-22T10:01:00.000Z',
   },
   {
     platform: 'android',
