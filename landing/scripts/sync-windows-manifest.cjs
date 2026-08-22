@@ -106,6 +106,10 @@ function sha256File(filePath) {
 }
 
 const ymlPath = findLatestYml()
+if (!ymlPath) {
+  console.log('[sync-windows-manifest] no local Windows build found — keeping committed manifest')
+  process.exit(0)
+}
 const ymlText = ymlPath ? readText(ymlPath) : null
 const yml = ymlText ? parseLatestYml(ymlText) : { version: null, releaseDate: null, installerSize: null }
 
