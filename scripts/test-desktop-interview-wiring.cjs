@@ -67,6 +67,23 @@ if (/SPOKEN INTERVIEW MODE/i.test(convSuffix) && /REQUIRED.*Hmm/i.test(convSuffi
   fail('conversational suffix includes spoken override for fillers', convSuffix.slice(-200))
 }
 
+// 3c. Example-driven overrides Takeaway/plaintext and forbids fillers
+const exampleSuffix = catalog.buildInterviewAnswerSuffix({
+  answerStructure: 'car',
+  responseFormat: 'example',
+  answerLength: 'medium',
+})
+if (
+  /EXAMPLE-DRIVEN/i.test(exampleSuffix)
+  && /CAR/i.test(exampleSuffix)
+  && /Do NOT open with filler/i.test(exampleSuffix)
+  && !/REQUIRED.*Hmm/i.test(exampleSuffix)
+) {
+  pass('example-driven suffix includes CAR + no-filler override')
+} else {
+  fail('example-driven suffix includes CAR + no-filler override', exampleSuffix.slice(-280))
+}
+
 // 4. Conversational format includes filler guidance (mobile formatPrompt parity)
 const conv = catalog.formatPrompt('conversational')
 if (/basically|Hmm|filler/i.test(conv)) pass('conversational formatPrompt fillers')

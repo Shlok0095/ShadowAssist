@@ -92,6 +92,16 @@ function normalizeLang(l) {
   return LANG_MAP[k] || k || 'plaintext'
 }
 
+function isProseFenceLang(lang) {
+  const l = String(lang || '').trim().toLowerCase()
+  return !l || l === 'plaintext' || l === 'text'
+}
+
+function looksLikeCodeBlock(content) {
+  const t = String(content || '')
+  return /[{;}=]|^\s*(def |class |function |import |const |let |var |#include|public |private |for\s*\(|while\s*\()/m.test(t)
+}
+
 /**
  * Parse markdown into structured nodes.
  * Supported: fenced code blocks, h1/h2/h3, ul with indented sub-bullets,
@@ -116,7 +126,15 @@ function parseMarkdown(text) {
         i++
       }
       if (i < lines.length) i++
-      out.push({ type: 'code', lang, content: block.join('\n') })
+      const content = block.join('\n')
+      if (isProseFenceLang(lang) && !looksLikeCodeBlock(content)) {
+        for (const proseLine of content.split('\n')) {
+          const trimmed = proseLine.trim()
+          if (trimmed) out.push({ type: 'p', content: trimmed })
+        }
+      } else {
+        out.push({ type: 'code', lang, content })
+      }
       continue
     }
 
@@ -651,8 +669,8 @@ function HeardQuestionBubble({ text }) {
   if (!value) return null
   return (
     <div className="flex w-full justify-end">
-      <div className="crystal-question-bubble max-w-[88%] rounded-[0.9rem] px-3 py-1.5 text-left text-[13px] font-medium leading-snug text-white">
-        <SpeakerTranscriptBlock text={value} bodyClassName="text-white" lineClassName="block" />
+      <div className="crystal-question-bubble max-w-[88%] rounded-[0.9rem] px-3 py-1.5 text-left text-[13px] font-medium leading-snug">
+        <SpeakerTranscriptBlock text={value} lineClassName="block" />
       </div>
     </div>
   )
@@ -806,7 +824,25 @@ const ResponsePanelInner = React.forwardRef(function ResponsePanel(
 ) {
   const scrollRef = useRef(null)
   const answerAnchorRef = useRef(null)
+  const streamBlockRef = useRef(null)
   const previousThinkingRef = useRef(false)
+
+  /** Keep the full streaming answer visible (phone-style), not pinned at scrollTop=0. */
+  const scrollStreamIntoView = useCallback(() => {
+    if (!overlayAnswerAutoScroll) return
+    const container = scrollRef.current
+    const block = streamBlockRef.current
+    if (!container || !block) return
+    requestAnimationFrame(() => {
+      requestAnimationFrame(() => {
+        const blockBottom = block.offsetTop + block.offsetHeight
+        const viewBottom = container.scrollTop + container.clientHeight
+        if (blockBottom > viewBottom - 12) {
+          container.scrollTop = Math.max(0, blockBottom - container.clientHeight + 12)
+        }
+      })
+    })
+  }, [overlayAnswerAutoScroll])
 
   const scrollByShortcut = useCallback((direction) => {
     const el = scrollRef.current
@@ -856,14 +892,16 @@ const ResponsePanelInner = React.forwardRef(function ResponsePanel(
   useEffect(() => {
     const streamStarted = isThinking && !previousThinkingRef.current
     previousThinkingRef.current = isThinking
-    if (!streamStarted || !scrollRef.current || !overlayAnswerPinToTop || !overlayAnswerAutoScroll) return
-    scrollRef.current.scrollTop = 0
-  }, [isThinking, overlayAnswerPinToTop, overlayAnswerAutoScroll])
+    if (!streamStarted) return
+    if (overlayAnswerAutoScroll) scrollStreamIntoView()
+    else if (scrollRef.current && overlayAnswerPinToTop) scrollRef.current.scrollTop = 0
+  }, [isThinking, overlayAnswerPinToTop, overlayAnswerAutoScroll, scrollStreamIntoView])
 
   useEffect(() => {
-    if (!isThinking || !scrollRef.current || !overlayAnswerAutoScroll || !overlayAnswerPinToTop) return
-    scrollRef.current.scrollTop = 0
-  }, [streamPreview, isThinking, overlayAnswerAutoScroll, overlayAnswerPinToTop])
+    if (!isThinking) return
+    if (overlayAnswerAutoScroll) scrollStreamIntoView()
+    else if (scrollRef.current && overlayAnswerPinToTop) scrollRef.current.scrollTop = 0
+  }, [streamPreview, isThinking, overlayAnswerAutoScroll, overlayAnswerPinToTop, scrollStreamIntoView])
 
   /** Natively-style: one scrollable session feed — newest exchange at top, all replies kept. */
   const visibleTurns = useMemo(() => {
@@ -892,7 +930,7 @@ const ResponsePanelInner = React.forwardRef(function ResponsePanel(
       >
       <div className="w-full px-3 pb-2 pt-3">
         {hasActiveReply && isThinking && (
-          <div className="mx-auto mb-2 w-full max-w-full">
+          <div ref={streamBlockRef} className="mx-auto mb-2 w-full max-w-full">
             <StreamingAnswerPreview
               streamPreview={streamPreview}
               answerStyle={answerStyle}

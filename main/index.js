@@ -523,6 +523,10 @@ let overlayWindow = null
 let settingsWindow = null
 let tray = null
 let sessionActive = false
+
+function isSessionActive() {
+  return sessionActive === true
+}
 let overlayVisible = true
 /** Polls cursor vs overlay bounds when mouse passthrough is enabled. */
 let mousePassthroughPollTimer = null
@@ -2634,6 +2638,9 @@ function deriveDisplayAskSource({ hasQuestion, hasAudio, includeScreen, hasVisio
 }
 
 async function handleAskAI(userQuestion, audioTranscript, _askMeta = {}) {
+  if (!isSessionActive() && _askMeta?.source !== 'global_chat') {
+    return { ok: false, reason: 'session_inactive' }
+  }
   const askStartedAt = Number(_askMeta?._llmTriggerAt) || Date.now()
   let captureFinishedAt = askStartedAt
   let contextFinishedAt = askStartedAt
@@ -3172,6 +3179,7 @@ function setupHotkeys() {
   hotkeys.register('toggleOverlay', toggleOverlay)
   hotkeys.register('hideOverlay', hideOverlay)
   hotkeys.register('askAI', async () => {
+    if (!isSessionActive()) return
     pendingAskVisionB64 = null
     try {
       pendingAskVisionB64 = await screenCapture.captureScreenForVision({ bypassCaptureCooldown: true })
@@ -3180,8 +3188,14 @@ function setupHotkeys() {
     }
     sendToOverlay('trigger-ask-ai')
   })
-  hotkeys.register('askAINoScreen', () => sendToOverlay('trigger-ask-ai-no-screen'))
-  hotkeys.register('followUp', () => sendToOverlay('trigger-follow-up'))
+  hotkeys.register('askAINoScreen', () => {
+    if (!isSessionActive()) return
+    sendToOverlay('trigger-ask-ai-no-screen')
+  })
+  hotkeys.register('followUp', () => {
+    if (!isSessionActive()) return
+    sendToOverlay('trigger-follow-up')
+  })
   hotkeys.register('clearChat', () => {
     sendToOverlay('clear-conversation')
     lastResponse = ''
@@ -3203,10 +3217,12 @@ function setupHotkeys() {
   hotkeys.register('settings', createSettingsWindow)
   hotkeys.register('copyResponse', () => { if (lastResponse) clipboard.writeText(lastResponse) })
   hotkeys.register('focusOverlayInput', () => {
+    if (!isSessionActive()) return
     showOverlay()
     sendToOverlay('overlay:focus-input')
   })
   hotkeys.register('captureScreenshot', async () => {
+    if (!isSessionActive()) return
     try {
       let filePath
       await withOverlayExcludedFromScreenCapture(async () => {

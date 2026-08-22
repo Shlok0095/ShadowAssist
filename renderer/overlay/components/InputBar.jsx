@@ -17,9 +17,10 @@ function InputBarInner({ onAsk, onAbort, isThinking, sessionOn = false, focusMod
 
   const placeholder = sessionOn
     ? 'Ask or /skill-name… Ctrl+↵ screen · Ctrl+⇧+↵ audio only'
-    : 'Type a question or /skill-name… Ctrl+↵ screen · Ctrl+⇧+↵ audio only'
+    : 'Turn on Listen to ask…'
 
   const submitText = () => {
+    if (!sessionOn) return
     const trimmed = value.trim()
     if (trimmed) {
       onAsk(trimmed, { source: 'typed', bypassCaptureCooldown: true })
@@ -49,6 +50,7 @@ function InputBarInner({ onAsk, onAbort, isThinking, sessionOn = false, focusMod
         onKeyDown={handleKeyDown}
         placeholder={placeholder}
         rows={1}
+        disabled={!sessionOn}
         className={[
           'crystal-input flex-1 min-h-[34px] max-h-[72px] resize-none rounded-xl px-3 py-2',
           'text-[12.5px] transition-colors duration-150',
@@ -68,7 +70,7 @@ function InputBarInner({ onAsk, onAbort, isThinking, sessionOn = false, focusMod
         <button
           type="button"
           onClick={submitText}
-          disabled={isThinking && !value.trim()}
+          disabled={!sessionOn || (isThinking && !value.trim())}
           title="Send"
           aria-label="Send"
           className={[

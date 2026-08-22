@@ -20,6 +20,11 @@ export function fontSizeFromAnswerLength(length) {
   return 'medium'
 }
 
+export function overlayDisplayStyleFromFormat(format) {
+  const v = String(format || 'bullets').toLowerCase()
+  return v === 'bullets' ? 'brief' : 'detailed'
+}
+
 export const ANSWER_STRUCTURES = [
   { value: 'star', label: 'STAR', detail: 'Situation, Task, Action, Result (default)' },
   { value: 'car', label: 'CAR', detail: 'Context, Action, Result' },
