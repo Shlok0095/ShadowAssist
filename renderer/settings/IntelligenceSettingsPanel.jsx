@@ -4,6 +4,7 @@
 import React, { useEffect, useMemo, useState } from 'react'
 import { createIpcShim } from '../shared/ipcShim'
 import {
+  ConfirmDialog,
   SettingsBadge,
   SettingsCollapsible,
   SettingsFieldLabel,
@@ -47,7 +48,6 @@ export default function IntelligenceSettingsPanel({
   onPatchSnap,
   onSave,
   intelligenceFlags = [],
-  coreFlagKeys = [],
   advancedGroupOrder = [],
   hindsightApiUrl,
   onHindsightApiUrlChange,
@@ -59,6 +59,7 @@ export default function IntelligenceSettingsPanel({
   onHindsightAutoStartChange,
 }) {
   const [recallStatus, setRecallStatus] = useState(null)
+  const [confirmClearMemory, setConfirmClearMemory] = useState(false)
   const hindsightProvider = ['gateway', 'hindsight'].includes(snap?.hindsightProvider)
     ? snap.hindsightProvider
     : 'off'
@@ -78,11 +79,6 @@ export default function IntelligenceSettingsPanel({
     return advancedGroupOrder.filter((g) => map.has(g)).map((g) => ({ group: g, flags: map.get(g) }))
   }, [intelligenceFlags, advancedGroupOrder])
 
-  const smartFeaturesOn = useMemo(() => {
-    if (!snap || !coreFlagKeys.length) return true
-    return coreFlagKeys.every((key) => snap[key] !== false)
-  }, [snap, coreFlagKeys])
-
   useEffect(() => {
     if (!ipc) return undefined
     let active = true
@@ -99,13 +95,6 @@ export default function IntelligenceSettingsPanel({
     }
   }, [hindsightProvider, snap?.hindsightAutoStartEnabled])
 
-  const setSmartFeatures = (on) => {
-    for (const key of coreFlagKeys) {
-      onPatchSnap(key, !!on)
-      onSave(key, !!on)
-    }
-  }
-
   return (
     <SettingsPanelShell
       embedded={embedded}
@@ -114,19 +103,11 @@ export default function IntelligenceSettingsPanel({
     >
       <SettingsSection
         title="Smart features"
-        description="Core on-device intelligence wired today. Turn off to use a plain prompt + transcript on every ask."
+        description="Core on-device intelligence wired today. Turn off individually to use a plain prompt + transcript on every ask."
       >
-        <SettingsRow
-          label="Enable smart features"
-          hint="Controls context routing, long-term memory, and meeting mode suggestions together."
-        >
-          <ToggleSwitch checked={smartFeaturesOn} onChange={setSmartFeatures} />
-        </SettingsRow>
-        <div className="border-t pt-3" style={{ borderColor: 'var(--border-subtle)' }}>
-          {coreFlags.map((flag) => (
-            <FlagToggleRow key={flag.id} flag={flag} snap={snap} onPatchSnap={onPatchSnap} onSave={onSave} />
-          ))}
-        </div>
+        {coreFlags.map((flag) => (
+          <FlagToggleRow key={flag.id} flag={flag} snap={snap} onPatchSnap={onPatchSnap} onSave={onSave} />
+        ))}
       </SettingsSection>
 
       <SettingsSection
@@ -216,21 +197,30 @@ export default function IntelligenceSettingsPanel({
           </div>
           <button
             type="button"
-            onClick={async () => {
-              if (!ipc) return
-              if (!window.confirm('Clear all long-term memory entries?')) return
-              const result = await ipc.invoke('long-term-memory:clear')
-              const keyword = result?.keyword?.removed ?? 'all'
-              const vector = result?.vector?.removed ?? 'all'
-              const remote = result?.remote?.ok ? 'cleared' : result?.remote?.skipped ? 'not configured' : 'failed'
-              window.alert(`Memory cleared. Keyword: ${keyword}; vector chunks: ${vector}; Hindsight: ${remote}.`)
-            }}
+            onClick={() => setConfirmClearMemory(true)}
             className="nat-btn-secondary shrink-0 px-4 py-2 text-[12px]"
           >
             Clear memory
           </button>
         </div>
       </SettingsSection>
+
+      <ConfirmDialog
+        open={confirmClearMemory}
+        title="Clear long-term memory?"
+        description="Removes saved recall entries on this device. Does not delete meeting recaps or profile text."
+        confirmLabel="Clear memory"
+        onCancel={() => setConfirmClearMemory(false)}
+        onConfirm={async () => {
+          setConfirmClearMemory(false)
+          if (!ipc) return
+          const result = await ipc.invoke('long-term-memory:clear')
+          const keyword = result?.keyword?.removed ?? 'all'
+          const vector = result?.vector?.removed ?? 'all'
+          const remote = result?.remote?.ok ? 'cleared' : result?.remote?.skipped ? 'not configured' : 'failed'
+          window.alert(`Memory cleared. Keyword: ${keyword}; vector chunks: ${vector}; Hindsight: ${remote}.`)
+        }}
+      />
 
       <SettingsCollapsible
         title="Customize"

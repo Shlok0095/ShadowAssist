@@ -5,6 +5,7 @@ import React, { useCallback, useEffect, useMemo, useRef, memo, useState } from '
 import { SpeakerTranscriptBlock } from '../../shared/SpeakerTranscriptText'
 import { createIpcShim } from '../../shared/ipcShim'
 import { splitStreamTakeaway, stripMarkdownForStreamDisplay } from '../streamAnswerDisplay.js'
+import { useStreamPreview } from '../streamPreviewStore.js'
 
 const ipc = createIpcShim()
 
@@ -320,21 +321,41 @@ function renderInline(text) {
 
 function CodeBlock({ lang, content, suppressHighlight }) {
   const [copied, setCopied] = useState(false)
+  const [html, setHtml] = useState('')
   const copiedTimerRef = useRef(null)
 
   useEffect(() => () => {
     if (copiedTimerRef.current) clearTimeout(copiedTimerRef.current)
   }, [])
 
-  const html = useMemo(() => {
-    if (suppressHighlight || !content) return ''
-    const l = normalizeLang(lang)
-    try {
-      if (l !== 'plaintext' && hljs.getLanguage(l)) {
-        return hljs.highlight(content, { language: l, ignoreIllegals: true }).value
+  useEffect(() => {
+    if (suppressHighlight || !content) {
+      setHtml('')
+      return undefined
+    }
+    let cancelled = false
+    const highlight = () => {
+      if (cancelled) return
+      const l = normalizeLang(lang)
+      try {
+        if (l !== 'plaintext' && hljs.getLanguage(l)) {
+          setHtml(hljs.highlight(content, { language: l, ignoreIllegals: true }).value)
+          return
+        }
+      } catch (_) {}
+      setHtml(escapeHtml(content))
+    }
+    const idleId = typeof window.requestIdleCallback === 'function'
+      ? window.requestIdleCallback(highlight, { timeout: 150 })
+      : window.setTimeout(highlight, 0)
+    return () => {
+      cancelled = true
+      if (typeof window.cancelIdleCallback === 'function') {
+        window.cancelIdleCallback(idleId)
+      } else {
+        clearTimeout(idleId)
       }
-    } catch (_) {}
-    return escapeHtml(content)
+    }
   }, [content, lang, suppressHighlight])
 
   const copy = () => {
@@ -482,6 +503,7 @@ function copyText(text) {
 
 const BriefAnswer = memo(function BriefAnswer({
   text,
+  messageId,
   teleprompter = false,
   allowCode = false,
   streaming = false,
@@ -489,7 +511,10 @@ const BriefAnswer = memo(function BriefAnswer({
 }) {
   const [detailsOpen, setDetailsOpen] = useState(false)
   const [copied, setCopied] = useState('')
-  const nodes = useMemo(() => parseMarkdown(text), [text])
+  const nodes = useMemo(
+    () => getCachedParsedMarkdown(messageId || `brief:${String(text || '').slice(0, 48)}`, text),
+    [messageId, text],
+  )
   const { takeaway, prose, code, details } = useMemo(() => {
     const p = partitionForBrief(nodes)
     if (!allowCode && p.code.length > 0) {
@@ -585,16 +610,14 @@ const BriefAnswer = memo(function BriefAnswer({
   )
 })
 
+/** Themed error bubble — uses the shared danger token (crystal-error-*) instead of
+ *  a plain Tailwind rose palette, so it matches crystal-badge-danger elsewhere. */
 const ErrorBubble = memo(function ErrorBubble({ text, onRetry }) {
   return (
-    <div className="w-full rounded-xl border border-rose-500/25 bg-rose-500/8 px-3.5 py-3">
-      <p className="text-[13px] leading-relaxed text-rose-200">{text}</p>
+    <div className="crystal-error-bubble">
+      <p className="crystal-error-text">{text}</p>
       {onRetry ? (
-        <button
-          type="button"
-          onClick={onRetry}
-          className="mt-2.5 rounded-lg border border-rose-400/30 bg-rose-500/10 px-3 py-1.5 text-[11px] font-medium text-rose-200 hover:bg-rose-500/20"
-        >
+        <button type="button" onClick={onRetry} className="crystal-error-retry-btn">
           Try again
         </button>
       ) : null}
@@ -641,15 +664,18 @@ const MessageBubble = memo(function MessageBubble({
         ) : role === 'ai' ? (
           <>
             {duplicateRepeat ? (
-              <p
-                className="mb-2 text-[10px] font-semibold uppercase tracking-wider"
-                style={{ color: 'rgba(180, 215, 235, 0.72)' }}
-              >
+              <p className="crystal-duplicate-label mb-2 text-[10px] font-semibold uppercase tracking-wider">
                 Same as previous answer
               </p>
             ) : null}
             {isBriefAi ? (
-              <BriefAnswer text={text} teleprompter={teleprompter} allowCode={allowCode} fontSize={fontSize} />
+              <BriefAnswer
+                text={text}
+                messageId={messageId}
+                teleprompter={teleprompter}
+                allowCode={allowCode}
+                fontSize={fontSize}
+              />
             ) : fallback ? (
               <p className="leading-[1.65]" dangerouslySetInnerHTML={{ __html: renderInline(text) }} />
             ) : (
@@ -710,10 +736,7 @@ function ComposingShell({ onAbort, teleprompter = false, heardText = '' }) {
       ) : null}
       <div className="flex items-center justify-between gap-3">
         <div className="flex items-center gap-2" style={{ color: 'rgba(200,235,255,0.88)' }}>
-          <span
-            className="h-2 w-2 animate-pulse rounded-full"
-            style={{ background: 'rgba(180,225,255,0.65)', boxShadow: '0 0 8px rgba(160,215,245,0.45)' }}
-          />
+          <span className="crystal-status-dot" />
           <span className={`crystal-answer-text font-medium ${teleprompter ? 'text-[15px]' : 'text-[13px]'}`}>
             {slow ? 'Still composing…' : 'Composing answer…'}
           </span>
@@ -750,7 +773,7 @@ function StreamingAnswerPreview({
   const heard = String(heardText || '').trim()
   const raw = String(streamPreview || '').trim()
   const plain = useMemo(() => stripMarkdownForStreamDisplay(raw), [raw])
-  const { takeaway, rest } = useMemo(() => splitStreamTakeaway(raw), [raw])
+  const { takeaway, rest } = useMemo(() => splitStreamTakeaway(plain), [plain])
   const baseClass = streamFontClass(teleprompter, fontSize)
   const isBrief = answerStyle === 'brief'
   const showTakeaway = isBrief && takeaway.length > 12 && (rest.length > 20 || takeaway.length > 80)
@@ -770,10 +793,7 @@ function StreamingAnswerPreview({
       ) : null}
       <div className="mb-2 flex items-center justify-between gap-2">
         <div className="flex items-center gap-2" style={{ color: 'rgba(200,235,255,0.88)' }}>
-          <span
-            className="h-2 w-2 animate-pulse rounded-full"
-            style={{ background: 'rgba(180,225,255,0.65)', boxShadow: '0 0 8px rgba(160,215,245,0.45)' }}
-          />
+          <span className="crystal-status-dot" />
           <span className="crystal-sublabel text-[10px] normal-case">Generating</span>
         </div>
         {onAbort ? (
@@ -805,6 +825,84 @@ function StreamingAnswerPreview({
   )
 }
 
+const STREAM_SCROLL_MIN_MS = 120
+const STREAM_SCROLL_MAX_STEP_PX = 28
+
+/** Isolated live stream block — only this subtree re-renders on token preview updates. */
+const ActiveStreamBlock = memo(function ActiveStreamBlock({
+  scrollContainerRef,
+  overlayAnswerAutoScroll,
+  overlayAnswerPinToTop,
+  answerStyle,
+  overlayTeleprompter,
+  fontSize,
+  heardText,
+  onAbort,
+}) {
+  const streamPreview = useStreamPreview()
+  const streamBlockRef = useRef(null)
+  const scrollStreamLastAtRef = useRef(0)
+  const scrollStreamPendingRef = useRef(null)
+
+  const scrollStreamIntoView = useCallback(() => {
+    if (!overlayAnswerAutoScroll) return
+    const run = () => {
+      const container = scrollContainerRef.current
+      const block = streamBlockRef.current
+      if (!container || !block) return
+      scrollStreamLastAtRef.current = Date.now()
+      requestAnimationFrame(() => {
+        const blockBottom = block.offsetTop + block.offsetHeight
+        const viewBottom = container.scrollTop + container.clientHeight
+        if (blockBottom > viewBottom - 12) {
+          const target = Math.max(0, blockBottom - container.clientHeight + 12)
+          const delta = target - container.scrollTop
+          if (delta > 0) {
+            container.scrollTop += Math.min(delta, STREAM_SCROLL_MAX_STEP_PX)
+          }
+        }
+      })
+    }
+    const elapsed = Date.now() - scrollStreamLastAtRef.current
+    if (elapsed >= STREAM_SCROLL_MIN_MS) {
+      run()
+      return
+    }
+    if (scrollStreamPendingRef.current != null) return
+    scrollStreamPendingRef.current = window.setTimeout(() => {
+      scrollStreamPendingRef.current = null
+      run()
+    }, STREAM_SCROLL_MIN_MS - elapsed)
+  }, [overlayAnswerAutoScroll, scrollContainerRef])
+
+  useEffect(() => () => {
+    if (scrollStreamPendingRef.current != null) {
+      clearTimeout(scrollStreamPendingRef.current)
+      scrollStreamPendingRef.current = null
+    }
+  }, [])
+
+  useEffect(() => {
+    if (overlayAnswerAutoScroll) scrollStreamIntoView()
+    else if (scrollContainerRef.current && overlayAnswerPinToTop) {
+      scrollContainerRef.current.scrollTop = 0
+    }
+  }, [streamPreview, overlayAnswerAutoScroll, overlayAnswerPinToTop, scrollStreamIntoView, scrollContainerRef])
+
+  return (
+    <div ref={streamBlockRef} className="mx-auto mb-2 w-full max-w-full">
+      <StreamingAnswerPreview
+        streamPreview={streamPreview}
+        answerStyle={answerStyle}
+        teleprompter={overlayTeleprompter}
+        fontSize={fontSize}
+        heardText={heardText}
+        onAbort={onAbort}
+      />
+    </div>
+  )
+})
+
 const ResponsePanelInner = React.forwardRef(function ResponsePanel(
   {
     messages,
@@ -814,35 +912,13 @@ const ResponsePanelInner = React.forwardRef(function ResponsePanel(
     overlayTeleprompter = false,
     overlayAnswerPinToTop = true,
     overlayAnswerAutoScroll = true,
-    streamPreview = '',
-    activeAskSource = null,
-    sessionOn = false,
     onAbort,
     onRetry,
   },
   ref,
 ) {
   const scrollRef = useRef(null)
-  const answerAnchorRef = useRef(null)
-  const streamBlockRef = useRef(null)
   const previousThinkingRef = useRef(false)
-
-  /** Keep the full streaming answer visible (phone-style), not pinned at scrollTop=0. */
-  const scrollStreamIntoView = useCallback(() => {
-    if (!overlayAnswerAutoScroll) return
-    const container = scrollRef.current
-    const block = streamBlockRef.current
-    if (!container || !block) return
-    requestAnimationFrame(() => {
-      requestAnimationFrame(() => {
-        const blockBottom = block.offsetTop + block.offsetHeight
-        const viewBottom = container.scrollTop + container.clientHeight
-        if (blockBottom > viewBottom - 12) {
-          container.scrollTop = Math.max(0, blockBottom - container.clientHeight + 12)
-        }
-      })
-    })
-  }, [overlayAnswerAutoScroll])
 
   const scrollByShortcut = useCallback((direction) => {
     const el = scrollRef.current
@@ -850,7 +926,14 @@ const ResponsePanelInner = React.forwardRef(function ResponsePanel(
     const max = Math.max(0, el.scrollHeight - el.clientHeight)
     const normalized = Number(direction) < 0 ? -1 : 1
     const step = Math.max(96, Math.min(220, el.clientHeight * 0.28))
+    // User-initiated nudge — briefly opt into smooth easing (auto-follow during
+    // streaming stays instant via the base .response-scroll rule).
+    el.classList.add('response-scroll--smooth')
     el.scrollTop = Math.max(0, Math.min(max, el.scrollTop + normalized * step))
+    window.clearTimeout(el._smoothScrollResetTimer)
+    el._smoothScrollResetTimer = window.setTimeout(() => {
+      el.classList.remove('response-scroll--smooth')
+    }, 260)
   }, [])
 
   useEffect(() => {
@@ -870,15 +953,7 @@ const ResponsePanelInner = React.forwardRef(function ResponsePanel(
     [ref],
   )
 
-  const turns = useMemo(() => {
-    const raw = groupMessagesIntoTurns(messages)
-    return raw.map((t) => ({
-      ...t,
-      /** Prefer assistant/error — set by main from the real request payload. */
-      askSource: t.replies.find((r) => r.askSource)?.askSource || t.user?.askSource || null,
-      screenContext: t.replies.find((r) => r.screenContext)?.screenContext || null,
-    }))
-  }, [messages])
+  const turns = useMemo(() => groupMessagesIntoTurns(messages), [messages])
   const hasActiveReply = !!isThinking
 
   const activeHeard = useMemo(() => {
@@ -893,15 +968,10 @@ const ResponsePanelInner = React.forwardRef(function ResponsePanel(
     const streamStarted = isThinking && !previousThinkingRef.current
     previousThinkingRef.current = isThinking
     if (!streamStarted) return
-    if (overlayAnswerAutoScroll) scrollStreamIntoView()
-    else if (scrollRef.current && overlayAnswerPinToTop) scrollRef.current.scrollTop = 0
-  }, [isThinking, overlayAnswerPinToTop, overlayAnswerAutoScroll, scrollStreamIntoView])
-
-  useEffect(() => {
-    if (!isThinking) return
-    if (overlayAnswerAutoScroll) scrollStreamIntoView()
-    else if (scrollRef.current && overlayAnswerPinToTop) scrollRef.current.scrollTop = 0
-  }, [streamPreview, isThinking, overlayAnswerAutoScroll, overlayAnswerPinToTop, scrollStreamIntoView])
+    if (!overlayAnswerAutoScroll && scrollRef.current && overlayAnswerPinToTop) {
+      scrollRef.current.scrollTop = 0
+    }
+  }, [isThinking, overlayAnswerPinToTop, overlayAnswerAutoScroll])
 
   /** Natively-style: one scrollable session feed — newest exchange at top, all replies kept. */
   const visibleTurns = useMemo(() => {
@@ -930,45 +1000,36 @@ const ResponsePanelInner = React.forwardRef(function ResponsePanel(
       >
       <div className="w-full px-3 pb-2 pt-3">
         {hasActiveReply && isThinking && (
-          <div ref={streamBlockRef} className="mx-auto mb-2 w-full max-w-full">
-            <StreamingAnswerPreview
-              streamPreview={streamPreview}
-              answerStyle={answerStyle}
-              teleprompter={overlayTeleprompter}
-              fontSize={fontSize}
-              heardText={activeHeard?.text}
-              onAbort={onAbort}
-            />
-          </div>
+          <ActiveStreamBlock
+            scrollContainerRef={scrollRef}
+            overlayAnswerAutoScroll={overlayAnswerAutoScroll}
+            overlayAnswerPinToTop={overlayAnswerPinToTop}
+            answerStyle={answerStyle}
+            overlayTeleprompter={overlayTeleprompter}
+            fontSize={fontSize}
+            heardText={
+              // Skip when it's the same text as the just-added user bubble for this turn —
+              // avoids showing the question twice while a reply streams in.
+              activeHeard?.text && activeHeard.text === turns[turns.length - 1]?.user?.text
+                ? undefined
+                : activeHeard?.text
+            }
+            onAbort={onAbort}
+          />
         )}
         {messages.length === 0 && !isThinking && (
-          <div className="crystal-muted flex min-h-[14rem] flex-col items-center justify-center px-4 py-8 text-center">
-            <div
-              className="mb-3 flex h-12 w-12 items-center justify-center rounded-full border-2"
-              style={{ borderColor: 'rgba(180,225,255,0.22)' }}
-            >
-              <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5">
+          <div className="crystal-muted animate-answer-in flex min-h-[10rem] flex-col items-center justify-center px-4 py-10 text-center">
+            <div className="crystal-empty-icon-ring flex h-11 w-11 items-center justify-center rounded-full">
+              <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" aria-hidden>
                 <path d="M12 2a3 3 0 0 0-3 3v7a3 3 0 0 0 6 0V5a3 3 0 0 0-3-3z" />
                 <path d="M19 10v2a7 7 0 0 1-14 0v-2" />
               </svg>
             </div>
-            <p className="crystal-label text-sm font-medium">Start Listen, then ask for help</p>
-            <p className="mt-2 max-w-[18rem] text-xs leading-relaxed crystal-sub">
-              <strong className="font-medium text-white/75">Ctrl+Enter</strong> — help from screen or audio
-              <br />
-              <strong className="font-medium text-white/75">Enter</strong> in the box — read screen
-              <br />
-              Type a question for a direct answer
-            </p>
-            {!sessionOn && (
-              <p className="crystal-sublabel mt-3 text-[11px] normal-case">Turn on Listen in the bar above to capture meeting audio.</p>
-            )}
           </div>
         )}
 
         <div
-          ref={answerAnchorRef}
-          className={`mx-auto w-full max-w-full${
+          className={`response-turns-list mx-auto w-full max-w-full${
             hasActiveReply && isThinking && visibleTurns.length > 0 ? ' crystal-divider mt-6 border-t pt-6' : ''
           }`}
         >

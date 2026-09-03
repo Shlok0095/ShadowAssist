@@ -85,7 +85,8 @@ export default function MeetingDetailsModal({ sessionId, onClose, followUpDraftE
   return (
     <div className="fixed inset-0 z-[200] flex items-center justify-center bg-black/60 p-4 backdrop-blur-sm">
       <div
-        className="flex max-h-[90vh] w-full max-w-3xl flex-col overflow-hidden rounded-2xl border border-white/10 bg-[#0c0c0e] shadow-2xl"
+        className="flex max-h-[90vh] w-full max-w-3xl flex-col overflow-hidden rounded-2xl border border-white/10 bg-[#0c0c0e]"
+        style={{ boxShadow: 'var(--shadow-elevation-3)' }}
         role="dialog"
         aria-modal="true"
         aria-labelledby="meeting-details-title"
@@ -115,7 +116,7 @@ export default function MeetingDetailsModal({ sessionId, onClose, followUpDraftE
           ) : (
             <div className="space-y-5">
               <section>
-                <h3 className="text-[11px] font-semibold uppercase tracking-wider text-zinc-500">Summary</h3>
+                <h3 className="text-[11.5px] font-semibold text-zinc-500">Summary</h3>
                 <div className="mt-2 rounded-lg border border-white/[0.06] bg-black/25 p-3">
                   <SimpleMarkdown text={session.summary} />
                 </div>
@@ -123,7 +124,7 @@ export default function MeetingDetailsModal({ sessionId, onClose, followUpDraftE
 
               {actionItems.length > 0 ? (
                 <section>
-                  <h3 className="text-[11px] font-semibold uppercase tracking-wider text-zinc-500">Action items</h3>
+                  <h3 className="text-[11.5px] font-semibold text-zinc-500">Action items</h3>
                   <ul className="mt-2 list-inside list-disc space-y-1 text-[13px] text-zinc-300">
                     {actionItems.map((item, i) => (
                       <li key={i}>{item}</li>
@@ -133,7 +134,7 @@ export default function MeetingDetailsModal({ sessionId, onClose, followUpDraftE
               ) : null}
 
               <section>
-                <h3 className="text-[11px] font-semibold uppercase tracking-wider text-zinc-500">Speaker labels</h3>
+                <h3 className="text-[11.5px] font-semibold text-zinc-500">Speaker labels</h3>
                 <p className="mt-1 text-[11px] text-zinc-600">Rename how speakers appear in the transcript below.</p>
                 <div className="mt-2 grid grid-cols-1 gap-3 sm:grid-cols-2">
                   <label className="block">
@@ -160,7 +161,7 @@ export default function MeetingDetailsModal({ sessionId, onClose, followUpDraftE
               </section>
 
               <section>
-                <h3 className="text-[11px] font-semibold uppercase tracking-wider text-zinc-500">
+                <h3 className="text-[11.5px] font-semibold text-zinc-500">
                   Transcript ({lines.length || session.transcriptLineCount || 0} lines)
                 </h3>
                 <div className="mt-2 max-h-64 overflow-y-auto rounded-lg border border-white/[0.06] bg-black/25 p-3 font-mono text-[11px] leading-relaxed text-zinc-400">
@@ -186,7 +187,7 @@ export default function MeetingDetailsModal({ sessionId, onClose, followUpDraftE
 
               {Array.isArray(session.exchanges) && session.exchanges.length > 0 ? (
                 <section>
-                  <h3 className="text-[11px] font-semibold uppercase tracking-wider text-zinc-500">Assistant Q&A</h3>
+                  <h3 className="text-[11.5px] font-semibold text-zinc-500">Assistant Q&A</h3>
                   <div className="mt-2 space-y-2">
                     {session.exchanges.map((ex, i) => (
                       <div key={i} className="rounded-lg border border-white/[0.06] bg-black/20 p-3 text-[12px]">

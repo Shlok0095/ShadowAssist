@@ -7,6 +7,7 @@ import { OVERLAY_POSITION_PRESETS } from './settingsConstants'
 import { UI_ACCENT_THEMES, normalizeUiAccentId } from '../shared/uiAccentThemes'
 import {
   SegmentedControl,
+  SettingsCollapsible,
   SettingsFieldHint,
   SettingsFieldLabel,
   SettingsPage,
@@ -72,16 +73,13 @@ export default function DisplaySettingsPanel({
   const { name } = useBrand()
   return (
     <SettingsPage title="General" description="Startup, overlay, privacy, and diagnostics.">
-      <SettingsSection title="Startup">
+      <SettingsSection title="Startup & privacy">
         <SettingsRow
           label="Open at login"
           hint={`Start ${name} in the tray when you sign in to Windows.`}
         >
           <ToggleSwitch checked={openAtLoginUi} onChange={onOpenAtLoginChange} />
         </SettingsRow>
-      </SettingsSection>
-
-      <SettingsSection title="Privacy & retention">
         <SettingsRow
           label="Do not save meetings"
           hint="When on, Stop Listen will not write session recaps or long-term memory entries."
@@ -94,21 +92,6 @@ export default function DisplaySettingsPanel({
         >
           <ToggleSwitch checked={stealthModeUi} onChange={onStealthModeChange} />
         </SettingsRow>
-      </SettingsSection>
-
-      <SettingsSection title="Diagnostics">
-        <SettingsRow
-          label="Verbose debug logging"
-          hint="Captures main-process and overlay/settings console output to veilassist.log. A toast with the file path appears when enabled."
-        >
-          <div className="flex items-center gap-2">
-            <AppIcon icon={Terminal} size={15} className="text-zinc-500" aria-hidden />
-            <ToggleSwitch checked={verboseDebugLogging} onChange={onVerboseDebugLoggingChange} />
-          </div>
-        </SettingsRow>
-        <button type="button" onClick={onOpenLogFile} className="nat-btn-secondary mt-1 px-4 py-2 text-[12px]">
-          Open log file
-        </button>
       </SettingsSection>
 
       <SettingsSection title="Overlay appearance">
@@ -135,21 +118,88 @@ export default function DisplaySettingsPanel({
             })}
           </div>
         </div>
-      </SettingsSection>
 
-      <SettingsSection title="Overlay behavior">
-        <SettingsRow
-          label="Mouse passthrough"
-          hint="When on, clicks pass through transparent areas behind the overlay. Hover the notch or panel to interact. Toggle anytime with Ctrl+Shift+P."
-        >
-          <ToggleSwitch checked={overlayMousePassthroughUi} onChange={onOverlayMousePassthroughChange} />
-        </SettingsRow>
-        <SettingsRow
-          label="Hide from taskbar"
-          hint="Force-hide the app from the Windows taskbar even in Visible mode. Invisible mode always hides it. Only one taskbar icon (overlay) is used when shown."
-        >
-          <ToggleSwitch checked={hideFromTaskbarUi} onChange={onHideFromTaskbarChange} />
-        </SettingsRow>
+        <div className="mt-4">
+          <div className="mb-2 flex flex-wrap items-center justify-between gap-2">
+            <SettingsFieldLabel>Window opacity</SettingsFieldLabel>
+            <span className="font-mono text-xs text-zinc-400">{Math.round(overlayOpacityUi * 100)}%</span>
+          </div>
+          <SettingsFieldHint>The overlay updates live as you drag the slider.</SettingsFieldHint>
+
+          <div className="mb-2 flex flex-wrap gap-2">
+            {[
+              { label: 'Subtle', pct: 65 },
+              { label: 'Balanced', pct: 85 },
+              { label: 'Clear', pct: 92 },
+            ].map((p) => (
+              <button
+                key={p.pct}
+                type="button"
+                onClick={() => onOpacityPreset(p.pct)}
+                className={`settings-chip settings-chip-sm !normal-case ${
+                  Math.round(overlayOpacityUi * 100) === p.pct ? 'settings-chip-active' : ''
+                }`}
+              >
+                {p.label}
+              </button>
+            ))}
+          </div>
+
+          <input
+            type="range"
+            min={35}
+            max={100}
+            value={Math.round(overlayOpacityUi * 100)}
+            onChange={(e) => onOverlayOpacityChange(Number(e.target.value) / 100)}
+            className="h-2 w-full cursor-pointer"
+            style={{ accentColor: '#fafafa' }}
+          />
+        </div>
+
+        <div className="mt-4">
+          <SettingsFieldLabel>Font size</SettingsFieldLabel>
+          <SettingsFieldHint>Used when auto-scroll answers is off.</SettingsFieldHint>
+          <SettingsSelect value={overlayFontUi} onChange={(e) => onOverlayFontChange(e.target.value)} fullWidth>
+            <option value="small">Small</option>
+            <option value="medium">Medium</option>
+            <option value="large">Large</option>
+          </SettingsSelect>
+        </div>
+
+        <div className="mt-4 [&>.nat-row]:border-b-0 [&>.nat-row]:p-0">
+          <SettingsRow
+            label="Live transcript panel"
+            hint="Show Me and Participant columns during Listen."
+          >
+            <ToggleSwitch checked={overlayLiveTranscriptUi} onChange={onLiveTranscriptChange} />
+          </SettingsRow>
+        </div>
+
+        <div className="mt-3 [&>.nat-row]:border-b-0 [&>.nat-row]:p-0">
+          <SettingsRow
+            label="Auto-scroll transcript"
+            hint="Follow new speech in the live transcript columns."
+          >
+            <ToggleSwitch checked={overlayTranscriptAutoScrollUi} onChange={onTranscriptAutoScrollChange} />
+          </SettingsRow>
+        </div>
+
+        <div className="mt-4">
+          <SettingsFieldLabel>Snap position</SettingsFieldLabel>
+          <SettingsFieldHint>Primary monitor placement for the expanded panel.</SettingsFieldHint>
+          <div className="flex flex-wrap gap-2">
+            {OVERLAY_POSITION_PRESETS.map((p) => (
+              <button
+                key={p}
+                type="button"
+                onClick={() => onSnapOverlayPreset(p)}
+                className="settings-chip settings-chip-sm !normal-case"
+              >
+                {p.replace(/-/g, ' ')}
+              </button>
+            ))}
+          </div>
+        </div>
       </SettingsSection>
 
       <SettingsSection title="Answers & screenshots" description="Answer format, language, and screen context for Ask AI.">
@@ -207,14 +257,13 @@ export default function DisplaySettingsPanel({
             ))}
           </SettingsSelect>
         </div>
-        <div className="mt-4 flex items-start justify-between gap-4 rounded-lg border border-white/[0.07] bg-white/[0.025] px-3 py-3">
-          <div>
-            <SettingsFieldLabel>Conversation follow-ups</SettingsFieldLabel>
-            <p className="text-[11px] leading-relaxed text-zinc-500">
-              Resolve short continuations against the most relevant question and answer in this session.
-            </p>
-          </div>
-          <ToggleSwitch checked={conversationFollowUpsEnabled} onChange={onConversationFollowUpsChange} />
+        <div className="mt-4 [&>.nat-row]:border-b-0 [&>.nat-row]:p-0">
+          <SettingsRow
+            label="Conversation follow-ups"
+            hint="Resolve short continuations against the most relevant question and answer in this session."
+          >
+            <ToggleSwitch checked={conversationFollowUpsEnabled} onChange={onConversationFollowUpsChange} />
+          </SettingsRow>
         </div>
         <div className="mt-4">
           <SettingsFieldLabel>Answer history</SettingsFieldLabel>
@@ -228,124 +277,78 @@ export default function DisplaySettingsPanel({
             ]}
           />
         </div>
+        <div className="mt-4 [&>.nat-row]:border-b-0 [&>.nat-row]:p-0">
+          <SettingsRow
+            label="Auto-scroll answers"
+            hint="Keep the streaming answer in view. Text size follows Answer length when on."
+          >
+            <ToggleSwitch checked={overlayAnswerAutoScrollUi} onChange={onOverlayAnswerAutoScrollChange} />
+          </SettingsRow>
+        </div>
+        <div className="mt-4 [&>.nat-row]:border-b-0 [&>.nat-row]:p-0">
+          <SettingsRow
+            label="Auto-answer questions"
+            hint="After speech silence, automatically Ask AI. With Auto-scroll answers also on, uses phone-style utterance gates, follow-ups, and longer speak-hold while you read the answer."
+          >
+            <ToggleSwitch checked={assistAutoTriggerUi} onChange={onAssistAutoTriggerChange} />
+          </SettingsRow>
+        </div>
+        <div className="mt-3" aria-disabled={!assistAutoTriggerUi} style={!assistAutoTriggerUi ? { opacity: 0.5 } : undefined}>
+          <SettingsFieldLabel>Question detection</SettingsFieldLabel>
+          <SettingsFieldHint>High triggers on short questions. Low waits for longer utterances.</SettingsFieldHint>
+          <SegmentedControl
+            value={questionDetectionUi}
+            onChange={onQuestionDetectionChange}
+            disabled={!assistAutoTriggerUi}
+            options={QUESTION_DETECTION_LEVELS.map((o) => ({ id: o.value, label: o.label }))}
+          />
+        </div>
         <p className="mt-4 text-[12px] leading-relaxed text-zinc-500">
           Screen capture: <strong className="font-semibold text-zinc-300">Ctrl+Enter</strong> attaches a screenshot to Ask.
           Queue extra shots with <strong className="font-semibold text-zinc-300">Ctrl+H</strong> (Keybinds).
         </p>
       </SettingsSection>
 
-      <SettingsSection title="Interview session" description="Auto-answer and overlay scroll during live calls.">
+      <SettingsSection title="Behavior">
         <SettingsRow
-          label="Auto-answer questions"
-          hint="After speech silence, automatically Ask AI."
+          label="Mouse passthrough"
+          hint="When on, clicks pass through the overlay until you hover the notch or panel. When off, only the notch, panel, and footer capture clicks — transparent areas still pass through. Toggle with Ctrl+Shift+P."
         >
-          <ToggleSwitch checked={assistAutoTriggerUi} onChange={onAssistAutoTriggerChange} />
-        </SettingsRow>
-
-        <div className={assistAutoTriggerUi ? '' : 'opacity-50 pointer-events-none'}>
-          <SettingsFieldLabel>Question detection</SettingsFieldLabel>
-          <SettingsFieldHint>High triggers on short questions. Low waits for longer utterances.</SettingsFieldHint>
-          <SegmentedControl
-            value={questionDetectionUi}
-            onChange={onQuestionDetectionChange}
-            options={QUESTION_DETECTION_LEVELS.map((o) => ({ id: o.value, label: o.label }))}
-          />
-        </div>
-
-        <SettingsRow
-          label="Auto-scroll answers"
-          hint="Keep the streaming answer in view. Text size follows Answer length when on."
-        >
-          <ToggleSwitch checked={overlayAnswerAutoScrollUi} onChange={onOverlayAnswerAutoScrollChange} />
+          <ToggleSwitch checked={overlayMousePassthroughUi} onChange={onOverlayMousePassthroughChange} />
         </SettingsRow>
       </SettingsSection>
 
-      <SettingsSection title="Overlay">
-        <div>
-          <div className="mb-2 flex flex-wrap items-center justify-between gap-2">
-            <SettingsFieldLabel>Window opacity</SettingsFieldLabel>
-            <span className="font-mono text-xs text-zinc-400">{Math.round(overlayOpacityUi * 100)}%</span>
-          </div>
-          <SettingsFieldHint>The overlay updates live as you drag the slider.</SettingsFieldHint>
-
-          <div className="mb-2 flex flex-wrap gap-2">
-            {[
-              { label: 'Subtle', pct: 65 },
-              { label: 'Balanced', pct: 85 },
-              { label: 'Clear', pct: 92 },
-            ].map((p) => (
-              <button
-                key={p.pct}
-                type="button"
-                onClick={() => onOpacityPreset(p.pct)}
-                className={`settings-chip settings-chip-sm !normal-case ${
-                  Math.round(overlayOpacityUi * 100) === p.pct ? 'settings-chip-active' : ''
-                }`}
-              >
-                {p.label}
-              </button>
-            ))}
-          </div>
-
-          <input
-            type="range"
-            min={35}
-            max={100}
-            value={Math.round(overlayOpacityUi * 100)}
-            onChange={(e) => onOverlayOpacityChange(Number(e.target.value) / 100)}
-            className="h-2 w-full cursor-pointer"
-            style={{ accentColor: '#fafafa' }}
-          />
+      <SettingsCollapsible
+        title="Diagnostics & advanced"
+        description="Logging, taskbar visibility, and answer pinning — power-user knobs, tucked out of the way."
+        icon={Terminal}
+      >
+        <div className="space-y-4">
+          <SettingsRow
+            label="Verbose debug logging"
+            hint="Captures main-process and overlay/settings console output to veilassist.log. A toast with the file path appears when enabled."
+          >
+            <div className="flex items-center gap-2">
+              <ToggleSwitch checked={verboseDebugLogging} onChange={onVerboseDebugLoggingChange} />
+            </div>
+          </SettingsRow>
+          <button type="button" onClick={onOpenLogFile} className="nat-btn-secondary mt-1 px-4 py-2 text-[12px]">
+            Open log file
+          </button>
+          <SettingsRow
+            label="Hide from taskbar"
+            hint="Force-hide the app from the Windows taskbar even in Visible mode. Invisible mode always hides it. Only one taskbar icon (overlay) is used when shown."
+          >
+            <ToggleSwitch checked={hideFromTaskbarUi} onChange={onHideFromTaskbarChange} />
+          </SettingsRow>
+          <SettingsRow
+            label="Pin answers to top"
+            hint="While the AI streams, keep the latest answer at the top unless you scroll away."
+          >
+            <ToggleSwitch checked={overlayAnswerPinToTopUi} onChange={onAnswerPinToTopChange} />
+          </SettingsRow>
         </div>
-
-        <div>
-          <SettingsFieldLabel>Font size</SettingsFieldLabel>
-          <SettingsFieldHint>Used when auto-scroll answers is off.</SettingsFieldHint>
-          <SettingsSelect value={overlayFontUi} onChange={(e) => onOverlayFontChange(e.target.value)} fullWidth>
-            <option value="small">Small</option>
-            <option value="medium">Medium</option>
-            <option value="large">Large</option>
-          </SettingsSelect>
-        </div>
-
-        <SettingsRow
-          label="Live transcript panel"
-          hint="Show Me and Participant columns during Listen."
-        >
-          <ToggleSwitch checked={overlayLiveTranscriptUi} onChange={onLiveTranscriptChange} />
-        </SettingsRow>
-
-        <SettingsRow
-          label="Auto-scroll transcript"
-          hint="Follow new speech in the live transcript columns."
-        >
-          <ToggleSwitch checked={overlayTranscriptAutoScrollUi} onChange={onTranscriptAutoScrollChange} />
-        </SettingsRow>
-
-        <SettingsRow
-          label="Pin answers to top"
-          hint="While the AI streams, keep the latest answer at the top unless you scroll away."
-        >
-          <ToggleSwitch checked={overlayAnswerPinToTopUi} onChange={onAnswerPinToTopChange} />
-        </SettingsRow>
-
-        <div>
-          <SettingsFieldLabel>Snap position</SettingsFieldLabel>
-          <SettingsFieldHint>Primary monitor placement for the expanded panel.</SettingsFieldHint>
-          <div className="flex flex-wrap gap-2">
-            {OVERLAY_POSITION_PRESETS.map((p) => (
-              <button
-                key={p}
-                type="button"
-                onClick={() => onSnapOverlayPreset(p)}
-                className="settings-chip settings-chip-sm !normal-case"
-              >
-                {p.replace(/-/g, ' ')}
-              </button>
-            ))}
-          </div>
-        </div>
-      </SettingsSection>
+      </SettingsCollapsible>
     </SettingsPage>
   )
 }

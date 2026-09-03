@@ -39,10 +39,12 @@ export function stripMarkdownForStreamDisplay(raw) {
 
 /**
  * First non-empty paragraph as takeaway, remainder as body (Natively teleprompter split).
- * @param {string} raw
+ * Accepts text already stripped by `stripMarkdownForStreamDisplay` — pass the raw markdown
+ * only if it hasn't been stripped yet elsewhere in the same render.
+ * @param {string} stripped
  */
-export function splitStreamTakeaway(raw) {
-  const t = stripMarkdownForStreamDisplay(raw)
+export function splitStreamTakeaway(stripped) {
+  const t = String(stripped || '')
   if (!t.trim()) return { takeaway: '', rest: '' }
 
   const lines = t.split('\n')

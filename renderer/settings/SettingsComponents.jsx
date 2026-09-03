@@ -43,6 +43,17 @@ export function SettingsSection({ title, description, children, className = '' }
 }
 
 export function SettingsRow({ label, hint, children, htmlFor }) {
+  const autoId = useId()
+  const labelId = `${autoId}-label`
+  // Give the control an accessible name for free when it's a single element
+  // (the common case: a ToggleSwitch/Select/etc.) that doesn't already declare one.
+  const canAutoLabel =
+    !htmlFor &&
+    React.isValidElement(children) &&
+    !children.props['aria-label'] &&
+    !children.props['aria-labelledby']
+  const control = canAutoLabel ? React.cloneElement(children, { 'aria-labelledby': labelId }) : children
+
   return (
     <div className="nat-row">
       <div className="min-w-0 flex-1 pr-2">
@@ -51,7 +62,7 @@ export function SettingsRow({ label, hint, children, htmlFor }) {
             {label}
           </label>
         ) : (
-          <span className="settings-row-label">
+          <span id={canAutoLabel ? labelId : undefined} className="settings-row-label">
             {label}
           </span>
         )}
@@ -61,7 +72,7 @@ export function SettingsRow({ label, hint, children, htmlFor }) {
           </p>
         ) : null}
       </div>
-      <div className="w-full shrink-0 sm:w-auto">{children}</div>
+      <div className="w-full shrink-0 sm:w-auto">{control}</div>
     </div>
   )
 }
@@ -94,7 +105,7 @@ export function SectionTitle({ children, as: Tag = 'h2', className = '' }) {
   )
 }
 
-export const ToggleSwitch = memo(function ToggleSwitch({ checked, onChange, disabled }) {
+export const ToggleSwitch = memo(function ToggleSwitch({ checked, onChange, disabled, ...aria }) {
   return (
     <button
       type="button"
@@ -103,6 +114,7 @@ export const ToggleSwitch = memo(function ToggleSwitch({ checked, onChange, disa
       onClick={() => !disabled && onChange(!checked)}
       disabled={disabled}
       className="nat-toggle disabled:cursor-not-allowed disabled:opacity-40"
+      {...aria}
     >
       <span className="nat-toggle-knob" />
     </button>
@@ -200,9 +212,40 @@ export const ModelInput = memo(function ModelInput({ label, value, onChange, onC
   )
 })
 
-export function SegmentedControl({ options, value, onChange, className = '' }) {
+export function SettingsLoadingSkeleton() {
   return (
-    <div className={`settings-segmented ${className}`} role="group">
+    <div className="settings-loading-skeleton mx-auto max-w-3xl space-y-5 animate-pulse" aria-busy="true" aria-label="Loading settings">
+      <div className="h-8 w-48 rounded-lg bg-white/[0.06]" />
+      <div className="glass-panel space-y-4 p-5">
+        <div className="h-4 w-32 rounded bg-white/[0.06]" />
+        <div className="h-10 w-full rounded-lg bg-white/[0.04]" />
+        <div className="h-10 w-full rounded-lg bg-white/[0.04]" />
+      </div>
+      <div className="glass-panel space-y-4 p-5">
+        <div className="h-4 w-40 rounded bg-white/[0.06]" />
+        <div className="h-10 w-full rounded-lg bg-white/[0.04]" />
+      </div>
+    </div>
+  )
+}
+
+export function SaveStatusBadge({ status = 'idle' }) {
+  if (status === 'saving') {
+    return <span className="settings-save-badge settings-save-badge-saving">Saving…</span>
+  }
+  if (status === 'saved') {
+    return <span className="settings-save-badge settings-save-badge-saved">Saved</span>
+  }
+  return null
+}
+
+export function SegmentedControl({ options, value, onChange, disabled = false, className = '' }) {
+  return (
+    <div
+      className={`settings-segmented ${disabled ? 'opacity-45 pointer-events-none' : ''} ${className}`}
+      role="radiogroup"
+      aria-disabled={disabled || undefined}
+    >
       {options.map((opt) => {
         const id = typeof opt === 'string' ? opt : opt.id
         const label = typeof opt === 'string' ? opt : opt.label
@@ -212,6 +255,8 @@ export function SegmentedControl({ options, value, onChange, className = '' }) {
             type="button"
             role="radio"
             aria-checked={value === id}
+            disabled={disabled}
+            tabIndex={disabled ? -1 : undefined}
             onClick={() => onChange(id)}
             className={`settings-chip settings-chip-sm !normal-case ${value === id ? 'settings-chip-active' : ''}`}
           >
@@ -223,6 +268,56 @@ export function SegmentedControl({ options, value, onChange, className = '' }) {
   )
 }
 
+/**
+ * Frameless confirmation dialog for destructive settings actions (spec: never a
+ * bare native confirm() in this window). Renders nothing when closed.
+ */
+export function ConfirmDialog({
+  open,
+  title,
+  description,
+  confirmLabel = 'Confirm',
+  cancelLabel = 'Cancel',
+  destructive = true,
+  onConfirm,
+  onCancel,
+}) {
+  if (!open) return null
+  return (
+    <div className="settings-modal-overlay" role="presentation" onMouseDown={onCancel}>
+      <div
+        className="settings-modal-card"
+        role="alertdialog"
+        aria-modal="true"
+        aria-labelledby="settings-confirm-title"
+        aria-describedby={description ? 'settings-confirm-desc' : undefined}
+        onMouseDown={(e) => e.stopPropagation()}
+      >
+        <h3 id="settings-confirm-title" className="settings-modal-title">
+          {title}
+        </h3>
+        {description ? (
+          <p id="settings-confirm-desc" className="settings-modal-desc">
+            {polishCopy(description)}
+          </p>
+        ) : null}
+        <div className="settings-modal-actions">
+          <button type="button" className="btn-ghost" onClick={onCancel} autoFocus>
+            {cancelLabel}
+          </button>
+          <button
+            type="button"
+            className={destructive ? 'btn-danger' : 'btn-glow'}
+            onClick={onConfirm}
+          >
+            {confirmLabel}
+          </button>
+        </div>
+      </div>
+    </div>
+  )
+}
+
 /** @typedef {import('lucide-react').LucideIcon} LucideIcon */
 
 export function SettingsCollapsible({
@@ -230,12 +325,13 @@ export function SettingsCollapsible({
   description,
   badge = null,
   defaultOpen = false,
+  forceOpen = false,
   icon: HeaderIcon = null,
   className = '',
   children,
 }) {
   return (
-    <details className={`glass-panel group overflow-hidden ${className}`.trim()} open={defaultOpen || undefined}>
+    <details className={`glass-panel group overflow-hidden ${className}`.trim()} open={forceOpen || defaultOpen || undefined}>
       <summary className="flex cursor-pointer list-none items-start gap-3 px-5 py-4 transition-colors [&::-webkit-details-marker]:hidden">
         {HeaderIcon ? (
           <span

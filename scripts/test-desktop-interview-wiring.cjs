@@ -216,10 +216,51 @@ if (overlayApp.includes('assistAutoTriggerRef.current') && overlayApp.includes('
   fail('overlay App.jsx gates self-readback on auto-answer')
 }
 
+if (
+  overlayApp.includes('isPhoneAutoParity')
+  && overlayApp.includes('isUtteranceReadyForAutoAnswer')
+  && overlayApp.includes('overlayAnswerAutoScrollRef')
+  && overlayApp.includes('estimatedAnswerHoldMs')
+  && overlayApp.includes('classifyPostAnswerSpeech')
+) {
+  pass('overlay App.jsx wires phone-parity auto-answer when both toggles on')
+} else {
+  fail('overlay App.jsx wires phone-parity auto-answer when both toggles on')
+}
+
+if (overlayApp.includes('isPhoneAutoParity()') && /if \(isPhoneAutoParity\(\)\) return/.test(overlayApp)) {
+  pass('overlay App.jsx disables speech-failsafe under phone parity')
+} else {
+  fail('overlay App.jsx disables speech-failsafe under phone parity')
+}
+
 if (displayPanel.includes('Custom instructions') && displayPanel.includes('Add filler words to sound natural')) {
   pass('DisplaySettingsPanel custom instructions field (General)')
 } else {
   fail('DisplaySettingsPanel custom instructions field (General)')
+}
+
+// 12. Follow-up classification strips the already-answered question before classifying —
+// otherwise a combined "Q1 ... Q2" buffer (STT kept running during generation) gets
+// misread as a readback/repeat of Q1 and the genuine follow-up (Q2) is silently dropped.
+if (
+  overlayApp.includes('extractFollowUpAfterAnswer')
+  && /extractFollowUpAfterAnswer\(answeredQ, rawLeftover\)/.test(overlayApp)
+) {
+  pass('overlay App.jsx strips answered question before classifying post-answer speech')
+} else {
+  fail('overlay App.jsx strips answered question before classifying post-answer speech')
+}
+
+// 13. Continuation-kind follow-ups ("and how did you use it?") fire as soon as the ask
+// pipeline frees up instead of waiting out the full multi-second readback hold.
+if (
+  overlayApp.includes('pendingFollowUpImmediateRef')
+  && /if \(!pendingFollowUpImmediateRef\.current && isStillReadingAnswerAloud\(\)\) return/.test(overlayApp)
+) {
+  pass('overlay App.jsx fires continuation follow-ups immediately, bypassing the readback hold')
+} else {
+  fail('overlay App.jsx fires continuation follow-ups immediately, bypassing the readback hold')
 }
 
 const failed = results.filter((r) => !r.ok)

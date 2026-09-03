@@ -29,6 +29,9 @@
   --accent-rgb: 228 228 231;
   --accent-mid-rgb: 161 161 170;
   --accent-light-rgb: 250 250 250;
+  /* Semantic feedback accents — saved/success state, destructive actions */
+  --success-rgb: 74 222 128;
+  --danger-rgb: 239 68 68;
 }
 
 html {
@@ -81,8 +84,8 @@ html {
   scrollbar-width: thin;
   scrollbar-color: rgba(255, 255, 255, 0.15) transparent;
   background: var(--bg-main);
-  scroll-padding-bottom: 24px;
-  padding-bottom: 2rem;
+  scroll-padding-bottom: var(--space-6);
+  padding-bottom: var(--space-8);
 }
 
 .settings-scroll-outer::-webkit-scrollbar {
@@ -91,7 +94,7 @@ html {
 
 .settings-scroll-outer::-webkit-scrollbar-thumb {
   background: rgba(255, 255, 255, 0.12);
-  border-radius: 999px;
+  border-radius: var(--radius-pill);
 }
 
 .settings-scroll-outer::-webkit-scrollbar-thumb:hover {
@@ -111,11 +114,11 @@ html {
   flex-direction: column;
   background: var(--bg-sidebar);
   border-right: 1px solid var(--border-subtle);
-  padding: 16px 12px;
+  padding: var(--space-4) var(--space-3);
 }
 
 .settings-nav-title {
-  padding: 4px 12px 12px;
+  padding: var(--space-1) var(--space-3) var(--space-3);
   font-size: 15px;
   font-weight: 600;
   color: var(--text-primary);
@@ -135,16 +138,16 @@ html {
   display: flex;
   width: 100%;
   align-items: center;
-  gap: 12px;
+  gap: var(--space-3);
   border: none;
-  border-radius: 8px;
-  padding: 8px 12px;
+  border-radius: var(--radius-sm);
+  padding: var(--space-2) var(--space-3);
   text-align: left;
   font-size: 13px;
   font-weight: 500;
   color: var(--text-secondary);
   background: transparent;
-  transition: background-color 0.15s ease, color 0.15s ease;
+  transition: var(--transition-interactive);
   cursor: pointer;
 }
 
@@ -153,44 +156,68 @@ html {
   background: rgba(255, 255, 255, 0.04);
 }
 
+.settings-nav-btn:active {
+  background: rgba(255, 255, 255, 0.07);
+}
+
 .settings-nav-btn-active {
   color: var(--text-primary);
   background: var(--bg-item-active);
 }
 
-.settings-nav-sub {
-  display: none;
+/* Group separator above each nav section (General / Appearance / Overlay / ...) */
+.settings-nav-group {
+  margin: var(--space-3) var(--space-3) var(--space-1);
+  font-size: 10px;
+  font-weight: 650;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--text-tertiary);
+}
+
+.settings-nav-group:first-child {
+  margin-top: 0;
 }
 
 .settings-nav-footer {
-  margin-top: 12px;
-  padding-top: 12px;
+  margin-top: var(--space-3);
+  padding-top: var(--space-3);
   border-top: 1px solid var(--border-subtle);
+}
+
+.settings-nav-autosave {
+  margin: 0 var(--space-3) var(--space-2);
+  font-size: 10.5px;
+  color: var(--text-tertiary);
 }
 
 .settings-nav-quit {
   display: flex;
   width: 100%;
   align-items: center;
-  gap: 12px;
+  gap: var(--space-3);
   border: none;
-  border-radius: 8px;
-  padding: 8px 12px;
+  border-radius: var(--radius-sm);
+  padding: var(--space-2) var(--space-3);
   font-size: 13px;
   font-weight: 500;
   color: #f87171;
   background: transparent;
   cursor: pointer;
-  transition: background-color 0.15s ease;
+  transition: background-color var(--transition-fast);
 }
 
 .settings-nav-quit:hover {
   background: rgba(239, 68, 68, 0.1);
 }
 
+.settings-nav-quit:active {
+  background: rgba(239, 68, 68, 0.16);
+}
+
 /* ── Page / section (Natively content area) ── */
 .settings-page-header {
-  margin-bottom: 20px;
+  margin-bottom: var(--space-5);
 }
 
 .settings-page-title {
@@ -201,7 +228,7 @@ html {
 }
 
 .settings-page-desc {
-  margin-top: 4px;
+  margin-top: var(--space-1);
   font-size: 13px;
   line-height: 1.45;
   color: var(--text-secondary);
@@ -219,7 +246,7 @@ html {
 }
 
 .settings-row-hint {
-  margin-top: 4px;
+  margin-top: var(--space-1);
   max-width: 36rem;
   font-size: 12px;
   line-height: 1.45;
@@ -228,7 +255,7 @@ html {
 }
 
 .settings-field-hint {
-  margin-bottom: 8px;
+  margin-bottom: var(--space-2);
   font-size: 12px;
   line-height: 1.45;
   color: var(--text-secondary);
@@ -236,7 +263,7 @@ html {
 }
 
 .settings-collapsible-desc {
-  margin-top: 4px;
+  margin-top: var(--space-1);
   font-size: 12px;
   line-height: 1.45;
   color: var(--text-secondary);
@@ -261,7 +288,7 @@ html {
 }
 
 .settings-guide-chapter {
-  border-radius: 12px;
+  border-radius: var(--radius-md);
   border: 1px solid var(--border-subtle);
   background: rgba(0, 0, 0, 0.22);
   padding: 16px 18px;
@@ -369,7 +396,7 @@ html {
 .help-guide-code {
   margin: 0;
   overflow-x: auto;
-  border-radius: 8px;
+  border-radius: var(--radius-sm);
   border: 1px solid var(--border-subtle);
   background: rgba(0, 0, 0, 0.35);
   padding: 10px 12px;
@@ -404,12 +431,12 @@ html {
 }
 
 /* Section card — flat bordered group like Natively general tab blocks */
-.glass-panel,
-.nat-section-card {
+.glass-panel {
   overflow: hidden;
-  border-radius: 12px;
+  border-radius: var(--radius-md);
   border: 1px solid var(--border-subtle);
   background: var(--bg-card);
+  box-shadow: var(--shadow-elevation-1);
 }
 
 .glass-panel > div:first-child {
@@ -417,7 +444,7 @@ html {
 }
 
 .nat-section-head {
-  padding: 16px 20px;
+  padding: var(--space-4) var(--space-5);
   border-bottom: 1px solid var(--border-subtle);
 }
 
@@ -428,14 +455,14 @@ html {
 }
 
 .nat-section-head-desc {
-  margin-top: 4px;
+  margin-top: var(--space-1);
   font-size: 12px;
   line-height: 1.45;
   color: var(--text-secondary);
 }
 
 .nat-section-body {
-  padding: 4px 20px 16px;
+  padding: var(--space-1) var(--space-5) var(--space-4);
 }
 
 /* Setting row — Natively flex justify-between py-4 border-b pattern */
@@ -443,9 +470,9 @@ html {
 .nat-row {
   display: flex;
   flex-direction: column;
-  gap: 12px;
+  gap: var(--space-3);
   border-bottom: 1px solid var(--border-subtle);
-  padding: 16px 0;
+  padding: var(--space-4) 0;
   background: transparent;
   border-radius: 0;
   box-shadow: none;
@@ -474,13 +501,13 @@ html {
 .input-shadow,
 .nat-input {
   width: 100%;
-  border-radius: 8px;
+  border-radius: var(--radius-sm);
   border: 1px solid var(--border-subtle);
   background: var(--bg-input);
-  padding: 10px 12px;
+  padding: 10px var(--space-3);
   font-size: 13px;
   color: var(--text-primary);
-  transition: border-color 0.15s ease;
+  transition: border-color var(--transition-fast), box-shadow var(--transition-fast);
 }
 
 .input-shadow::placeholder,
@@ -551,14 +578,14 @@ select.settings-select option {
   flex-wrap: wrap;
   gap: 2px;
   padding: 3px;
-  border-radius: 10px;
+  border-radius: var(--radius-sm);
   border: 1px solid var(--border-subtle);
   background: var(--bg-input);
 }
 
 .settings-segmented .settings-chip {
   border: none;
-  border-radius: 7px;
+  border-radius: calc(var(--radius-sm) - 3px);
   background: transparent;
   box-shadow: none;
 }
@@ -593,14 +620,14 @@ select.settings-select option {
 /* Buttons */
 .btn-ghost,
 .nat-btn-secondary {
-  border-radius: 8px;
+  border-radius: var(--radius-sm);
   border: 1px solid var(--border-subtle);
   background: var(--bg-component);
   padding: 8px 14px;
   font-size: 12px;
   font-weight: 500;
   color: var(--text-primary);
-  transition: background-color 0.15s ease, border-color 0.15s ease;
+  transition: var(--transition-interactive);
   backdrop-filter: none;
   box-shadow: none;
 }
@@ -613,7 +640,7 @@ select.settings-select option {
 
 .btn-glow,
 .nat-btn-primary {
-  border-radius: 8px;
+  border-radius: var(--radius-sm);
   border: 1px solid rgba(255, 255, 255, 0.12);
   background: #fafafa;
   padding: 10px 18px;
@@ -621,7 +648,7 @@ select.settings-select option {
   font-weight: 600;
   color: #09090b;
   box-shadow: none;
-  transition: background-color 0.15s ease, opacity 0.15s ease;
+  transition: background-color var(--transition-fast), opacity var(--transition-fast);
 }
 
 .btn-glow:hover,
@@ -629,9 +656,104 @@ select.settings-select option {
   background: #e4e4e7;
 }
 
+.btn-danger {
+  border-radius: var(--radius-sm);
+  border: 1px solid rgb(var(--danger-rgb) / 0.4);
+  background: rgb(var(--danger-rgb) / 0.16);
+  padding: var(--space-2) var(--space-4);
+  font-size: 13px;
+  font-weight: 600;
+  color: #fecaca;
+  transition: var(--transition-interactive);
+}
+
+.btn-danger:hover {
+  background: rgb(var(--danger-rgb) / 0.28);
+  border-color: rgb(var(--danger-rgb) / 0.55);
+}
+
+.btn-danger:active,
+.btn-glow:active,
+.nat-btn-primary:active,
+.btn-ghost:active,
+.nat-btn-secondary:active {
+  transform: translateY(1px);
+}
+
+.btn-danger:disabled,
+.btn-glow:disabled,
+.nat-btn-primary:disabled,
+.btn-ghost:disabled,
+.nat-btn-secondary:disabled,
+.settings-chip:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+  pointer-events: none;
+  transform: none;
+}
+
+/* Frameless confirm dialog — replaces native window.confirm() for destructive actions */
+.settings-modal-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 200;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: rgba(0, 0, 0, 0.55);
+  animation: settingsModalFadeIn var(--duration-fast) var(--ease-out) both;
+}
+
+.settings-modal-card {
+  width: min(380px, calc(100% - var(--space-8)));
+  border-radius: var(--radius-lg);
+  border: 1px solid var(--border-muted);
+  background: var(--bg-elevated);
+  box-shadow: var(--shadow-elevation-3);
+  padding: var(--space-6);
+  animation: settingsModalRiseIn var(--duration-base) var(--ease-out) both;
+}
+
+.settings-modal-title {
+  font-size: 15px;
+  font-weight: 650;
+  color: var(--text-primary);
+  margin-bottom: var(--space-2);
+}
+
+.settings-modal-desc {
+  font-size: 12.5px;
+  line-height: 1.5;
+  color: var(--text-secondary);
+  margin-bottom: var(--space-5);
+}
+
+.settings-modal-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: var(--space-2);
+}
+
+@keyframes settingsModalFadeIn {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+
+@keyframes settingsModalRiseIn {
+  from { opacity: 0; transform: translateY(6px) scale(0.98); }
+  to { opacity: 1; transform: translateY(0) scale(1); }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .settings-modal-overlay,
+  .settings-modal-card {
+    animation: none !important;
+  }
+}
+
 /* Chips / segmented */
 .settings-chip {
-  border-radius: 8px;
+  border-radius: var(--radius-sm);
   border: 1px solid var(--border-subtle);
   background: var(--bg-input);
   padding: 8px 12px;
@@ -676,9 +798,9 @@ select.settings-select option {
   flex-shrink: 0;
   cursor: pointer;
   align-items: center;
-  border-radius: 999px;
+  border-radius: var(--radius-pill);
   border: none;
-  transition: background-color 0.2s ease;
+  transition: background-color var(--transition-base);
 }
 
 .nat-toggle[aria-checked='true'] {
@@ -696,10 +818,10 @@ select.settings-select option {
   height: 20px;
   width: 20px;
   transform: translateX(2px);
-  border-radius: 999px;
+  border-radius: var(--radius-pill);
   background: #fff;
   box-shadow: 0 1px 2px rgba(0, 0, 0, 0.25);
-  transition: transform 0.2s ease;
+  transition: transform var(--transition-base);
 }
 
 .nat-toggle[aria-checked='true'] .nat-toggle-knob {
@@ -707,11 +829,15 @@ select.settings-select option {
   background: #09090b;
 }
 
+.nat-toggle:active:not(:disabled) .nat-toggle-knob {
+  filter: brightness(0.94);
+}
+
 /* Profile modes — Natively Intelligence / modes split panel */
 .settings-root .profile-modes-root {
   min-height: 460px;
   border: 1px solid var(--border-subtle);
-  border-radius: 12px;
+  border-radius: var(--radius-md);
   background: var(--bg-card);
   overflow: hidden;
 }
@@ -728,7 +854,7 @@ select.settings-select option {
 
 .settings-root .mode-sidebar-item-active {
   background: var(--bg-item-active);
-  border-radius: 8px;
+  border-radius: var(--radius-sm);
 }
 
 .settings-root .mode-sidebar-item:hover:not(.mode-sidebar-item-active) {
@@ -751,7 +877,7 @@ select.settings-select option {
   background: var(--bg-item-surface);
   color: var(--text-secondary);
   font-size: 12px;
-  padding: 8px 20px;
+  padding: var(--space-2) var(--space-5);
 }
 
 /* Legacy token overrides for inline styles / tailwind in panels */
@@ -823,25 +949,21 @@ select.settings-select option {
   background: var(--bg-subtle-hover);
 }
 
-.settings-root .settings-section-accent {
-  display: none;
-}
-
 /* Inline toast (verbose logging, etc.) */
 .settings-toast {
   display: flex;
   align-items: center;
-  gap: 12px;
+  gap: var(--space-3);
   border-bottom: 1px solid rgba(245, 158, 11, 0.25);
   background: rgba(245, 158, 11, 0.08);
-  padding: 10px 16px;
+  padding: var(--space-2) var(--space-4);
 }
 
 .settings-toast-action {
-  border-radius: 6px;
+  border-radius: var(--radius-sm);
   border: 1px solid rgba(245, 158, 11, 0.35);
   background: rgba(245, 158, 11, 0.12);
-  padding: 4px 10px;
+  padding: var(--space-1) var(--space-2);
   font-size: 11px;
   font-weight: 600;
   color: #fcd34d;
@@ -862,4 +984,76 @@ select.settings-select option {
 
 .settings-toast-dismiss:hover {
   color: var(--text-primary);
+}
+
+.settings-save-badge {
+  display: inline-flex;
+  align-items: center;
+  border-radius: var(--radius-pill);
+  padding: 2px 8px;
+  font-size: 10px;
+  font-weight: 600;
+  letter-spacing: 0.03em;
+  text-transform: uppercase;
+}
+
+.settings-save-badge-saving {
+  color: rgb(var(--accent-light-rgb) / 0.95);
+  background: rgb(var(--accent-rgb) / 0.12);
+  border: 1px solid rgb(var(--accent-rgb) / 0.25);
+}
+
+.settings-save-badge-saved {
+  color: rgb(var(--success-rgb) / 0.95);
+  background: rgb(var(--success-rgb) / 0.12);
+  border: 1px solid rgb(var(--success-rgb) / 0.28);
+}
+
+/* ============================================================================
+ * Accessibility: one focus-visible ring for every interactive control in the
+ * window, plus disabled styling for inputs/toggles that were missing it.
+ * ============================================================================ */
+.settings-nav-btn:focus-visible,
+.settings-nav-quit:focus-visible,
+.btn-ghost:focus-visible,
+.nat-btn-secondary:focus-visible,
+.btn-glow:focus-visible,
+.nat-btn-primary:focus-visible,
+.btn-danger:focus-visible,
+.settings-chip:focus-visible,
+.nat-toggle:focus-visible,
+.settings-toast-action:focus-visible,
+.settings-toast-dismiss:focus-visible,
+.settings-row-tile:focus-visible,
+details.glass-panel > summary:focus-visible {
+  outline: 2px solid var(--accent-border);
+  outline-offset: 2px;
+}
+
+.input-shadow:disabled,
+.nat-input:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
+
+/* Blanket safety net — catches every transition/animation in this file, not
+ * just the hand-picked ones below (0.01ms, not 0, keeps transitionend/
+ * animationend firing for any JS that waits on them). */
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .settings-page.animate-fade-in,
+  .animate-fade-in {
+    animation: none !important;
+  }
+
+  .settings-root details.glass-panel > summary svg {
+    transition: none !important;
+  }
 }

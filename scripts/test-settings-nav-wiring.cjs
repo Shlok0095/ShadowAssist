@@ -99,9 +99,9 @@ if (tabSrc.includes("activeTab === 'advance'") && tabSrc.includes('AdvanceSettin
 }
 
 if (profileSrc.includes('Modes & background') && profileSrc.includes('SkillsSettingsPanel')) {
-  pass('Profile tab contains modes + skills')
+  pass('Profile tab contains modes, background, and skills')
 } else {
-  fail('Profile tab missing modes or skills')
+  fail('Profile tab missing modes/background or the skills panel entry point')
 }
 
 if (!advanceSrc.includes('ProfileModesPanel') && !advanceSrc.includes('SkillsSettingsPanel')) {
@@ -115,10 +115,16 @@ for (const section of ['AI Providers', 'Audio', 'Phone', 'Intelligence', 'Overla
   else fail(`Advance section missing: ${section}`)
 }
 
-if (!displaySrc.includes('title="Advanced"') && !displaySrc.includes('SettingsCollapsible')) {
-  pass('General has no Advanced collapsible')
+if (!displaySrc.includes('title="Advanced"')) {
+  pass('General has no legacy top-level "Advanced" section')
 } else {
-  fail('General still has Advanced collapsible')
+  fail('General still has a legacy top-level "Advanced" section')
+}
+
+if (displaySrc.includes('SettingsCollapsible') && displaySrc.includes('title="Diagnostics & advanced"')) {
+  pass('General collapses diagnostics into "Diagnostics & advanced"')
+} else {
+  fail('General missing collapsed Diagnostics & advanced section')
 }
 
 const cssSrc = read('renderer/settings/index.css')
@@ -146,8 +152,8 @@ if (meetingsSrc.includes('title="Meeting"')) {
   fail('Meetings panel title not updated')
 }
 
-if (appSrc.includes("useState('display')") && appSrc.includes('normalizeSettingsTabId')) {
-  pass('App defaults to General and normalizes tab ids')
+if (appSrc.includes('parseSettingsQuery') && appSrc.includes('normalizeSettingsTabId')) {
+  pass('App parses URL tab query and normalizes tab ids')
 } else {
   fail('App tab default/normalize')
 }

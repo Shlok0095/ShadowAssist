@@ -76,6 +76,16 @@ export default function Onboarding() {
     ipc.send('complete-onboarding')
   }
 
+  const skipOnboarding = async () => {
+    if (!ipc) return
+    try {
+      await save('hasCompletedOnboarding', true)
+    } catch (e) {
+      console.error('skip onboarding', e)
+    }
+    ipc.send('complete-onboarding')
+  }
+
   return (
     <AppWindowFrame>
       <div className="settings-root relative z-10 flex min-h-0 flex-1 flex-col overflow-hidden text-zinc-300">
@@ -197,6 +207,13 @@ export default function Onboarding() {
               className="btn-glow w-full py-2.5 text-[13px] font-semibold disabled:cursor-not-allowed disabled:opacity-35"
             >
               Start {name}
+            </button>
+            <button
+              type="button"
+              onClick={skipOnboarding}
+              className="w-full py-1.5 text-center text-[11px] text-zinc-500 transition-colors hover:text-zinc-300"
+            >
+              Skip for now — set this up later in Settings
             </button>
           </div>
         </div>

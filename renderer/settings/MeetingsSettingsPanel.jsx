@@ -8,7 +8,7 @@ import {
   formatMeetingTime,
   formatMeetingWhen,
 } from './settingsFormatters'
-import { SectionTitle, SettingsFieldLabel, SettingsPage, ToggleSwitch } from './SettingsComponents'
+import { ConfirmDialog, SectionTitle, SettingsFieldLabel, SettingsPage, ToggleSwitch } from './SettingsComponents'
 import SimpleMarkdown from '../shared/SimpleMarkdown'
 import MeetingDetailsModal from './MeetingDetailsModal'
 import { useBrand } from '../shared/branding'
@@ -48,9 +48,12 @@ export default function MeetingsSettingsPanel({
   onExpandedMeetingIdChange,
   onMeetingSessionsChange,
   followUpDraftEnabled = false,
+  onFollowUpDraftEnabledChange,
 }) {
   const { name } = useBrand()
   const [detailsSessionId, setDetailsSessionId] = useState(null)
+  const [confirmClearRecaps, setConfirmClearRecaps] = useState(false)
+  const [confirmDeleteRecapId, setConfirmDeleteRecapId] = useState(null)
   return (
     <SettingsPage
       title="Meeting"
@@ -161,6 +164,16 @@ export default function MeetingsSettingsPanel({
           <ToggleSwitch checked={meetingForegroundDetectionEnabled} onChange={onMeetingForegroundDetectionChange} />
         </div>
 
+        <div className="mt-4 settings-row-tile flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+          <div className="min-w-0 flex-1">
+            <span className="font-medium text-gray-200">Smart follow-up drafts</span>
+            <p className="mt-1 text-xs text-zinc-600">
+              Generate a copy-ready follow-up from session decisions and action items, instead of a static template.
+            </p>
+          </div>
+          <ToggleSwitch checked={followUpDraftEnabled} onChange={onFollowUpDraftEnabledChange} />
+        </div>
+
         {!googleCalendarOAuthReady && (
           <details className="mt-4 rounded-xl border border-white/[0.06] bg-black/15 p-4">
             <summary className="cursor-pointer text-[10px] font-semibold uppercase tracking-[0.2em] text-zinc-600 hover:text-zinc-400">
@@ -252,12 +265,7 @@ export default function MeetingsSettingsPanel({
             <button
               type="button"
               className="shrink-0 text-[11px] text-zinc-500 hover:text-red-300"
-              onClick={async () => {
-                if (!window.confirm('Delete all saved session recaps?')) return
-                await ipc?.invoke('meeting-sessions:clear')
-                onMeetingSessionsChange([])
-                onExpandedMeetingIdChange(null)
-              }}
+              onClick={() => setConfirmClearRecaps(true)}
             >
               Clear all
             </button>
@@ -332,10 +340,9 @@ export default function MeetingsSettingsPanel({
                           <button
                             type="button"
                             className="text-[11px] text-red-400/90 hover:text-red-300"
-                            onClick={async () => {
-                              await ipc?.invoke('meeting-sessions:delete', s.id)
-                              onMeetingSessionsChange(meetingSessions.filter((x) => x.id !== s.id))
-                              onExpandedMeetingIdChange(null)
+                            onClick={(ev) => {
+                              ev.stopPropagation()
+                              setConfirmDeleteRecapId(s.id)
                             }}
                           >
                             Delete recap
@@ -358,6 +365,35 @@ export default function MeetingsSettingsPanel({
           onClose={() => setDetailsSessionId(null)}
         />
       ) : null}
+
+      <ConfirmDialog
+        open={confirmClearRecaps}
+        title="Delete all session recaps?"
+        description="This permanently removes every saved meeting recap on this device."
+        confirmLabel="Delete all"
+        onCancel={() => setConfirmClearRecaps(false)}
+        onConfirm={async () => {
+          setConfirmClearRecaps(false)
+          await ipc?.invoke('meeting-sessions:clear')
+          onMeetingSessionsChange([])
+          onExpandedMeetingIdChange(null)
+        }}
+      />
+
+      <ConfirmDialog
+        open={!!confirmDeleteRecapId}
+        title="Delete this recap?"
+        description="This permanently removes the saved recap for this session."
+        confirmLabel="Delete recap"
+        onCancel={() => setConfirmDeleteRecapId(null)}
+        onConfirm={async () => {
+          const id = confirmDeleteRecapId
+          setConfirmDeleteRecapId(null)
+          await ipc?.invoke('meeting-sessions:delete', id)
+          onMeetingSessionsChange(meetingSessions.filter((x) => x.id !== id))
+          onExpandedMeetingIdChange(null)
+        }}
+      />
     </SettingsPage>
   )
 }

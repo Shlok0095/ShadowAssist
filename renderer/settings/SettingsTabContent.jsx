@@ -227,6 +227,8 @@ export default function SettingsTabContent(props) {
 
         followUpDraftEnabled={props.followUpDraftEnabled}
 
+        onFollowUpDraftEnabledChange={props.onFollowUpDraftEnabledChange}
+
       />
 
     )
@@ -239,7 +241,7 @@ export default function SettingsTabContent(props) {
 
     return (
 
-      <PrivacySettingsPanel onSelectIntelligenceTab={() => props.onSelectTab?.('advance')} />
+      <PrivacySettingsPanel onSelectIntelligenceTab={() => props.onSelectIntelligenceTab?.()} />
 
     )
 

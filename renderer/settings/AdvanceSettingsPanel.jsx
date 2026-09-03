@@ -9,14 +9,12 @@ import SpeechSettingsPanel from './SpeechSettingsPanel'
 import PhoneLinkSettingsPanel from './PhoneLinkSettingsPanel'
 import IntelligenceSettingsPanel from './IntelligenceSettingsPanel'
 
-/** @type {{ id: string, label: string }[]} */
-export const ADVANCE_SECTIONS = [
-  { id: 'ai', label: 'AI Providers' },
-  { id: 'speech', label: 'Audio' },
-  { id: 'phone', label: 'Phone' },
-  { id: 'intelligence', label: 'Intelligence' },
-  { id: 'overlay', label: 'Overlay' },
-]
+function sectionOpen(id, props) {
+  const target = String(props.advanceOpenSection || '').toLowerCase()
+  if (!target) return false
+  if (target === 'audio' && id === 'speech') return true
+  return target === id
+}
 
 export default function AdvanceSettingsPanel(props) {
   return (
@@ -27,6 +25,7 @@ export default function AdvanceSettingsPanel(props) {
           description="Chat models and API keys."
           icon={Bot}
           defaultOpen={!!props.showSetupBanner}
+          forceOpen={sectionOpen('ai', props)}
           className="settings-advance-section"
         >
           <div className="px-1 pb-1">
@@ -65,6 +64,7 @@ export default function AdvanceSettingsPanel(props) {
           title="Audio"
           description="Speech-to-text, mic, and listen language."
           icon={Mic}
+          forceOpen={sectionOpen('speech', props)}
           className="settings-advance-section"
         >
           <div className="px-1 pb-1">
@@ -100,6 +100,7 @@ export default function AdvanceSettingsPanel(props) {
           title="Phone"
           description="Phone Link companion and Android USB mirror."
           icon={Smartphone}
+          forceOpen={sectionOpen('phone', props)}
           className="settings-advance-section"
         >
           <div className="px-1 pb-1">
@@ -123,6 +124,7 @@ export default function AdvanceSettingsPanel(props) {
           title="Intelligence"
           description="Smart routing, memory, and meeting-aware features."
           icon={Brain}
+          forceOpen={sectionOpen('intelligence', props)}
           className="settings-advance-section"
         >
           <div className="px-1 pb-1">
@@ -132,7 +134,6 @@ export default function AdvanceSettingsPanel(props) {
               onPatchSnap={props.onPatchSnap}
               onSave={props.onSave}
               intelligenceFlags={props.intelligenceFlags}
-              coreFlagKeys={props.coreFlagKeys}
               advancedGroupOrder={props.advancedGroupOrder}
               hindsightApiUrl={props.hindsightApiUrl}
               onHindsightApiUrlChange={props.onHindsightApiUrlChange}
@@ -150,6 +151,7 @@ export default function AdvanceSettingsPanel(props) {
           title="Overlay"
           description="Reading modes and custom panel dimensions."
           icon={Monitor}
+          forceOpen={sectionOpen('overlay', props)}
           className="settings-advance-section"
         >
           <div className="px-1 pb-1">

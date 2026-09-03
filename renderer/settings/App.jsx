@@ -4,10 +4,11 @@
 import React, { useState, useEffect, useMemo, useRef, useCallback } from 'react'
 import { createIpcShim } from '../shared/ipcShim'
 import SettingsTabContent from './SettingsTabContent'
-import { SettingsNav, normalizeSettingsTabId } from './settingsNav.jsx'
+import { SettingsNav, normalizeSettingsTabId, parseSettingsQuery } from './settingsNav.jsx'
 import { DEFAULT_HOTKEYS_MAP } from './settingsConstants'
 import { toDateKey, friendlyCalendarError } from './settingsFormatters'
 import SettingsWindowFrame from './SettingsWindowFrame'
+import { SettingsLoadingSkeleton } from './SettingsComponents'
 import brandLogo from '../shared/brandLogo'
 import { fontSizeFromAnswerLength } from '../shared/interviewSettings'
 
@@ -42,27 +43,15 @@ function basename(filePath) {
   return p.split('/').pop() || 'file'
 }
 
-const GROQ_WHISPER = [
-  'whisper-large-v3',
-  'whisper-large-v3-turbo',
-]
-
 const save = (k, v) => ipc?.invoke('set-store', k, v)
 
-function useFirstRunQuery() {
-  return useMemo(() => {
-    try {
-      const q = window.location.search
-      const p = new URLSearchParams(q.startsWith('?') ? q.slice(1) : q)
-      return p.get('firstRun') === '1'
-    } catch {
-      return false
-    }
-  }, [])
+function useSettingsQuery() {
+  return useMemo(() => parseSettingsQuery(window.location.search), [])
 }
 
 export default function Settings() {
-  const isFirstRunWindow = useFirstRunQuery()
+  const settingsQuery = useSettingsQuery()
+  const isFirstRunWindow = settingsQuery.firstRun
 
   const [providerMeta, setProviderMeta] = useState([])
   const [sttProviderMeta, setSttProviderMeta] = useState([])
@@ -74,7 +63,8 @@ export default function Settings() {
   const [keySetMap, setKeySetMap] = useState({})
   const [testByProvider, setTestByProvider] = useState({})
   const [testingProvider, setTestingProvider] = useState(null)
-  const [activeTab, setActiveTab] = useState('display')
+  const [activeTab, setActiveTab] = useState(() => settingsQuery.tab)
+  const [advanceOpenSection, setAdvanceOpenSection] = useState(() => settingsQuery.section)
   const [hasCompletedOnboarding, setHasCompletedOnboarding] = useState(true)
   const [audioEnabled, setAudioEnabled] = useState(true)
   const [micSensitivity, setMicSensitivity] = useState('standard')
@@ -163,6 +153,7 @@ export default function Settings() {
   const [hideFromTaskbarUi, setHideFromTaskbarUi] = useState(false)
   const [uiAccentThemeUi, setUiAccentThemeUi] = useState('blue')
   const [settingsToast, setSettingsToast] = useState(null)
+  const [profileSaveStatus, setProfileSaveStatus] = useState('idle')
 
   const sttCapableMeta = useMemo(() => {
     if (sttProviderMeta.length) return sttProviderMeta
@@ -419,9 +410,26 @@ export default function Settings() {
   }, [])
 
 
-  const selectSettingsTab = useCallback((tabId) => {
-    setActiveTab(normalizeSettingsTabId(tabId))
+  const selectSettingsTab = useCallback((tabId, section = '') => {
+    const nextTab = normalizeSettingsTabId(tabId)
+    setActiveTab(nextTab)
+    if (section) setAdvanceOpenSection(String(section).toLowerCase())
   }, [])
+
+  const selectIntelligenceTab = useCallback(() => {
+    selectSettingsTab('advance', 'intelligence')
+  }, [selectSettingsTab])
+
+  useEffect(() => {
+    if (!ipc) return
+    const unsubNav = ipc.on('settings-navigate', (_, payload) => {
+      if (!payload || typeof payload !== 'object') return
+      if (payload.tab) selectSettingsTab(payload.tab, payload.section || '')
+    })
+    return () => {
+      unsubNav?.()
+    }
+  }, [selectSettingsTab])
 
   useEffect(() => {
     if (isFirstRunWindow) setActiveTab('advance')
@@ -638,10 +646,14 @@ export default function Settings() {
     const v = String(value || '').slice(0, RESUME_MAX)
     resumeContextRef.current = v
     setResumeContext(v)
+    setProfileSaveStatus('saving')
     if (resumeSaveTimerRef.current) clearTimeout(resumeSaveTimerRef.current)
     resumeSaveTimerRef.current = setTimeout(() => {
       resumeSaveTimerRef.current = null
-      void save('resumeContext', resumeContextRef.current)
+      void save('resumeContext', resumeContextRef.current).then(() => {
+        setProfileSaveStatus('saved')
+        window.setTimeout(() => setProfileSaveStatus('idle'), 2000)
+      })
     }, 400)
   }
 
@@ -649,10 +661,14 @@ export default function Settings() {
     const v = String(value || '').slice(0, JD_MAX)
     jdContextRef.current = v
     setJdContext(v)
+    setProfileSaveStatus('saving')
     if (jdSaveTimerRef.current) clearTimeout(jdSaveTimerRef.current)
     jdSaveTimerRef.current = setTimeout(() => {
       jdSaveTimerRef.current = null
-      void save('jdContext', jdContextRef.current)
+      void save('jdContext', jdContextRef.current).then(() => {
+        setProfileSaveStatus('saved')
+        window.setTimeout(() => setProfileSaveStatus('idle'), 2000)
+      })
     }, 400)
   }
 
@@ -1185,10 +1201,15 @@ export default function Settings() {
         <div className="settings-flex-body flex min-h-0 min-w-0 flex-1 overflow-hidden">
           <SettingsNav activeTab={activeTab} onSelectTab={selectSettingsTab} />
 
-          <main className="settings-scroll-outer p-6">
+          <main className="settings-scroll-outer px-6 pt-6">
+          {!snap ? (
+            <SettingsLoadingSkeleton />
+          ) : (
           <SettingsTabContent
             activeTab={normalizeSettingsTabId(activeTab)}
             onSelectTab={selectSettingsTab}
+            onSelectIntelligenceTab={selectIntelligenceTab}
+            advanceOpenSection={advanceOpenSection}
             snap={snap}
             providerMeta={providerMeta}
             provider={provider}
@@ -1327,7 +1348,6 @@ export default function Settings() {
             meetingForegroundDetectionEnabled={meetingForegroundDetectionEnabled}
             onMeetingForegroundDetectionChange={(v) => { setMeetingForegroundDetectionEnabled(v); save('meetingForegroundDetectionEnabled', v) }}
             intelligenceFlags={intelligenceFlagsMeta.flags}
-            coreFlagKeys={intelligenceFlagsMeta.coreFlagKeys}
             advancedGroupOrder={intelligenceFlagsMeta.advancedGroupOrder}
             hindsightApiUrl={hindsightApiUrl}
             onHindsightApiUrlChange={setHindsightApiUrl}
@@ -1365,6 +1385,7 @@ export default function Settings() {
             onExpandedMeetingIdChange={setExpandedMeetingId}
             onMeetingSessionsChange={setMeetingSessions}
             followUpDraftEnabled={snap?.followUpDraftEnabled === true}
+            onFollowUpDraftEnabledChange={(v) => { patchSnap('followUpDraftEnabled', !!v); save('followUpDraftEnabled', !!v) }}
             logoSrc={brandLogo}
             appVersion={appVersion}
             profilePanel={{
@@ -1412,8 +1433,10 @@ export default function Settings() {
               onUploadJd: () => void uploadProfileDoc('jd'),
               onClearResume: () => void saveResumeContext('', ''),
               onClearJd: () => void saveJdContext(''),
+              profileSaveStatus,
             }}
           />
+          )}
         </main>
       </div>
       </div>

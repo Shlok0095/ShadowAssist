@@ -1,7 +1,12 @@
 // Copyright (c) 2026 VeilAssist. All rights reserved.
+
 /**
- * Natively-style overlay passthrough: window ignores clicks by default (forward: true)
- * and only captures when the cursor is over marked interactive regions.
+ * Mouse passthrough (settings toggle): window ignores clicks by default
+ * (`forward: true`) and only captures when the cursor enters chrome marked
+ * with `data-overlay-hit` (notch, panel, footer).
+ *
+ * Separate from bounded chrome capture — that uses main-process region polling
+ * when this setting is OFF.
  */
 import { useCallback, useEffect, useRef } from 'react'
 import { createIpcShim } from '../shared/ipcShim'
@@ -19,7 +24,7 @@ async function setIgnoreMouseEvents(ignore) {
 
 /**
  * @param {boolean} enabled — overlayMousePassthroughEnabled from settings
- * @param {unknown[]} rebindingDeps — re-bind hover targets when layout changes (e.g. expanded)
+ * @param {unknown[]} rebindingDeps — re-bind hover targets when layout changes
  */
 export function useOverlayMousePassthrough(enabled, rebindingDeps = []) {
   const depthRef = useRef(0)
@@ -62,7 +67,6 @@ export function useOverlayMousePassthrough(enabled, rebindingDeps = []) {
 
     if (!enabled) {
       depthRef.current = 0
-      void setIgnoreMouseEvents(false)
       return undefined
     }
 
@@ -70,7 +74,6 @@ export function useOverlayMousePassthrough(enabled, rebindingDeps = []) {
     return () => {
       unbind?.()
       depthRef.current = 0
-      void setIgnoreMouseEvents(false)
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps -- rebindingDeps are intentional layout triggers
   }, [enabled, bindHitTargets, ...rebindingDeps])

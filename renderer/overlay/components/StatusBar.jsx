@@ -28,8 +28,8 @@ function StatusBar({ sessionOn, ocrStatus, onToggleSession, onOpenSettings, onQu
         />
         {ocrHint && (
           <span
-            className={`crystal-sublabel text-[10px] font-medium normal-case ${
-              ocrStatus === 'error' ? 'text-red-400' : 'text-white/55'
+            className={`text-[10px] font-semibold normal-case tracking-wide px-2 py-0.5 rounded-full whitespace-nowrap ${
+              ocrStatus === 'error' ? 'crystal-badge-danger' : 'crystal-badge-warning'
             }`}
           >
             {ocrHint}
@@ -79,7 +79,7 @@ function StatusBar({ sessionOn, ocrStatus, onToggleSession, onOpenSettings, onQu
             onQuit?.()
           }}
           aria-label={`Quit ${name}`}
-          className="crystal-quit-btn cursor-default flex h-7 shrink-0 items-center justify-center rounded-lg px-2.5 text-[10px] font-semibold transition-all duration-150 active:scale-95"
+          className="crystal-quit-btn cursor-default flex h-7 shrink-0 items-center justify-center rounded-lg px-2.5 text-[10px] font-semibold transition duration-150 active:scale-95"
         >
           Quit
         </button>

@@ -20,6 +20,7 @@ const plainTests = [
   'scripts/test-meeting-summary.mjs',
   'scripts/test-meeting-summary-format.mjs',
   'scripts/test-overlay-mouse-capture.mjs',
+  'scripts/test-phone-auto-answer.cjs',
   'scripts/test-playbook-context.mjs',
   'scripts/verify-background-process-config.cjs',
 ]

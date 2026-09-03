@@ -196,5 +196,8 @@
     "react-qr-code": "^2.2.0",
     "sqlite-vec": "^0.1.9",
     "ws": "^8.21.3"
+  },
+  "overrides": {
+    "onnxruntime-node": "1.22.0"
   }
 }

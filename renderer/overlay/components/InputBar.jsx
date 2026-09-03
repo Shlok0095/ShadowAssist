@@ -49,11 +49,13 @@ function InputBarInner({ onAsk, onAbort, isThinking, sessionOn = false, focusMod
         onChange={(e) => setValue(e.target.value)}
         onKeyDown={handleKeyDown}
         placeholder={placeholder}
+        aria-label="Ask a question"
         rows={1}
         disabled={!sessionOn}
         className={[
           'crystal-input flex-1 min-h-[34px] max-h-[72px] resize-none rounded-xl px-3 py-2',
           'text-[12.5px] transition-colors duration-150',
+          'disabled:opacity-45 disabled:cursor-not-allowed',
         ].join(' ')}
         style={{ scrollbarWidth: 'none', msOverflowStyle: 'none' }}
       />
@@ -62,7 +64,7 @@ function InputBarInner({ onAsk, onAbort, isThinking, sessionOn = false, focusMod
           type="button"
           onClick={() => onAbort?.()}
           aria-label="Stop generating"
-          className="cursor-default flex h-[34px] shrink-0 items-center justify-center rounded-xl border border-rose-400/30 bg-rose-500/10 px-3 text-[11px] font-medium text-rose-200 hover:bg-rose-500/20"
+          className="cursor-default flex h-[34px] shrink-0 items-center justify-center rounded-xl border border-rose-400/30 bg-rose-500/10 px-3 text-[11px] font-medium text-rose-200 transition-colors duration-150 hover:bg-rose-500/20 hover:border-rose-400/50 active:scale-95 active:bg-rose-500/25 focus-visible:outline focus-visible:outline-2 focus-visible:outline-rose-300/60 focus-visible:outline-offset-1"
         >
           Stop
         </button>
@@ -73,7 +75,8 @@ function InputBarInner({ onAsk, onAbort, isThinking, sessionOn = false, focusMod
           disabled={!sessionOn || (isThinking && !value.trim())}
           aria-label="Send"
           className={[
-            'crystal-send-btn cursor-default flex h-[34px] w-[34px] shrink-0 items-center justify-center rounded-full transition-all duration-150 active:scale-95',
+            'crystal-send-btn cursor-default flex h-[34px] w-[34px] shrink-0 items-center justify-center rounded-full transition duration-150 active:scale-95',
+            'disabled:opacity-40 disabled:cursor-not-allowed disabled:active:scale-100',
             isThinking && !value.trim() ? 'opacity-50' : '',
           ].join(' ')}
         >

@@ -1,13 +1,14 @@
 // Copyright (c) 2026 ShadowAssist. All rights reserved.
 // Unauthorized copying or distribution is prohibited.
 
-import React, { useState, useEffect, useRef, useCallback } from 'react'
+import React, { useState, useEffect, useRef, useCallback, useMemo } from 'react'
 import { flushSync } from 'react-dom'
 import { Eye, Glasses } from 'lucide-react'
 import StatusBar from './components/StatusBar'
 import ResponsePanel from './components/ResponsePanel'
 import InputBar from './components/InputBar'
-import ActionChips from './components/ActionChips'
+import SuggestionFooterBar from './components/SuggestionFooterBar'
+import { ACTION_CHIP_PRESETS } from './actionChipPresets'
 import PastMeetingSearch from './components/PastMeetingSearch'
 import { parseSkillInvoke } from '../../lib/skillInvoke.js'
 import { resolveAskContextPriority } from '../../lib/askContextPriority.js'
@@ -27,10 +28,19 @@ import RollingTranscript from './components/RollingTranscript'
 import AppIcon from '../shared/AppIcon'
 import { applyUiAccentTheme, normalizeUiAccentId } from '../shared/uiAccentThemes'
 import { createIpcShim } from '../shared/ipcShim'
+import { useOverlayBoundedRegions } from './useOverlayBoundedRegions'
 import { useOverlayMousePassthrough } from './useOverlayMousePassthrough'
 import {
   streamPreviewIntervalFor,
 } from './streamAnswerDisplay.js'
+import { clearStreamPreview, setStreamPreviewText } from './streamPreviewStore.js'
+import {
+  setLiveTranscriptSegments as pushLiveTranscriptSegments,
+  clearLiveTranscriptSegments,
+  setRollingBar as pushRollingBar,
+  clearRollingBar,
+  useRollingBar,
+} from './liveTranscriptStore.js'
 import {
   AGGREGATE_DROP_HARD_MIN,
   filterWhisperVerboseJson,
@@ -46,7 +56,16 @@ import {
 import { parseTranscriptEchoForDisplay } from '../shared/formatTranscriptEcho'
 import { effectiveMinSpeechChars, fontSizeFromAnswerLength, overlayDisplayStyleFromFormat } from '../shared/interviewSettings'
 import { isLikelySelfReadback, stripSelfReadback } from '../shared/selfReadback'
-import { estimatedAnswerReadbackHoldMs } from '../shared/utteranceReady'
+import { isUtteranceReadyForAutoAnswer, estimatedAnswerReadbackHoldMs } from '../shared/utteranceReady'
+import {
+  selectActiveQuestion,
+  questionsAreSimilar,
+  combineQuestion,
+  classifyPostAnswerSpeech,
+  estimatedAnswerHoldMs,
+  isStillUsingLastAnswer,
+  extractFollowUpAfterAnswer,
+} from '../shared/phoneAutoAnswer'
 
 const ipc = createIpcShim()
 /** Inner status row height (px) — matches StatusBar `h-10` */
@@ -55,12 +74,18 @@ const NOTCH_INNER_H = 40
 const NOTCH_BORDER_H = 2
 /** Outer notch pill height — must match `.crystal-notch-shell` and collapsed window height */
 const PILL_H = NOTCH_INNER_H + NOTCH_BORDER_H
-/** Fixed notch width (CSS) — overlay window width stays at panel width always */
-const NOTCH_W = 252
 
 const STACK_GAP = 10
+/** Flex `gap` inside `.crystal-chrome-body` — space between the panel and the footer pills. */
+const FOOTER_STACK_GAP = 8
+/** Vertical footer pills below the answer panel when session is on.
+ * Must match `.crystal-suggestion-footer` in index.css: pill heights 27+26+25+24
+ * plus three 6px gaps between them = 120. */
+const SUGGESTION_FOOTER_H = 120
 /** Collapsed overlay window height (pill + 1px slack so bottom radius isn't clipped) */
 const COLLAPSED_H = PILL_H + 1
+/** Compact shell while the first-run audio consent card is shown (notch + gap + modal card). */
+const CONSENT_SHELL_H = PILL_H + STACK_GAP + 188
 const MIN_ASK_GAP_MS = 2000
 /** ~1.5s VAD slices — merge then send to Whisper. */
 const STT_SLICE_MS = 1500
@@ -129,7 +154,9 @@ function speakerLabel(speaker) {
 
 /** Build chunked transcript for the model — not one flat merged blob. */
 function formatSegmentsForLLM(segments, maxSegments = MAX_LLM_SEGMENTS) {
-  const active = (Array.isArray(segments) ? segments : []).filter((segment) => !segment?.consumed)
+  const active = (Array.isArray(segments) ? segments : []).filter(
+    (segment) => !segment?.consumed && !segment?.readback,
+  )
   return formatSegmentsForPrompt(active, { maxSegments, speakerLabel })
 }
 
@@ -166,10 +193,6 @@ function assignChunkSpeaker(trimmedChunk, silenceBeforeMs, lastSpeakerRef) {
     return switched
   }
   return last
-}
-
-function isDirectAnswerQuery(text) {
-  return /\bnumber\b|\blist\b|only answer|just answer/i.test(String(text || ''))
 }
 
 /**
@@ -240,17 +263,23 @@ function buildStructuredUserPrompt({ rawSpeech, micFallback, screenText, typedQu
     .join('\n\n')
 }
 
-function ResizeHandle({ edge, onResizeEnd }) {
+function ResizeHandle({ edge, onResizeEnd, onResizeStart, onResizeStop }) {
   const handleMouseDown = useCallback((e) => {
     e.preventDefault()
     e.stopPropagation()
     const startX = e.screenX
     const startY = e.screenY
+    document.documentElement.classList.add('overlay-resizing')
+    ipc?.send('overlay-resize-start')
+    onResizeStart?.()
     ipc?.invoke('get-window-bounds').then((bounds) => {
-      if (!bounds) return
+      if (!bounds) {
+        document.documentElement.classList.remove('overlay-resizing')
+        ipc?.send('overlay-resize-end')
+        onResizeStop?.()
+        return
+      }
       const right = bounds.x + bounds.width
-      // Coalesce mousemove → one native resize per frame; a raw stream of
-      // setBounds calls on a transparent always-on-top window causes visible tearing.
       let pending = null
       let rafId = null
       const flushPending = () => {
@@ -258,8 +287,8 @@ function ResizeHandle({ edge, onResizeEnd }) {
         const next = pending
         pending = null
         if (!next) return
-        if (next.x != null) ipc?.invoke('resize-window', next.w, next.h, next.x)
-        else ipc?.invoke('resize-window', next.w, next.h)
+        if (next.x != null) ipc?.send('overlay:resize-live', next.w, next.h, next.x)
+        else ipc?.send('overlay:resize-live', next.w, next.h)
       }
       const onMove = (mv) => {
         const dx = mv.screenX - startX
@@ -287,18 +316,22 @@ function ResizeHandle({ edge, onResizeEnd }) {
         pending = { w: Math.round(w), h: Math.round(h), x: x != null ? Math.round(x) : null }
         if (rafId == null) rafId = requestAnimationFrame(flushPending)
       }
-      const onUp = () => {
+      const finish = () => {
         if (rafId != null) cancelAnimationFrame(rafId)
         flushPending()
+        document.documentElement.classList.remove('overlay-resizing')
         ipc?.send('overlay-resize-end')
-        ipc?.invoke('get-window-bounds').then((b) => b && b.height > COLLAPSED_H && onResizeEnd?.(b))
+        onResizeStop?.()
+        ipc?.invoke('get-window-bounds').then((b) => {
+          if (b && b.height > COLLAPSED_H) onResizeEnd?.(b)
+        })
         document.removeEventListener('mousemove', onMove)
-        document.removeEventListener('mouseup', onUp)
+        document.removeEventListener('mouseup', finish)
       }
       document.addEventListener('mousemove', onMove)
-      document.addEventListener('mouseup', onUp)
+      document.addEventListener('mouseup', finish)
     })
-  }, [edge, onResizeEnd])
+  }, [edge, onResizeEnd, onResizeStart, onResizeStop])
 
   const style =
     edge === 'right'
@@ -328,6 +361,62 @@ function EyeVisibleIcon() {
 /** Glasses — hidden from screen capture */
 function IncognitoGlyph() {
   return <AppIcon icon={Glasses} size={14} strokeWidth={2.15} />
+}
+
+/**
+ * Rolling caption bar — subscribes to the live-transcript store directly so the
+ * ~80ms rolling-bar updates only re-render this slot, not the whole overlay tree.
+ */
+function TranscriptBarSlot({ sessionOn, sttLivePhase, sysCaptureActive, micCaptureActive }) {
+  const rollingBar = useRollingBar()
+
+  if (!sessionOn) {
+    return (
+      <div className="crystal-caption-idle">
+        <span className="crystal-caption-idle-dot" aria-hidden />
+        <span>Listening off</span>
+      </div>
+    )
+  }
+  if (rollingBar.text) {
+    return (
+      <RollingTranscript
+        text={rollingBar.text}
+        label={rollingBar.label}
+        speaker={rollingBar.speaker}
+        isActive={sessionOn}
+        sysCaptureActive={sysCaptureActive}
+        micCaptureActive={micCaptureActive}
+      />
+    )
+  }
+  if (sttLivePhase === 'transcribing') {
+    return (
+      <div className="crystal-caption-phase">
+        <span className="crystal-caption-phase-dot" aria-hidden />
+        <span className="crystal-caption-phase-label">Captions</span>
+        <span className="crystal-caption-phase-sub">updating…</span>
+      </div>
+    )
+  }
+  if (sttLivePhase === 'speech') {
+    return (
+      <div className="crystal-caption-phase">
+        <span className="crystal-caption-phase-dot" aria-hidden />
+        <span className="crystal-caption-phase-label">Hearing</span>
+        <span className="crystal-caption-phase-sub">speech</span>
+      </div>
+    )
+  }
+  return (
+    <div className="crystal-caption-phase">
+      <span className="crystal-caption-phase-dot" aria-hidden />
+      <span className="crystal-caption-phase-label">Listening</span>
+      <span className="crystal-caption-phase-sub">
+        {sysCaptureActive ? 'ready' : 'mic only — share audio for Participant'}
+      </span>
+    </div>
+  )
 }
 
 function emit(event, detail) {
@@ -588,6 +677,7 @@ async function acquireMicMeetingStream() {
 export default function App() {
   const [messages, setMessages] = useState([])
   const [isThinking, setIsThinking] = useState(false)
+  const [activeFooterAction, setActiveFooterAction] = useState(null)
   const [opacity, setOpacity] = useState(0.92)
   const [fontSize, setFontSize] = useState('medium')
   const [answerStyle, setAnswerStyle] = useState('brief')
@@ -600,7 +690,6 @@ export default function App() {
   const [overlayAnswerAutoScroll, setOverlayAnswerAutoScroll] = useState(true)
   const [globalMeetingSearchEnabled, setGlobalMeetingSearchEnabled] = useState(false)
   const [focusInputOpen, setFocusInputOpen] = useState(false)
-  const [streamPreview, setStreamPreview] = useState('')
   const answerStyleRef = useRef('brief')
   const lastAskRef = useRef({ q: null, opts: {} })
   const streamPreviewFlushRef = useRef(null)
@@ -609,8 +698,11 @@ export default function App() {
   const rollingBarDisplayRef = useRef({ text: '', label: '', speaker: 'other' })
   const pendingWindowResizeRef = useRef(null)
   const windowResizeRafRef = useRef(null)
-  const [liveTranscriptSegments, setLiveTranscriptSegments] = useState([])
-  const [rollingBar, setRollingBar] = useState({ text: '', label: '', speaker: 'other' })
+  const windowBoundsRef = useRef(null)
+  const panelResizingRef = useRef(false)
+  const resizeDoneRef = useRef(null)
+  const resizePromiseRef = useRef(null)
+  const expandedRef = useRef(false)
   const [sysCaptureActive, setSysCaptureActive] = useState(false)
   const [micCaptureActive, setMicCaptureActive] = useState(false)
   /** idle | speech | transcribing — live bar feedback while Groq works. */
@@ -622,15 +714,53 @@ export default function App() {
   const [modeMenuOpen, setModeMenuOpen] = useState(false)
   const modePickerRef = useRef(null)
   const [expanded, setExpanded] = useState(false)
+  /** Expanded panel mounts only after the OS window has been resized — avoids notch blink. */
+  const [panelRevealed, setPanelRevealed] = useState(false)
+
+  const openPanel = useCallback(() => {
+    setExpanded(true)
+    requestAnimationFrame(() => setPanelRevealed(true))
+  }, [])
+
+  /** First-run consent: compact notch + small card only — the full panel has
+   * nothing to show yet, so don't expand to the big empty panel behind it. */
+  const openConsentShell = useCallback(() => {
+    setPanelRevealed(false)
+    setExpanded(true)
+    setShowAudioConsent(true)
+  }, [])
+
   const [hiding, setHiding] = useState(false)
   /** Mirrors main-process overlayVisible — instant hide/show without waiting on window opacity. */
   const [overlayMainVisible, setOverlayMainVisible] = useState(true)
   const [stealthMode, setStealthMode] = useState(false)
   const [overlayMousePassthrough, setOverlayMousePassthrough] = useState(false)
+  const [panelResizing, setPanelResizing] = useState(false)
   const [showAudioConsent, setShowAudioConsent] = useState(false)
 
-  useOverlayMousePassthrough(overlayMousePassthrough && overlayMainVisible, [
+  const notchRef = useRef(null)
+  const chromePanelRef = useRef(null)
+  const footerRef = useRef(null)
+  const consentRef = useRef(null)
+  const boundedRegionRefs = useMemo(
+    () => [notchRef, chromePanelRef, footerRef, consentRef],
+    [],
+  )
+
+  // Main only consumes hit-regions in its bounded-capture branch (passthrough off);
+  // when passthrough is on it forwards all mouse events, so skip the measure/IPC work.
+  useOverlayBoundedRegions(overlayMainVisible && !panelResizing && !overlayMousePassthrough, boundedRegionRefs, [
     expanded,
+    sessionOn,
+    panelRevealed,
+    showAudioConsent,
+    overlayMousePassthrough,
+  ])
+
+  useOverlayMousePassthrough(overlayMousePassthrough && overlayMainVisible && !panelResizing, [
+    expanded,
+    sessionOn,
+    panelRevealed,
     showAudioConsent,
   ])
 
@@ -648,6 +778,8 @@ export default function App() {
   const handleAskRef = useRef(null)
   const msgId = useRef(0)
   const expandedSize = useRef({ w: 480, h: 580 })
+  /** Frozen expanded window height — never shrinks on session off so the notch stays put. */
+  const expandedWindowHeightRef = useRef(null)
   const audioCtx = useRef(null)
   const energyIntervalRef = useRef(null)
   const energySampleRef = useRef(null)
@@ -694,6 +826,11 @@ export default function App() {
   const lastChunkRef = useRef('')
   const assistAutoTriggerRef = useRef(false)
   const overlayAnswerAutoScrollRef = useRef(true)
+  /** Phone-parity mode: both Auto-answer + Auto-scroll on. */
+  const isPhoneAutoParity = useCallback(
+    () => assistAutoTriggerRef.current === true && overlayAnswerAutoScrollRef.current === true,
+    [],
+  )
   const answerCompletedAtRef = useRef(0)
   const speakHoldMsRef = useRef(8000)
   const questionDetectionRef = useRef('high')
@@ -712,11 +849,17 @@ export default function App() {
   const speechSegmentsRef = useRef([])
   const rollingByChannelRef = useRef({ mic: '', sys: '' })
   const liveSegmentIdRef = useRef(0)
-  const currentSpeakerRef = useRef('me')
   const lastSpeakerRef = useRef('me')
   const lastTriggerTimeRef = useRef(0)
   /** Buffer content at last successful speech trigger — prevents re-triggering same text. */
   const lastSentSpeechRef = useRef('')
+  /** Last auto-asked question (phone follow-up classify). */
+  const lastAutoQuestionRef = useRef('')
+  /** Follow-up queued while user is still reading the answer aloud. */
+  const pendingFollowUpRef = useRef('')
+  /** Continuation-kind follow-ups fire as soon as the ask pipeline is free — they skip the "still reading" hold entirely (phone parity). */
+  const pendingFollowUpImmediateRef = useRef(false)
+  const followUpHoldTimerRef = useRef(null)
   const speechTriggerDelayRef = useRef(null)
   const speechFailsafeIntervalRef = useRef(null)
   const isProcessingAskRef = useRef(false)
@@ -739,7 +882,6 @@ export default function App() {
 
   /** Full streamed text for commit to messages. */
   const streamAccumRef = useRef('')
-  const streamPreviewActiveRef = useRef(false)
   /** False after commit/error/clear — blocks stale microtasks from mutating the stream DOM. */
   const streamDomAcceptingRef = useRef(false)
   const streamScrollRafRef = useRef(null)
@@ -765,6 +907,13 @@ export default function App() {
     lastChunkRef.current = ''
     lastTriggerTimeRef.current = 0
     lastSentSpeechRef.current = ''
+    lastAutoQuestionRef.current = ''
+    pendingFollowUpRef.current = ''
+    pendingFollowUpImmediateRef.current = false
+    if (followUpHoldTimerRef.current != null) {
+      clearInterval(followUpHoldTimerRef.current)
+      followUpHoldTimerRef.current = null
+    }
     lastSpeakerRef.current = 'me'
     speechSegmentsRef.current = []
     rollingByChannelRef.current = { mic: '', sys: '' }
@@ -778,8 +927,8 @@ export default function App() {
       clearTimeout(rollingBarUiFlushRef.current)
       rollingBarUiFlushRef.current = null
     }
-    setRollingBar({ text: '', label: '', speaker: 'other' })
-    setLiveTranscriptSegments([])
+    clearRollingBar()
+    clearLiveTranscriptSegments()
   }, [])
 
   const flushLiveTranscriptUi = useCallback(() => {
@@ -787,18 +936,15 @@ export default function App() {
       clearTimeout(liveTranscriptUiFlushRef.current)
       liveTranscriptUiFlushRef.current = null
     }
-    if (isThinkingRef.current) return
-    setLiveTranscriptSegments([...speechSegmentsRef.current])
+    pushLiveTranscriptSegments([...speechSegmentsRef.current])
   }, [])
 
   /** Partials only — finals call flushLiveTranscriptUi immediately so Ask timing is unchanged. */
   const scheduleLiveTranscriptUi = useCallback(() => {
-    if (isThinkingRef.current) return
     if (liveTranscriptUiFlushRef.current != null) return
     liveTranscriptUiFlushRef.current = window.setTimeout(() => {
       liveTranscriptUiFlushRef.current = null
-      if (isThinkingRef.current) return
-      setLiveTranscriptSegments([...speechSegmentsRef.current])
+      pushLiveTranscriptSegments([...speechSegmentsRef.current])
     }, LIVE_TRANSCRIPT_UI_MS)
   }, [])
 
@@ -807,17 +953,14 @@ export default function App() {
       clearTimeout(rollingBarUiFlushRef.current)
       rollingBarUiFlushRef.current = null
     }
-    if (isThinkingRef.current) return
-    setRollingBar({ ...rollingBarDisplayRef.current })
+    pushRollingBar({ ...rollingBarDisplayRef.current })
   }, [])
 
   const scheduleRollingBarUi = useCallback(() => {
-    if (isThinkingRef.current) return
     if (rollingBarUiFlushRef.current != null) return
     rollingBarUiFlushRef.current = window.setTimeout(() => {
       rollingBarUiFlushRef.current = null
-      if (isThinkingRef.current) return
-      setRollingBar({ ...rollingBarDisplayRef.current })
+      pushRollingBar({ ...rollingBarDisplayRef.current })
     }, LIVE_TRANSCRIPT_UI_MS)
   }, [])
 
@@ -834,7 +977,7 @@ export default function App() {
       ? mergeRollingTranscriptFinal(prev, textChunk)
       : mergeRollingTranscriptPartial(prev, textChunk)
     rollingByChannelRef.current[key] = merged
-    const label = speaker === 'me' ? 'Me' : 'Them'
+    const label = speaker === 'me' ? 'Me' : 'Participant'
     rollingBarDisplayRef.current = { text: merged, label, speaker }
     if (isFinal) flushRollingBarUi()
     else scheduleRollingBarUi()
@@ -907,7 +1050,7 @@ export default function App() {
       const sp = lastSeg.speaker === 'me' ? 'me' : 'other'
       rollingBarDisplayRef.current = {
         text: String(lastSeg.text),
-        label: sp === 'me' ? 'Me' : 'Them',
+        label: sp === 'me' ? 'Me' : 'Participant',
         speaker: sp,
       }
       flushRollingBarUi()
@@ -920,23 +1063,48 @@ export default function App() {
 
   const syncOverlayWindowSize = useCallback((w, h) => {
     pendingWindowResizeRef.current = { w, h }
-    if (windowResizeRafRef.current != null) return
+    if (!resizePromiseRef.current) {
+      resizePromiseRef.current = new Promise((resolve) => {
+        resizeDoneRef.current = resolve
+      })
+    }
+    if (windowResizeRafRef.current != null) return resizePromiseRef.current
     windowResizeRafRef.current = requestAnimationFrame(async () => {
       windowResizeRafRef.current = null
-      const next = pendingWindowResizeRef.current
-      pendingWindowResizeRef.current = null
-      if (!next || !ipc) return
-      const b = await ipc.invoke('get-window-bounds')
-      const safeW = Math.max(280, Math.min(860, Math.round(next.w)))
-      const safeH = Math.round(next.h)
-      if (b?.width != null && b?.x != null) {
-        const centerX = b.x + b.width / 2
-        const newX = Math.round(centerX - safeW / 2)
-        await ipc.invoke('resize-window', safeW, safeH, newX)
-        return
+      try {
+        while (pendingWindowResizeRef.current) {
+          const next = pendingWindowResizeRef.current
+          pendingWindowResizeRef.current = null
+          if (!next || !ipc) continue
+          const safeH = Math.round(next.h)
+          const safeW = Math.max(280, Math.min(860, Math.round(next.w)))
+          let b = windowBoundsRef.current
+          if (!b) {
+            b = await ipc.invoke('get-window-bounds')
+            if (b) windowBoundsRef.current = b
+          }
+          const widthChanged = !b || Math.abs(b.width - safeW) > 1
+          let applied
+          if (widthChanged && b?.width != null && b?.x != null) {
+            const centerX = b.x + b.width / 2
+            const newX = Math.round(centerX - safeW / 2)
+            applied = await ipc.invoke('resize-window', safeW, safeH, newX)
+          } else {
+            applied = await ipc.invoke('resize-window', safeW, safeH)
+          }
+          // Main may cap the height (or leave x/y untouched) to keep the overlay
+          // from moving/overflowing on its own — trust what it actually applied
+          // rather than what was requested, so this cache never drifts from reality.
+          if (applied) windowBoundsRef.current = applied
+        }
+      } finally {
+        const done = resizeDoneRef.current
+        resizePromiseRef.current = null
+        resizeDoneRef.current = null
+        done?.()
       }
-      await ipc.invoke('resize-window', safeW, safeH)
     })
+    return resizePromiseRef.current
   }, [])
 
   const isStillReadingAnswerAloud = useCallback(() => {
@@ -946,11 +1114,28 @@ export default function App() {
       return !!answerText
     }
     if (!answerCompletedAtRef.current) return false
-    if (Date.now() - answerCompletedAtRef.current > speakHoldMsRef.current) return false
+    const sinceAnswer = Date.now() - answerCompletedAtRef.current
+    const quietMs = lastSpeechTimeRef.current > 0
+      ? Date.now() - lastSpeechTimeRef.current
+      : sinceAnswer
+    if (isPhoneAutoParity()) {
+      // Phone: hard 4s, 1.6s quiet releases, else until speakHold (up to 45s).
+      if (isStillUsingLastAnswer({
+        sinceAnswerMs: sinceAnswer,
+        quietMs,
+        speakHoldMs: speakHoldMsRef.current,
+      })) {
+        return true
+      }
+      const speech = String(speechBufferRef.current || '').trim()
+      if (speech && answerText && isLikelySelfReadback(speech, answerText)) return true
+      return false
+    }
+    if (sinceAnswer > speakHoldMsRef.current) return false
     const speech = String(speechBufferRef.current || '').trim()
-    if (!speech || !answerText) return Date.now() - answerCompletedAtRef.current < 3500
+    if (!speech || !answerText) return sinceAnswer < 3500
     return isLikelySelfReadback(speech, answerText)
-  }, [])
+  }, [isPhoneAutoParity])
 
   const shouldBlockAutoReadback = useCallback((speech) => {
     if (!assistAutoTriggerRef.current) return false
@@ -960,23 +1145,59 @@ export default function App() {
       return isLikelySelfReadback(String(speech || '').trim(), answerText)
     }
     if (!answerCompletedAtRef.current) return false
+    if (isPhoneAutoParity()) {
+      const sinceAnswer = Date.now() - answerCompletedAtRef.current
+      const quietMs = lastSpeechTimeRef.current > 0
+        ? Date.now() - lastSpeechTimeRef.current
+        : sinceAnswer
+      if (isStillUsingLastAnswer({
+        sinceAnswerMs: sinceAnswer,
+        quietMs,
+        speakHoldMs: speakHoldMsRef.current,
+      })) {
+        // Only block pure readback; genuine follow-ups are queued by maybeTriggerAI.
+        return isLikelySelfReadback(String(speech || '').trim(), answerText)
+      }
+    }
     if (Date.now() - answerCompletedAtRef.current > speakHoldMsRef.current) return false
     return isLikelySelfReadback(String(speech || '').trim(), answerText)
-  }, [])
+  }, [isPhoneAutoParity])
 
   const shouldIgnoreMicTranscript = useCallback((text) => {
     if (!assistAutoTriggerRef.current) return false
     const chunk = String(text || '').trim()
     if (!chunk) return false
     const answerText = `${String(lastResponseRef.current || '').trim()} ${String(streamAccumRef.current || '').trim()}`.trim()
+    if (!answerText) return false
     if (isThinkingRef.current || responseLockRef.current || micPausedForAskRef.current) {
-      return !!answerText
+      // AI is actively answering — never blanket-drop mic speech. Only filter genuine
+      // readback so a real follow-up spoken mid-generation still reaches the transcript/buffer
+      // (matches phone: STT never pauses, only the readback portion gets stripped).
+      if (isLikelySelfReadback(chunk, answerText)) return true
+      return !stripSelfReadback(chunk, answerText)
     }
-    if (!answerText || !answerCompletedAtRef.current) return false
+    if (!answerCompletedAtRef.current) return false
+    if (isPhoneAutoParity()) {
+      const sinceAnswer = Date.now() - answerCompletedAtRef.current
+      const quietMs = lastSpeechTimeRef.current > 0
+        ? Date.now() - lastSpeechTimeRef.current
+        : sinceAnswer
+      // During hold: ignore pure readback; keep genuine tail via strip (handled in processTranscribedText).
+      if (isStillUsingLastAnswer({
+        sinceAnswerMs: sinceAnswer,
+        quietMs,
+        speakHoldMs: speakHoldMsRef.current,
+      })) {
+        if (isLikelySelfReadback(chunk, answerText)) return true
+        const remainder = stripSelfReadback(chunk, answerText)
+        return !remainder
+      }
+      return false
+    }
     if (Date.now() - answerCompletedAtRef.current > speakHoldMsRef.current) return false
     if (isLikelySelfReadback(chunk, answerText)) return true
     return !stripSelfReadback(chunk, answerText)
-  }, [])
+  }, [isPhoneAutoParity])
 
   const applySpeechSilenceWindow = useCallback(() => {
     const now = Date.now()
@@ -985,30 +1206,9 @@ export default function App() {
     }
   }, [clearRollingSpeech])
 
-  const appendLiveSegment = useCallback((speaker, textChunk, meta = {}) => {
-    const t = String(textChunk || '').trim()
-    if (!t) return
-    currentSpeakerRef.current = speaker
-    const segs = speechSegmentsRef.current
-    const now = Date.now()
-    const next = [...segs, {
-      id: ++liveSegmentIdRef.current,
-      speaker,
-      channel: meta.channel || (speaker === 'other' ? 'sys' : 'mic'),
-      text: t,
-      capturedAt: Number(meta.capturedAt) || now,
-      updatedAt: now,
-      interim: false,
-    }].sort((a, b) => (a.capturedAt - b.capturedAt) || (a.id - b.id))
-    const capped = next.slice(-MAX_LIVE_SEGMENTS)
-    speechSegmentsRef.current = capped
-    flushLiveTranscriptUi()
-  }, [flushLiveTranscriptUi])
-
   const setLiveSegmentInterim = useCallback((speaker, textChunk, meta = {}) => {
     const t = String(textChunk || '').trim()
     if (!t) return
-    currentSpeakerRef.current = speaker
     const segs = speechSegmentsRef.current
     const channel = meta.channel || (speaker === 'other' ? 'sys' : 'mic')
     const interimIndex = segs.findLastIndex((segment) => segment.channel === channel && segment.interim)
@@ -1105,10 +1305,6 @@ export default function App() {
     }
   }, [])
 
-  const clearStreamDom = useCallback(() => {
-    streamPreviewActiveRef.current = false
-  }, [])
-
   /**
    * Throttled stream UI refresh — plain teleprompter text (no raw markdown syntax).
    * Full BriefAnswer layout is applied on commit only (Natively companion pattern).
@@ -1119,7 +1315,7 @@ export default function App() {
     streamPreviewFlushRef.current = window.setTimeout(() => {
       streamPreviewFlushRef.current = null
       if (!streamDomAcceptingRef.current) return
-      setStreamPreview(streamAccumRef.current)
+      setStreamPreviewText(streamAccumRef.current)
     }, delay)
   }, [])
 
@@ -1129,12 +1325,12 @@ export default function App() {
       const prevLen = streamAccumRef.current.length
       streamAccumRef.current += t
       if (prevLen === 0) {
-        setStreamPreview(streamAccumRef.current)
+        setStreamPreviewText(streamAccumRef.current)
       }
       scheduleStreamPreviewFlush()
       if (!perfFirstTokenLoggedRef.current) {
         perfFirstTokenLoggedRef.current = true
-        if (perfAskT0Ref.current) {
+        if (perfAskT0Ref.current && import.meta.env.DEV) {
           const dt = Date.now() - perfAskT0Ref.current
           console.log('UI_FIRST_TOKEN_MS', dt)
           console.log('UI_RESPONSE_DELAY', dt)
@@ -1151,8 +1347,7 @@ export default function App() {
       cancelStreamScroll()
       streamAccumRef.current = ''
       streamDomAcceptingRef.current = true
-      streamPreviewActiveRef.current = false
-      setStreamPreview('')
+      clearStreamPreview()
       perfFirstTokenLoggedRef.current = false
       const askSource =
         meta && typeof meta === 'object' && typeof meta.askSource === 'string' ? meta.askSource : 'screen'
@@ -1167,7 +1362,9 @@ export default function App() {
       }
       if (assistAutoTriggerRef.current) {
         answerCompletedAtRef.current = Date.now()
-        speakHoldMsRef.current = Math.max(speakHoldMsRef.current, 8000)
+        speakHoldMsRef.current = isPhoneAutoParity()
+          ? Math.max(speakHoldMsRef.current, 8000)
+          : Math.max(speakHoldMsRef.current, 8000)
       }
       micPausedForAskRef.current = true
       const echoRaw = meta && typeof meta === 'object' ? meta.transcriptEcho : null
@@ -1186,7 +1383,7 @@ export default function App() {
       }
       flushSync(() => {
         setIsThinking(true)
-        setExpanded(true)
+        openPanel()
         setActiveAskSource(askSource)
         if (heardQuestion) {
           setMessages((m) =>
@@ -1197,8 +1394,7 @@ export default function App() {
           )
         }
       })
-      clearStreamDom()
-      if (perfAskT0Ref.current) {
+      if (perfAskT0Ref.current && import.meta.env.DEV) {
         console.log('UI_AI_START_MS', Date.now() - perfAskT0Ref.current)
       }
     }
@@ -1220,18 +1416,86 @@ export default function App() {
             lastResponseRef.current !== '' && full === lastResponseRef.current
           if (!isDuplicateRepeat) {
             lastResponseRef.current = full
-          } else {
+          } else if (import.meta.env.DEV) {
             console.log('duplicate response — showing with repeat note')
           }
           if (assistAutoTriggerRef.current) {
             answerCompletedAtRef.current = Date.now()
-            speakHoldMsRef.current = estimatedAnswerReadbackHoldMs(full)
+            speakHoldMsRef.current = isPhoneAutoParity()
+              ? estimatedAnswerHoldMs(full)
+              : estimatedAnswerReadbackHoldMs(full)
           }
           const bufferedAfterAnswer = String(speechBufferRef.current || '').trim()
           if (bufferedAfterAnswer && isLikelySelfReadback(bufferedAfterAnswer, full)) {
-            speechBufferRef.current = ''
-            lastSpeechTimeRef.current = 0
-            lastSentSpeechRef.current = ''
+            if (isPhoneAutoParity()) {
+              // Keep any genuine tail question; don't wipe the whole buffer.
+              const remainder = stripSelfReadback(bufferedAfterAnswer, full)
+              speechBufferRef.current = remainder
+              if (!remainder) {
+                lastSpeechTimeRef.current = 0
+                lastSentSpeechRef.current = ''
+              }
+            } else {
+              speechBufferRef.current = ''
+              lastSpeechTimeRef.current = 0
+              lastSentSpeechRef.current = ''
+            }
+          }
+          if (isPhoneAutoParity()) {
+            // Classify leftover speech for continuation / new follow-up (phone processPostAnswerFollowUp).
+            // STT keeps running during generation, so the raw buffer/segments can still contain the
+            // ORIGINAL question text (Q1) glued to any genuinely new speech (Q2). Strip the already-answered
+            // question first so classification runs on just the new tail — otherwise a combined "Q1 ... Q2"
+            // blob gets misread as a readback/repeat of Q1 and the follow-up is silently dropped.
+            const rawLeftover = String(speechBufferRef.current || '').trim()
+              || selectActiveQuestion(speechSegmentsRef.current)
+            const answeredQ = String(lastAutoQuestionRef.current || '').trim()
+            const tailOnly = answeredQ
+              ? (extractFollowUpAfterAnswer(answeredQ, rawLeftover) || rawLeftover)
+              : rawLeftover
+            const cleaned = tailOnly && full
+              ? (stripSelfReadback(tailOnly, full) || tailOnly)
+              : tailOnly
+            const isNewTail = !!cleaned && (!answeredQ || !questionsAreSimilar(cleaned, answeredQ))
+            const kind = isNewTail ? classifyPostAnswerSpeech(cleaned, answeredQ) : 'ignore'
+            if (kind === 'continuation' && cleaned && answeredQ) {
+              // Continuations ("and how did you use it?") fire as soon as the ask pipeline frees up —
+              // mirrors mobile's immediate re-fire instead of waiting out the multi-second readback hold.
+              pendingFollowUpRef.current = combineQuestion(answeredQ, cleaned)
+              pendingFollowUpImmediateRef.current = true
+            } else if (kind === 'new_question' && cleaned) {
+              pendingFollowUpRef.current = cleaned
+              pendingFollowUpImmediateRef.current = false
+            }
+            if (pendingFollowUpRef.current) {
+              if (followUpHoldTimerRef.current != null) clearInterval(followUpHoldTimerRef.current)
+              followUpHoldTimerRef.current = window.setInterval(() => {
+                if (!isPhoneAutoParity() || !sessionOnRef.current) {
+                  clearInterval(followUpHoldTimerRef.current)
+                  followUpHoldTimerRef.current = null
+                  return
+                }
+                if (responseLockRef.current || isThinkingRef.current || isProcessingAskRef.current) return
+                // Continuations only wait for the ask pipeline to free up; genuine new questions still
+                // respect the "still reading the last answer aloud" hold.
+                if (!pendingFollowUpImmediateRef.current && isStillReadingAnswerAloud()) return
+                const q = String(pendingFollowUpRef.current || '').trim()
+                if (!q) {
+                  clearInterval(followUpHoldTimerRef.current)
+                  followUpHoldTimerRef.current = null
+                  return
+                }
+                pendingFollowUpRef.current = ''
+                // Leave pendingFollowUpImmediateRef as-is until after the call below — maybeTriggerAI
+                // reads it to decide whether to bypass the readback hold, then clears it itself.
+                clearInterval(followUpHoldTimerRef.current)
+                followUpHoldTimerRef.current = null
+                speechBufferRef.current = q
+                lastSpeechTimeRef.current = Date.now() - SPEECH_STABILITY_MS - 50
+                maybeTriggerAIRef.current?.()
+                pendingFollowUpImmediateRef.current = false
+              }, 400)
+            }
           }
           setMessages((m) =>
             capMessages([
@@ -1250,14 +1514,19 @@ export default function App() {
       } finally {
         activeTurnMetaRef.current = null
         setActiveAskSource(null)
-        clearStreamDom()
-        setStreamPreview('')
+        clearStreamPreview()
         commitLockRef.current = false
       }
     }
     const onThinking = (_, v) => {
-      setIsThinking(v)
       if (v) {
+        // ai-thinking fires before screenshot/profile-context preflight; ai-start only fires
+        // after that work finishes. Reveal the panel now (ComposingShell covers the empty
+        // state) so the UI responds immediately instead of staying closed during preflight.
+        flushSync(() => {
+          setIsThinking(true)
+          openPanel()
+        })
         streamDomAcceptingRef.current = true
         return
       }
@@ -1265,16 +1534,21 @@ export default function App() {
         clearTimeout(streamPreviewFlushRef.current)
         streamPreviewFlushRef.current = null
       }
+      // commit() triggers setMessages, which is what actually costs a synchronous
+      // markdown parse (BriefAnswer) in ResponsePanel. Let that land in its own commit
+      // first, then flip isThinking a frame later — fusing both into one tick was the
+      // visible freeze right as the panel settled.
       commit()
-      setStreamPreview('')
+      clearStreamPreview()
       // Resume mic after answer finishes; readback filter still drops mic echo in processTranscribedText.
       setTimeout(() => { micPausedForAskRef.current = false }, 1200)
-      setLiveTranscriptSegments([...speechSegmentsRef.current])
-      setRollingBar({ ...rollingBarDisplayRef.current })
+      pushLiveTranscriptSegments([...speechSegmentsRef.current])
+      pushRollingBar({ ...rollingBarDisplayRef.current })
+      requestAnimationFrame(() => setIsThinking(false))
     }
     const onAborted = () => {
       setIsThinking(false)
-      setStreamPreview('')
+      clearStreamPreview()
       responseLockRef.current = false
       isProcessingAskRef.current = false
       micPausedForAskRef.current = false
@@ -1285,8 +1559,7 @@ export default function App() {
       streamDomAcceptingRef.current = false
       ipc?.send('shadowassist-stream-ended')
       streamAccumRef.current = ''
-      clearStreamDom()
-      setStreamPreview('')
+      clearStreamPreview()
       setIsThinking(false)
       // Error ends the turn: release the ask latch so the next Ask is never blocked.
       responseLockRef.current = false
@@ -1303,7 +1576,6 @@ export default function App() {
       streamDomAcceptingRef.current = false
       ipc?.send('shadowassist-stream-ended')
       streamAccumRef.current = ''
-      clearStreamDom()
       activeTurnMetaRef.current = null
       setActiveAskSource(null)
       setMessages([])
@@ -1322,7 +1594,7 @@ export default function App() {
       responseLockRef.current = false
       isProcessingAskRef.current = false
       micPausedForAskRef.current = false
-      setStreamPreview('')
+      clearStreamPreview()
       setIsThinking(false)
     }
     const onNoOutput = () => {
@@ -1331,21 +1603,21 @@ export default function App() {
     const onTrigger = () => {
       if (!sessionOnRef.current) return
       handleAskRef.current?.(null, { bypassCaptureCooldown: true, visionAsk: true })
-      setExpanded(true)
+      openPanel()
     }
     const onTriggerNoScreen = () => {
       if (!sessionOnRef.current) return
       handleAskRef.current?.(null, { bypassCaptureCooldown: true, noScreen: true })
-      setExpanded(true)
+      openPanel()
     }
     const onFollowUp = () => {
       if (!sessionOnRef.current) return
       handleAskRef.current?.('Continue.', { noScreen: true, source: 'follow-up' })
-      setExpanded(true)
+      openPanel()
     }
     const onFocusInput = () => {
       if (!sessionOnRef.current) return
-      setExpanded(true)
+      openPanel()
       setFocusInputOpen(true)
       window.setTimeout(() => inputBarRef.current?.focus?.(), 50)
     }
@@ -1368,7 +1640,7 @@ export default function App() {
         ipc.removeAllListeners(ch),
       )
     }
-  }, [scrollBottom, cancelStreamScroll, clearStreamDom, appendTokenToStreamDom, clearRollingSpeech])
+  }, [scrollBottom, cancelStreamScroll, appendTokenToStreamDom, clearRollingSpeech])
 
   useEffect(() => {
     if (!ipc) return
@@ -1404,6 +1676,7 @@ export default function App() {
     })
     ipc.invoke('get-window-bounds').then((b) => {
       if (b && b.height > COLLAPSED_H) expandedSize.current = { w: b.width, h: b.height }
+      if (b) windowBoundsRef.current = b
     })
     // Defer collapse until after first paint — avoids Chromium WidgetHost IPC races at startup.
     requestAnimationFrame(() => {
@@ -1471,13 +1744,30 @@ export default function App() {
     }
   }, [syncMinSpeechThreshold])
 
+  expandedRef.current = expanded
+
   useEffect(() => {
     if (!ipc) return
-    const minExpandedH = PILL_H + STACK_GAP + 220 + 8
     const w = expandedSize.current.w
-    const h = expanded ? Math.max(expandedSize.current.h, minExpandedH) : COLLAPSED_H
-    void syncOverlayWindowSize(w, h)
-  }, [expanded, syncOverlayWindowSize])
+
+    if (!expanded) {
+      expandedWindowHeightRef.current = null
+      void syncOverlayWindowSize(w, COLLAPSED_H)
+      return
+    }
+
+    if (!panelRevealed) {
+      // Compact consent shell — size for the notch + small card, not the full panel.
+      if (showAudioConsent) void syncOverlayWindowSize(w, CONSENT_SHELL_H)
+      return
+    }
+
+    const minExpandedH = PILL_H + STACK_GAP + 220 + 8
+    const footerExtra = sessionOn ? FOOTER_STACK_GAP + SUGGESTION_FOOTER_H : 0
+    const needed = Math.max(expandedSize.current.h, minExpandedH + footerExtra)
+    expandedWindowHeightRef.current = Math.max(expandedWindowHeightRef.current ?? 0, needed)
+    void syncOverlayWindowSize(w, expandedWindowHeightRef.current)
+  }, [expanded, sessionOn, panelRevealed, showAudioConsent, syncOverlayWindowSize])
 
   useEffect(() => {
     if (!ipc) return
@@ -1487,20 +1777,23 @@ export default function App() {
       if (active) {
         startMicRef.current()
         bypassCaptureOnceRef.current = true
-        setExpanded(true)
+        openPanel()
       } else {
         stopMicRef.current()
+        setPanelRevealed(false)
       }
     }
     const unsub = ipc.on('session-status', onStatus)
     ipc.invoke('session-active').then((a) => {
       sessionOnRef.current = a
       setSessionOn(a)
-      // Main may have sent session-status before this listener mounted (auto-start race).
-      if (a && !isListening.current) startMicRef.current()
+      if (a) {
+        if (!isListening.current) startMicRef.current()
+        openPanel()
+      }
     })
     return () => unsub?.()
-  }, [])
+  }, [openPanel])
 
   useEffect(() => {
     if (!ipc) return
@@ -1521,17 +1814,18 @@ export default function App() {
     const onPrompt = () => {
       if (audioSessionAcknowledgedRef.current) {
         bypassCaptureOnceRef.current = true
-        setExpanded(true)
+        openPanel()
         ipc.invoke('session-start-confirmed')
       } else {
+        // First run this session — nothing is showing yet, so use the compact
+        // notch + card shell rather than expanding to a big empty panel.
         bypassCaptureOnceRef.current = true
-        setExpanded(true)
-        setShowAudioConsent(true)
+        openConsentShell()
       }
     }
     const unsub = ipc.on('prompt-audio-consent', onPrompt)
     return () => unsub?.()
-  }, [])
+  }, [openPanel, openConsentShell])
 
   useEffect(() => {
     if (!ipc) return
@@ -1540,7 +1834,6 @@ export default function App() {
       streamDomAcceptingRef.current = false
       ipc?.send('shadowassist-stream-ended')
       streamAccumRef.current = ''
-      clearStreamDom()
       activeTurnMetaRef.current = null
       setActiveAskSource(null)
       setMessages([])
@@ -1560,13 +1853,17 @@ export default function App() {
       responseLockRef.current = false
       isProcessingAskRef.current = false
       micPausedForAskRef.current = false
-      setStreamPreview('')
-      // Session ended: collapse panel back to default small state.
+      clearStreamPreview()
+      // Session ended: collapse panel back to the small notch state. Without this,
+      // the OS window stays at its last-grown height/position forever — every
+      // subsequent start/stop cycle compounds on a stale, oversized window instead
+      // of a clean baseline, which reads as the overlay drifting on its own.
+      setPanelRevealed(false)
       setExpanded(false)
     }
     const unsub = ipc.on('session-purge', onPurge)
     return () => unsub?.()
-  }, [clearRollingSpeech, cancelStreamScroll, clearStreamDom])
+  }, [clearRollingSpeech, cancelStreamScroll])
 
   useEffect(() => {
     if (!ipc) return
@@ -1644,12 +1941,9 @@ export default function App() {
     const rate = ctx?.sampleRate || 48000
     const sendChunk = (channel, pcm) => {
       lastPcmSentAtRef.current = Date.now()
-      if (
-        channel === 'mic'
-        && (micPausedForAskRef.current || isThinkingRef.current || responseLockRef.current)
-      ) {
-        return
-      }
+      // Never pause capture while the AI is answering — mirrors phone (STT keeps listening
+      // continuously); self-readback is filtered out later at the text level so genuine
+      // follow-up speech spoken mid-generation is still transcribed and shown live.
       if (sttModeRef.current === 'local') {
         ipc?.send('local-stt:write-chunk', { channel, pcm, sampleRate: rate })
       } else if (sttMainProcessRef.current) {
@@ -1820,8 +2114,8 @@ export default function App() {
 
       streamSpecsRef.current = specs
       audioPathsRef.current = { hasMic: !!mic, hasSys: !!sys }
-      setSysCaptureActive(!!sys)
-      setMicCaptureActive(!!mic)
+      setSysCaptureActive(false)
+      setMicCaptureActive(false)
       energySampleRef.current = samplePack
       chunkEnergyRef.current = {
         active: false,
@@ -1949,6 +2243,9 @@ export default function App() {
         const speechRecent =
           Date.now() - (pathSpeechAtRef.current.mic || 0) < 900 ||
           Date.now() - (pathSpeechAtRef.current.sys || 0) < 900
+        const paths = audioPathsRef.current || {}
+        setMicCaptureActive(!!paths.hasMic && Date.now() - (pathSpeechAtRef.current.mic || 0) < 900)
+        setSysCaptureActive(!!paths.hasSys && Date.now() - (pathSpeechAtRef.current.sys || 0) < 900)
         if (speechRecent && sttTranscribingCountRef.current === 0) setSttPhaseIfChanged('speech')
         else if (sttTranscribingCountRef.current > 0) setSttPhaseIfChanged('transcribing')
         else if (!speechRecent) setSttPhaseIfChanged('idle')
@@ -1972,10 +2269,8 @@ export default function App() {
   function startChunk() {
     if (!isListening.current) return
     if (sttModeRef.current === 'local') return
-    if (micPausedForAskRef.current) {
-      setTimeout(() => startChunk(), 500)
-      return
-    }
+    // Never pause recording while an ask is in flight — capture must keep running so
+    // follow-up speech is transcribed; self-readback is filtered downstream at the text level.
     const specs = streamSpecsRef.current || []
     if (!specs.length) return
 
@@ -2114,9 +2409,32 @@ export default function App() {
     }
 
     let speechChunk = trimmedChunk
+    // Phone parity: strip answer-overlap but keep a genuine follow-up tail.
+    if (
+      isPhoneAutoParity()
+      && audioPathKey === 'mic'
+      && assistAutoTriggerRef.current
+    ) {
+      const answerText = `${String(lastResponseRef.current || '').trim()} ${String(streamAccumRef.current || '').trim()}`.trim()
+      if (answerText) {
+        const remainder = stripSelfReadback(trimmedChunk, answerText)
+        if (!remainder) {
+          if (isFinal) {
+            commitLiveSegmentFinal(speaker, trimmedChunk, {
+              channel: audioPathKey,
+              capturedAt: Number(capturedAt) || tChunk,
+              consumed: true,
+              readback: true,
+            })
+          }
+          return
+        }
+        speechChunk = remainder
+      }
+    }
     let readbackDrop = false
     const roleTag = speaker === 'me' ? 'Me' : 'Participant'
-    const labeled = `${roleTag}: ${trimmedChunk}`
+    const labeled = `${roleTag}: ${speechChunk}`
     const segmentMeta = { channel: audioPathKey, capturedAt: Number(capturedAt) || tChunk }
 
     if (!isFinal) {
@@ -2388,43 +2706,84 @@ export default function App() {
     if (!sessionOnRef.current) return
     if (!assistAutoTriggerRef.current) return
     if (responseLockRef.current || isThinkingRef.current) return
-    if (isStillReadingAnswerAloud()) return
+
+    const phoneParity = isPhoneAutoParity()
+    // A continuation follow-up firing immediately (see commit()) already decided it's safe to
+    // ask — don't let this re-check re-queue it back into the multi-second readback hold.
+    const bypassHold = phoneParity && pendingFollowUpImmediateRef.current
     const silenceMs = Date.now() - lastSpeechTimeRef.current
-    // Speech is too stale — clear and bail rather than trigger with old content
     if (lastSpeechTimeRef.current > 0 && silenceMs > MAX_SPEECH_WINDOW_MS) {
       clearRollingSpeech()
       return
     }
-    const speech = String(speechBufferRef.current || '').trim()
+
+    // Prefer last discrete utterance (phone) over concatenated buffer when in parity mode.
+    // For an immediate-fire continuation, trust the just-set buffer (carries the combined Q1+Q2
+    // question) instead of re-deriving from segments, which may only hold the bare Q2 tail.
+    const activeFromSegs = selectActiveQuestion(speechSegmentsRef.current)
+    const bufferSpeech = String(speechBufferRef.current || '').trim()
+    let speech = bypassHold ? bufferSpeech : (phoneParity && activeFromSegs ? activeFromSegs : bufferSpeech)
+    if (phoneParity && pendingFollowUpRef.current && !isStillReadingAnswerAloud()) {
+      speech = String(pendingFollowUpRef.current).trim() || speech
+    }
+
+    if (isStillReadingAnswerAloud() && !bypassHold) {
+      // Queue a ready follow-up while the user is still reading the answer.
+      if (phoneParity && speech && isUtteranceReadyForAutoAnswer(speech) && !isLikelySelfReadback(speech, lastResponseRef.current || '')) {
+        if (!questionsAreSimilar(speech, lastAutoQuestionRef.current) && !questionsAreSimilar(speech, pendingFollowUpRef.current)) {
+          pendingFollowUpRef.current = speech
+          pendingFollowUpImmediateRef.current = false
+        }
+      }
+      return
+    }
+
     if (speech.length < minSpeechLengthRef.current) return
     if (shouldBlockAutoReadback(speech)) return
+    if (phoneParity && !isUtteranceReadyForAutoAnswer(speech)) return
     if (silenceMs <= SPEECH_STABILITY_MS) return
     if (Date.now() - lastTriggerTimeRef.current < SPEECH_TRIGGER_COOLDOWN_MS) return
-    /** Don't re-trigger if buffer hasn't grown since last send (same text = same answer). */
-    if (speech === lastSentSpeechRef.current) return
-    /** One armed delay only: clearing on every 500ms tick was starving the timer (never fired). */
+    if (questionsAreSimilar(speech, lastSentSpeechRef.current) || speech === lastSentSpeechRef.current) return
     if (speechTriggerDelayRef.current != null) return
     lastSentSpeechRef.current = speech
+    lastAutoQuestionRef.current = speech
+    pendingFollowUpRef.current = ''
+    pendingFollowUpImmediateRef.current = false
+    // Sync buffer so handleAsk snapshot uses the active question in parity mode.
+    if (phoneParity && activeFromSegs) {
+      speechBufferRef.current = speech
+    }
+    const leadIn = phoneParity ? 120 : SPEECH_TRIGGER_LEAD_IN_MS
     speechTriggerDelayRef.current = window.setTimeout(() => {
       speechTriggerDelayRef.current = null
       if (!sessionOnRef.current || !assistAutoTriggerRef.current || responseLockRef.current || isThinkingRef.current) {
         return
       }
-      if (isStillReadingAnswerAloud()) return
+      if (isStillReadingAnswerAloud() && !bypassHold) return
       const silenceNow = Date.now() - lastSpeechTimeRef.current
       if (lastSpeechTimeRef.current > 0 && silenceNow > MAX_SPEECH_WINDOW_MS) {
         clearRollingSpeech()
         return
       }
-      const after = String(speechBufferRef.current || '').trim()
+      const afterSegs = selectActiveQuestion(speechSegmentsRef.current)
+      const after = bypassHold
+        ? String(speechBufferRef.current || '').trim()
+        : (phoneParity && afterSegs)
+          ? afterSegs
+          : String(speechBufferRef.current || '').trim()
       if (after.length < minSpeechLengthRef.current) return
       if (silenceNow <= SPEECH_STABILITY_MS) return
       if (Date.now() - lastTriggerTimeRef.current < SPEECH_TRIGGER_COOLDOWN_MS) return
       if (shouldBlockAutoReadback(after)) return
-      if (after !== speech) lastSentSpeechRef.current = after
+      if (phoneParity && !isUtteranceReadyForAutoAnswer(after)) return
+      if (after !== speech) {
+        lastSentSpeechRef.current = after
+        lastAutoQuestionRef.current = after
+      }
+      if (phoneParity && after) speechBufferRef.current = after
       handleAskRef.current?.(null, { auto: true, source: 'speech' })
-    }, SPEECH_TRIGGER_LEAD_IN_MS)
-  }, [clearRollingSpeech, isStillReadingAnswerAloud, shouldBlockAutoReadback])
+    }, leadIn)
+  }, [clearRollingSpeech, isStillReadingAnswerAloud, shouldBlockAutoReadback, isPhoneAutoParity])
 
   const maybeTriggerFromScreen = useCallback(() => {
     if (!sessionOnRef.current) return
@@ -2443,11 +2802,11 @@ export default function App() {
           ? 'speech-failsafe'
           : 'speech'
       if (responseLockRef.current) {
-        console.log('BLOCKED: response in-flight')
+        if (import.meta.env.DEV) console.log('BLOCKED: response in-flight')
         return
       }
       if (isThinkingRef.current) {
-        console.log('BLOCKED: already processing')
+        if (import.meta.env.DEV) console.log('BLOCKED: already processing')
         return
       }
       if (isProcessingAskRef.current) return
@@ -2493,16 +2852,28 @@ export default function App() {
           // Close the active utterance before taking the immutable Ask snapshot. Capture remains
           // live, so speech arriving after this watermark belongs to the next turn.
           const { hasMic, hasSys } = audioPathsRef.current
+          // Typed asks with no unflushed speech have nothing to gain from the flush round trip
+          // (up to a 2.5s cap) — skip it entirely. Auto/speech-driven asks and any ask with a
+          // buffered/recent utterance still flush as before.
+          const hasRecentSpeechActivity =
+            (hasMic && Date.now() - (pathSpeechAtRef.current.mic || 0) < 900) ||
+            (hasSys && Date.now() - (pathSpeechAtRef.current.sys || 0) < 900)
+          const hasLocalPendingBlobs =
+            (sttPendingRef.current.mic?.blobs?.length || 0) > 0 || (sttPendingRef.current.sys?.blobs?.length || 0) > 0
+          const skipFlush = hasText && !isAuto && !hasSpeechBuff && !hasRecentSpeechActivity && !hasLocalPendingBlobs
+
           const flushChannels = []
-          if (sttModeRef.current === 'local') {
-            if (hasMic) flushChannels.push(ipc?.invoke('local-stt:flush', { channel: 'mic' }))
-            if (hasSys) flushChannels.push(ipc?.invoke('local-stt:flush', { channel: 'sys' }))
-          } else if (sttMainProcessRef.current) {
-            if (hasMic) flushChannels.push(ipc?.invoke('streaming-stt:flush', { channel: 'mic' }))
-            if (hasSys) flushChannels.push(ipc?.invoke('streaming-stt:flush', { channel: 'sys' }))
-          } else {
-            if (hasMic) flushChannels.push(flushSttPending('mic', true))
-            if (hasSys) flushChannels.push(flushSttPending('sys', true))
+          if (!skipFlush) {
+            if (sttModeRef.current === 'local') {
+              if (hasMic) flushChannels.push(ipc?.invoke('local-stt:flush', { channel: 'mic' }))
+              if (hasSys) flushChannels.push(ipc?.invoke('local-stt:flush', { channel: 'sys' }))
+            } else if (sttMainProcessRef.current) {
+              if (hasMic) flushChannels.push(ipc?.invoke('streaming-stt:flush', { channel: 'mic' }))
+              if (hasSys) flushChannels.push(ipc?.invoke('streaming-stt:flush', { channel: 'sys' }))
+            } else {
+              if (hasMic) flushChannels.push(flushSttPending('mic', true))
+              if (hasSys) flushChannels.push(flushSttPending('sys', true))
+            }
           }
           // Bounded: a stalled STT worker must not permanently latch isProcessingAskRef.
           if (flushChannels.length) await settleWithinAskFlushTimeout(flushChannels)
@@ -2591,7 +2962,7 @@ export default function App() {
               hasScreen: isVisionAsk || isScreenRead,
             },
             assistTrigger,
-            source: trimmed ? 'typed' : rawSpeech ? 'speech' : 'screen',
+            source: opts.source === 'action-chip' ? 'action-chip' : trimmed ? 'typed' : rawSpeech ? 'speech' : 'screen',
             skillSlug: skillSlug || undefined,
             pastMeetingContext: opts.pastMeetingContext || undefined,
             transcriptWatermarkAt: consumesTranscriptSnapshot ? transcriptWatermarkAt : undefined,
@@ -2659,10 +3030,31 @@ export default function App() {
         bypassCaptureCooldown: true,
         noScreen: false,
       })
-      setExpanded(true)
+      openPanel()
     },
-    [handleAsk, isThinking],
+    [handleAsk, isThinking, openPanel],
   )
+
+  const handleFooterAction = useCallback(
+    (actionId) => {
+      const presetByFooterId = {
+        what_to_answer: 'whatToSay',
+        summarize: 'summarize',
+        follow_up: 'followup',
+        clarify: 'clarify',
+      }
+      const chip = ACTION_CHIP_PRESETS.find((item) => item.id === presetByFooterId[actionId])
+      if (!chip || isThinking) return
+      setActiveFooterAction(actionId)
+      handleActionChip(chip)
+    },
+    [handleActionChip, isThinking],
+  )
+
+  // Clear the footer's in-flight highlight once the answer finishes streaming.
+  useEffect(() => {
+    if (!isThinking) setActiveFooterAction(null)
+  }, [isThinking])
 
   const handlePastMeetingSearchAsk = useCallback(
     (hit) => {
@@ -2673,9 +3065,9 @@ export default function App() {
         source: 'past-meeting-search',
         bypassCaptureCooldown: true,
       })
-      setExpanded(true)
+      openPanel()
     },
-    [handleAsk, isThinking],
+    [handleAsk, isThinking, openPanel],
   )
 
   useEffect(() => {
@@ -2710,6 +3102,8 @@ export default function App() {
     speechFailsafeIntervalRef.current = window.setInterval(() => {
       if (!sessionOnRef.current) return
       if (!assistAutoTriggerRef.current || responseLockRef.current || isThinkingRef.current) return
+      // Phone parity: never fire mid-utterance failsafe — utterance-ready + silence only.
+      if (isPhoneAutoParity()) return
       if (isStillReadingAnswerAloud()) return
       applySpeechSilenceWindow()
       const fsBuffer = String(speechBufferRef.current || '').trim()
@@ -2719,8 +3113,6 @@ export default function App() {
       if (fsBuffer === lastSentSpeechRef.current) return
       // Claim synchronously — same race-condition fix as maybeTriggerAI
       lastSentSpeechRef.current = fsBuffer
-      console.log('🎤 BUFFER:', speechBufferRef.current)
-      console.log('⏱ LAST TRIGGER:', lastTriggerTimeRef.current)
       handleAskRef.current?.(null, { auto: true, source: 'speech-failsafe' })
     }, SPEECH_FAILSAFE_MS)
     return () => {
@@ -2729,7 +3121,7 @@ export default function App() {
         speechFailsafeIntervalRef.current = null
       }
     }
-  }, [sessionOn, applySpeechSilenceWindow, isStillReadingAnswerAloud, shouldBlockAutoReadback])
+  }, [sessionOn, applySpeechSilenceWindow, isStillReadingAnswerAloud, shouldBlockAutoReadback, isPhoneAutoParity])
 
   const hideOverlay = useCallback(() => {
     setHiding(true)
@@ -2751,6 +3143,18 @@ export default function App() {
 
   const onResizeEnd = useCallback((b) => {
     expandedSize.current = { w: b.width, h: b.height }
+    expandedWindowHeightRef.current = b.height
+    windowBoundsRef.current = b
+  }, [])
+
+  const onResizeStart = useCallback(() => {
+    panelResizingRef.current = true
+    setPanelResizing(true)
+  }, [])
+
+  const onResizeStop = useCallback(() => {
+    panelResizingRef.current = false
+    setPanelResizing(false)
   }, [])
 
   const audioConsentCard = showAudioConsent ? (
@@ -2782,47 +3186,48 @@ export default function App() {
 
   return (
     <div
-      className="crystal-stack relative flex h-full w-full flex-col"
+      className={[
+        'crystal-stack relative flex h-full w-full flex-col',
+        overlayMousePassthrough ? 'crystal-stack-passthrough' : '',
+        panelResizing ? 'overlay-resizing' : '',
+        hiding || !overlayMainVisible ? 'crystal-overlay-inert' : '',
+      ].join(' ')}
       style={{
-        opacity: hiding || !overlayMainVisible ? 0 : 1,
+        opacity: hiding || !overlayMainVisible ? 0 : opacity,
         transform: hiding ? 'translateY(-6px) scale(0.98)' : 'translateY(0) scale(1)',
         transition: hiding ? 'opacity 0.15s ease, transform 0.15s ease' : 'none',
-        pointerEvents: overlayMainVisible ? 'auto' : 'none',
       }}
     >
-      {/* ── Fixed-width notch — centered above panel ── */}
-      <div className="flex w-full shrink-0 justify-center">
+      <div className={`crystal-chrome w-full min-h-0 flex-1 ${expanded ? 'crystal-chrome--expanded' : ''}`}>
         <div
-          className="crystal-pill crystal-notch-shell relative z-20 shrink-0 overflow-hidden"
+          ref={notchRef}
           data-overlay-hit=""
+          className="crystal-pill crystal-notch-shell crystal-overlay-bounded relative z-20 shrink-0 overflow-hidden"
         >
           <StatusBar
             sessionOn={sessionOn}
-
             onToggleSession={onToggleSession}
             onOpenSettings={onOpenSettings}
             onQuit={quitApp}
           />
         </div>
-      </div>
 
-      {showAudioConsent && !expanded && (
+      {showAudioConsent && !panelRevealed && (
         <div
-          className="relative z-[100] mt-2 flex shrink-0 justify-center px-3 pointer-events-auto"
+          ref={consentRef}
           data-overlay-hit=""
-          style={{ WebkitAppRegion: 'no-drag' }}
+          className="crystal-overlay-bounded relative z-[100] mt-2.5 flex w-full shrink-0 justify-center px-3"
         >
           {audioConsentCard}
         </div>
       )}
 
-      {expanded && (
-        <>
-          {/* ── Floating panel — separate crystal card below pill ── */}
+      {expanded && panelRevealed && (
+        <div className="crystal-chrome-body crystal-panel-reveal" style={{ marginTop: STACK_GAP }}>
           <div
-            className="crystal-panel relative z-10 mt-[10px] flex min-h-0 flex-1 flex-col overflow-hidden"
+            ref={chromePanelRef}
             data-overlay-hit=""
-            style={{ WebkitAppRegion: 'no-drag' }}
+            className="crystal-panel crystal-overlay-bounded relative z-10 flex min-h-0 w-full flex-1 flex-col overflow-hidden"
           >
             <div className="crystal-panel-edge shrink-0" aria-hidden />
 
@@ -2864,55 +3269,12 @@ export default function App() {
                   ) : null}
                 </div>
                 <div className="crystal-transcript-bar min-w-0 flex-1" aria-live="polite">
-                  {(() => {
-                    if (!sessionOn) {
-                      return (
-                        <div className="crystal-caption-idle">
-                          <span className="crystal-caption-idle-dot" aria-hidden />
-                          <span>Listening off</span>
-                        </div>
-                      )
-                    }
-                    if (rollingBar.text) {
-                      return (
-                        <RollingTranscript
-                          text={rollingBar.text}
-                          label={rollingBar.label}
-                          speaker={rollingBar.speaker}
-                          isActive={sessionOn}
-                          sysCaptureActive={sysCaptureActive}
-                          micCaptureActive={micCaptureActive}
-                        />
-                      )
-                    }
-                    if (sttLivePhase === 'transcribing') {
-                      return (
-                        <div className="crystal-caption-phase">
-                          <span className="crystal-caption-phase-dot" aria-hidden />
-                          <span className="crystal-caption-phase-label">Captions</span>
-                          <span className="crystal-caption-phase-sub">updating…</span>
-                        </div>
-                      )
-                    }
-                    if (sttLivePhase === 'speech') {
-                      return (
-                        <div className="crystal-caption-phase">
-                          <span className="crystal-caption-phase-dot" aria-hidden />
-                          <span className="crystal-caption-phase-label">Hearing</span>
-                          <span className="crystal-caption-phase-sub">speech</span>
-                        </div>
-                      )
-                    }
-                    return (
-                      <div className="crystal-caption-phase">
-                        <span className="crystal-caption-phase-dot" aria-hidden />
-                        <span className="crystal-caption-phase-label">Listening</span>
-                        <span className="crystal-caption-phase-sub">
-                          {sysCaptureActive ? 'ready' : 'mic only — share audio for Them'}
-                        </span>
-                      </div>
-                    )
-                  })()}
+                  <TranscriptBarSlot
+                    sessionOn={sessionOn}
+                    sttLivePhase={sttLivePhase}
+                    sysCaptureActive={sysCaptureActive}
+                    micCaptureActive={micCaptureActive}
+                  />
                 </div>
                 <div
                   role="group"
@@ -2925,7 +3287,7 @@ export default function App() {
                     aria-pressed={!stealthMode}
                     onClick={() => void setProtectionMode(false)}
                     className={[
-                      'crystal-stealth-btn cursor-default transition-all duration-150 active:scale-95',
+                      'crystal-stealth-btn cursor-default transition duration-150 active:scale-95',
                       !stealthMode ? 'crystal-stealth-btn-active' : 'crystal-stealth-btn-idle',
                     ].join(' ')}
                   >
@@ -2937,7 +3299,7 @@ export default function App() {
                     aria-pressed={stealthMode}
                     onClick={() => void setProtectionMode(true)}
                     className={[
-                      'crystal-stealth-btn cursor-default transition-all duration-150 active:scale-95',
+                      'crystal-stealth-btn cursor-default transition duration-150 active:scale-95',
                       stealthMode ? 'crystal-stealth-btn-active' : 'crystal-stealth-btn-idle',
                     ].join(' ')}
                   >
@@ -2947,7 +3309,6 @@ export default function App() {
               </div>
               {sessionOn && overlayLiveTranscriptEnabled ? (
                 <LiveTranscriptPanel
-                  segments={liveTranscriptSegments}
                   autoScroll={overlayTranscriptAutoScroll}
                   className="border-t border-white/[0.06]"
                 />
@@ -2964,9 +3325,6 @@ export default function App() {
                 overlayTeleprompter={overlayTeleprompter}
                 overlayAnswerPinToTop={overlayAnswerPinToTop}
                 overlayAnswerAutoScroll={overlayAnswerAutoScroll}
-                streamPreview={streamPreview}
-                activeAskSource={activeAskSource}
-                sessionOn={sessionOn}
                 onAbort={onAbortGeneration}
                 onRetry={onRetryLastAsk}
               />
@@ -3006,11 +3364,6 @@ export default function App() {
                 {globalMeetingSearchEnabled ? (
                   <PastMeetingSearch disabled={isThinking || !sessionOn} onAskWithContext={handlePastMeetingSearchAsk} />
                 ) : null}
-                <ActionChips
-                  sessionOn={sessionOn}
-                  disabled={isThinking}
-                  onChip={handleActionChip}
-                />
                 {overlayFocusMode && !focusInputOpen ? (
                   <button
                     type="button"
@@ -3021,7 +3374,7 @@ export default function App() {
                     }}
                     className="crystal-muted flex w-full items-center justify-between px-4 py-3 text-left text-[12px] transition-colors hover:bg-[rgba(255,255,255,0.08)] hover:text-white/90"
                   >
-                    <span>Tap to ask · Ctrl+Enter for help</span>
+                    <span className="crystal-muted text-[12px]">Ask</span>
                     <span className="crystal-muted">▲</span>
                   </button>
                 ) : (
@@ -3042,21 +3395,34 @@ export default function App() {
 
             {showAudioConsent && (
               <div
-                className="absolute inset-0 z-[100] flex items-center justify-center px-4 pointer-events-auto"
+                ref={consentRef}
+                data-overlay-hit=""
+                className="crystal-overlay-bounded absolute inset-0 z-[100] flex items-center justify-center px-4 pointer-events-auto"
                 style={{ WebkitAppRegion: 'no-drag' }}
               >
                 {audioConsentCard}
               </div>
             )}
 
-            <ResizeHandle edge="left" onResizeEnd={onResizeEnd} />
-            <ResizeHandle edge="right" onResizeEnd={onResizeEnd} />
-            <ResizeHandle edge="bottom" onResizeEnd={onResizeEnd} />
-            <ResizeHandle edge="sw" onResizeEnd={onResizeEnd} />
-            <ResizeHandle edge="se" onResizeEnd={onResizeEnd} />
+            <ResizeHandle edge="left" onResizeEnd={onResizeEnd} onResizeStart={onResizeStart} onResizeStop={onResizeStop} />
+            <ResizeHandle edge="right" onResizeEnd={onResizeEnd} onResizeStart={onResizeStart} onResizeStop={onResizeStop} />
+            <ResizeHandle edge="bottom" onResizeEnd={onResizeEnd} onResizeStart={onResizeStart} onResizeStop={onResizeStop} />
+            <ResizeHandle edge="sw" onResizeEnd={onResizeEnd} onResizeStart={onResizeStart} onResizeStop={onResizeStop} />
+            <ResizeHandle edge="se" onResizeEnd={onResizeEnd} onResizeStart={onResizeStart} onResizeStop={onResizeStop} />
           </div>
-        </>
+
+          {sessionOn ? (
+            <SuggestionFooterBar
+              ref={footerRef}
+              onSelect={handleFooterAction}
+              activeAction={activeFooterAction}
+              disabled={isThinking}
+            />
+          ) : null}
+        </div>
       )}
+
+      </div>
 
     </div>
   )

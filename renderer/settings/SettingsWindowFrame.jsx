@@ -3,6 +3,7 @@
 
 import React, { useCallback, useState } from 'react'
 import overlayBrandLogo from '../shared/overlayBrandLogo'
+import { useBrand } from '../shared/branding'
 
 const drag = { WebkitAppRegion: 'drag' }
 const noDrag = { WebkitAppRegion: 'no-drag' }
@@ -25,6 +26,7 @@ function TitleBarButton({ onClick, title, children, danger }) {
 
 export default function SettingsWindowFrame({ children }) {
   const api = typeof window !== 'undefined' ? window.shadowAPI : null
+  const { name } = useBrand()
   const [maximized, setMaximized] = useState(false)
 
   const minimize = useCallback(() => {
@@ -42,8 +44,8 @@ export default function SettingsWindowFrame({ children }) {
 
   return (
     <div
-      className="flex h-full min-h-0 w-full flex-1 flex-col overflow-hidden rounded-[10px] border border-white/[0.08] bg-[#09090b] shadow-2xl"
-      style={{ boxShadow: '0 25px 50px -12px rgba(0,0,0,0.75)' }}
+      className="flex h-full min-h-0 w-full flex-1 flex-col overflow-hidden rounded-[10px] border border-white/[0.08] bg-[#09090b]"
+      style={{ boxShadow: 'var(--shadow-elevation-3)' }}
     >
       <header
         className="flex h-9 shrink-0 items-center border-b border-white/[0.08] bg-[#111113]"
@@ -52,13 +54,13 @@ export default function SettingsWindowFrame({ children }) {
         <div className="flex min-h-0 min-w-0 flex-1 items-center gap-2 px-3" style={drag}>
           <img
             src={overlayBrandLogo}
-            alt="VeilAssist"
+            alt={name}
             width={18}
             height={18}
             draggable={false}
             className="pointer-events-none h-[18px] w-[18px] shrink-0 object-contain"
           />
-          <span className="truncate text-[11px] font-medium text-zinc-400">VeilAssist</span>
+          <span className="truncate text-[11px] font-medium text-zinc-400">{name}</span>
         </div>
 
         <div className="flex shrink-0 items-stretch" style={noDrag}>

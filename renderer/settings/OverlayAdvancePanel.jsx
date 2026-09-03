@@ -5,7 +5,9 @@ import { Monitor } from 'lucide-react'
 import AppIcon from '../shared/AppIcon'
 import {
   SettingsFieldHint,
+  SettingsFieldLabel,
   SettingsRow,
+  SettingsSection,
   ToggleSwitch,
 } from './SettingsComponents'
 
@@ -22,8 +24,7 @@ export default function OverlayAdvancePanel({
 }) {
   return (
     <div className="space-y-5">
-      <div className="space-y-3">
-        <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-zinc-500">Reading modes</p>
+      <SettingsSection title="Reading modes" description="How answers appear during live calls.">
         <SettingsRow label="Teleprompter" hint="Larger type, minimal chrome during live calls.">
           <ToggleSwitch checked={overlayTeleprompterUi} onChange={onTeleprompterChange} />
         </SettingsRow>
@@ -31,16 +32,12 @@ export default function OverlayAdvancePanel({
           <ToggleSwitch checked={overlayFocusModeUi} onChange={onFocusModeChange} />
         </SettingsRow>
         <SettingsFieldHint>Newest answers appear at the top. Scroll down for earlier exchanges.</SettingsFieldHint>
-      </div>
+      </SettingsSection>
 
-      <div className="border-t border-white/[0.06] pt-4">
-        <p className="mb-3 flex items-center gap-2 text-[11px] font-semibold uppercase tracking-[0.18em] text-zinc-500">
-          <AppIcon icon={Monitor} size={14} />
-          Panel size (expanded)
-        </p>
+      <SettingsSection title="Panel size" description="Expanded overlay dimensions.">
         <div className="flex flex-wrap items-end gap-3">
           <div className="min-w-[100px] flex-1">
-            <span className="mb-1 block text-[10px] text-gray-600">Width (280–860)</span>
+            <SettingsFieldLabel className="mb-1 block">Width (280–860)</SettingsFieldLabel>
             <input
               type="number"
               min={280}
@@ -51,7 +48,7 @@ export default function OverlayAdvancePanel({
             />
           </div>
           <div className="min-w-[100px] flex-1">
-            <span className="mb-1 block text-[10px] text-gray-600">Height (180–940)</span>
+            <SettingsFieldLabel className="mb-1 block">Height (180–940)</SettingsFieldLabel>
             <input
               type="number"
               min={180}
@@ -61,11 +58,15 @@ export default function OverlayAdvancePanel({
               className="input-shadow w-full px-3 py-2.5 font-mono text-xs"
             />
           </div>
-          <button type="button" onClick={onApplyOverlaySize} className="btn-glow shrink-0 px-5 py-2.5 text-sm">
+          <button type="button" onClick={onApplyOverlaySize} className="nat-btn-primary shrink-0 px-5 py-2.5 text-sm">
             Apply
           </button>
         </div>
-      </div>
+        <p className="mt-3 flex items-center gap-2 text-[11px] text-zinc-500">
+          <AppIcon icon={Monitor} size={14} />
+          Applies on next expand or window resize.
+        </p>
+      </SettingsSection>
     </div>
   )
 }

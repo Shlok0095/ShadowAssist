@@ -1,14 +1,15 @@
 // Copyright (c) 2026 VeilAssist. All rights reserved.
 
-import React from 'react'
+import React, { useState } from 'react'
 import { createIpcShim } from '../shared/ipcShim'
-import { SettingsPage, SettingsSection } from './SettingsComponents'
+import { ConfirmDialog, SettingsPage, SettingsSection } from './SettingsComponents'
 import { useBrand } from '../shared/branding'
 
 const ipc = createIpcShim()
 
 export default function PrivacySettingsPanel({ onSelectIntelligenceTab }) {
   const { name } = useBrand()
+  const [confirmDelete, setConfirmDelete] = useState(false)
   return (
     <SettingsPage title="Privacy" description="What stays on your device and how to export or delete local data.">
       <SettingsSection title="Intelligence & memory">
@@ -62,17 +63,26 @@ export default function PrivacySettingsPanel({ onSelectIntelligenceTab }) {
           </button>
           <button
             type="button"
-            onClick={async () => {
-              if (!ipc) return
-              if (!window.confirm(`Delete all local ${name} data and restart? This cannot be undone.`)) return
-              await ipc.invoke('delete-all-data-relaunch')
-            }}
+            onClick={() => setConfirmDelete(true)}
             className="nat-btn-secondary border-rose-500/30 px-5 py-2.5 text-[13px] text-rose-300 hover:bg-rose-500/10"
           >
             Delete all my data
           </button>
         </div>
       </SettingsSection>
+
+      <ConfirmDialog
+        open={confirmDelete}
+        title="Delete all local data?"
+        description={`This permanently deletes all local ${name} data and restarts the app. This cannot be undone.`}
+        confirmLabel="Delete & restart"
+        onCancel={() => setConfirmDelete(false)}
+        onConfirm={async () => {
+          setConfirmDelete(false)
+          if (!ipc) return
+          await ipc.invoke('delete-all-data-relaunch')
+        }}
+      />
     </SettingsPage>
   )
 }

@@ -4,7 +4,7 @@
 import React, { useMemo } from 'react'
 import { Briefcase, FileUser, Upload, X } from 'lucide-react'
 import AppIcon from '../shared/AppIcon'
-import { SettingsCollapsible } from './SettingsComponents'
+import { SaveStatusBadge, SettingsCollapsible } from './SettingsComponents'
 
 const RESUME_MAX = 50000
 const JD_MAX = 30000
@@ -22,6 +22,7 @@ export default function PersonalBackgroundSection({
   onUploadJd,
   onClearResume,
   onClearJd,
+  profileSaveStatus = 'idle',
 }) {
   const hasContent = Boolean(resumeContext?.trim() || jdContext?.trim())
   const defaultOpen = hasContent
@@ -42,6 +43,9 @@ export default function PersonalBackgroundSection({
       icon={FileUser}
     >
       <div className="grid gap-5 lg:grid-cols-2">
+        <div className="mb-1 flex items-center justify-end lg:col-span-2">
+          <SaveStatusBadge status={profileSaveStatus} />
+        </div>
         <div className="flex flex-col gap-2">
           <div className="flex flex-wrap items-center justify-between gap-2">
             <span className="flex items-center gap-2 text-[13px] font-medium text-zinc-200">

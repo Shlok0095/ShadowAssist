@@ -7,12 +7,6 @@ import ProfileModesPanel from './ProfileModesPanel'
 import PersonalBackgroundSection from './PersonalBackgroundSection'
 import SkillsSettingsPanel from './SkillsSettingsPanel'
 
-/** @type {{ id: string, label: string }[]} */
-export const PROFILE_SECTIONS = [
-  { id: 'modes', label: 'Modes & background' },
-  { id: 'skills', label: 'Skills' },
-]
-
 export default function ProfileSettingsPanel({ profilePanel = {} }) {
   const panel = profilePanel
 
@@ -44,6 +38,7 @@ export default function ProfileSettingsPanel({ profilePanel = {} }) {
               onUploadJd={panel.onUploadJd}
               onClearResume={panel.onClearResume}
               onClearJd={panel.onClearJd}
+              profileSaveStatus={panel.profileSaveStatus}
             />
           </div>
         </SettingsCollapsible>

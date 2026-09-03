@@ -31,8 +31,8 @@ import { MODE_TEMPLATES } from '../../lib/modeTemplates'
 import TemplateModeIcon from './TemplateModeIcons'
 
 import AppIcon from '../shared/AppIcon'
-
-import { SettingsPanelShell } from './SettingsComponents'
+import { useBrand } from '../shared/branding'
+import { ConfirmDialog, SettingsPanelShell } from './SettingsComponents'
 
 
 
@@ -99,18 +99,14 @@ export default function ProfileModesPanel({
   embedded = false,
 
 }) {
-  const name = 'VeilAssist'
+  const { name } = useBrand()
   const [creatingMode, setCreatingMode] = React.useState(false)
   const [newModeName, setNewModeName] = React.useState('')
+  const [confirmDeleteMode, setConfirmDeleteMode] = React.useState(null)
+  const [confirmRemoveNotesTemplate, setConfirmRemoveNotesTemplate] = React.useState(false)
 
   const handleDelete = (id, name) => {
-
-    const label = name || 'this mode'
-
-    if (!window.confirm(`Delete "${label}"? This cannot be undone.`)) return
-
-    void onDeletePrompt(id)
-
+    setConfirmDeleteMode({ id, label: name || 'this mode' })
   }
 
   const openCreateMode = () => {
@@ -169,13 +165,8 @@ export default function ProfileModesPanel({
 
 
   const removeNotesTemplate = () => {
-
     if (!hasNotesTemplate) return
-
-    if (!window.confirm('Remove the notes template from this mode?')) return
-
-    onDraftNotesSectionsChange([])
-
+    setConfirmRemoveNotesTemplate(true)
   }
 
 
@@ -193,17 +184,12 @@ export default function ProfileModesPanel({
 
 
   return (
-
+    <>
     <SettingsPanelShell
-
       embedded={embedded}
-
       wide
-
-      title="Profile"
-
-      description="Persona modes, reference files, and optional resume context."
-
+      title={embedded ? undefined : 'Profile'}
+      description={embedded ? undefined : 'Persona modes, reference files, and optional resume context.'}
     >
 
       <div className={`profile-modes-root flex min-h-[480px] w-full overflow-hidden rounded-xl border border-white/[0.06] bg-black/20${embedded ? ' profile-modes-root--embedded' : ''}`}>
@@ -459,7 +445,7 @@ export default function ProfileModesPanel({
 
                   </label>
 
-                  <div className="flex items-center gap-2 rounded-xl border border-white/12 bg-zinc-950/60 px-3 py-2.5 focus-within:border-blue-400/50">
+                  <div className="flex items-center gap-2 rounded-xl border border-white/12 bg-zinc-950/60 px-3 py-2.5 focus-within:border-white/30">
 
                     <AppIcon icon={Pencil} size={15} className="shrink-0 text-zinc-500" />
 
@@ -841,6 +827,31 @@ export default function ProfileModesPanel({
 
     </SettingsPanelShell>
 
+    <ConfirmDialog
+      open={!!confirmDeleteMode}
+      title={`Delete "${confirmDeleteMode?.label || 'this mode'}"?`}
+      description="This cannot be undone."
+      confirmLabel="Delete mode"
+      onCancel={() => setConfirmDeleteMode(null)}
+      onConfirm={() => {
+        const id = confirmDeleteMode?.id
+        setConfirmDeleteMode(null)
+        if (id != null) void onDeletePrompt(id)
+      }}
+    />
+
+    <ConfirmDialog
+      open={confirmRemoveNotesTemplate}
+      title="Remove notes template?"
+      description="This removes the notes template from this mode."
+      confirmLabel="Remove"
+      onCancel={() => setConfirmRemoveNotesTemplate(false)}
+      onConfirm={() => {
+        setConfirmRemoveNotesTemplate(false)
+        onDraftNotesSectionsChange([])
+      }}
+    />
+    </>
   )
 
 }

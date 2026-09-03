@@ -82,7 +82,6 @@ export default function SpeechSettingsPanel({
   onMeetingListenLanguageChange,
 }) {
   const [audioInputs, setAudioInputs] = useState([])
-  const [audioOutputs, setAudioOutputs] = useState([])
   const [localModelInfo, setLocalModelInfo] = useState(null)
 
   const refreshAudioDevices = useCallback(async () => {
@@ -96,10 +95,8 @@ export default function SpeechSettingsPanel({
     try {
       const devices = await navigator.mediaDevices.enumerateDevices()
       setAudioInputs(devices.filter((d) => d.kind === 'audioinput'))
-      setAudioOutputs(devices.filter((d) => d.kind === 'audiooutput'))
     } catch {
       setAudioInputs([])
-      setAudioOutputs([])
     }
   }, [])
 
@@ -190,29 +187,6 @@ export default function SpeechSettingsPanel({
             ))}
           </select>
         </SettingsRow>
-        <SettingsRow
-          label="Speaker / output"
-          hint="Saved for reference; system audio capture uses the OS default mix."
-        >
-          <select
-            value={snap?.preferredSpeakerId || ''}
-            onChange={(e) => {
-              const v = e.target.value
-              onPatchSnap('preferredSpeakerId', v)
-              onSave('preferredSpeakerId', v)
-            }}
-            className="input-shadow w-full px-3 py-2 text-sm sm:max-w-md"
-          >
-            <option value="" className="bg-void-900">
-              System default
-            </option>
-            {audioOutputs.map((d) => (
-              <option key={d.deviceId} value={d.deviceId} className="bg-void-900">
-                {d.label || `Speaker ${d.deviceId.slice(0, 8)}…`}
-              </option>
-            ))}
-          </select>
-        </SettingsRow>
         <p className="text-[11px] leading-relaxed text-zinc-500">
           Device labels appear after microphone permission is granted once.
           <button type="button" onClick={refreshAudioDevices} className="ml-1 text-accent underline">
@@ -273,18 +247,6 @@ export default function SpeechSettingsPanel({
                     </p>
                   </div>
                 )}
-                <SettingsRow
-                  label="Whisper Tiny gate (experimental)"
-                  hint="Second on-device Whisper pass on Moonshine finals. Off by default — Natively uses filterHallucination only. Needs segment metadata (often unavailable locally)."
-                >
-                  <ToggleSwitch
-                    checked={snap?.localMoonshineWhisperGate === true}
-                    onChange={(v) => {
-                      onPatchSnap('localMoonshineWhisperGate', !!v)
-                      onSave('localMoonshineWhisperGate', !!v)
-                    }}
-                  />
-                </SettingsRow>
               </>
             )}
 

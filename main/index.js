@@ -69,7 +69,7 @@ if (process.platform === 'darwin') {
   } catch (_) {}
 }
 setupApplicationMenu()
-/** Lazy ΓÇö koffi/user32 only needed on Windows when background-process mode is used. */
+/** Lazy — koffi/user32 only needed on Windows when background-process mode is used. */
 let win32BackgroundWindowModule = undefined
 function win32Bg() {
   if (process.platform !== 'win32') return null
@@ -86,7 +86,7 @@ function win32Bg() {
   }
   return win32BackgroundWindowModule
 }
-const { resolveOverlayMouseCapture } = require('../lib/overlayMousePolicy')
+const { resolveOverlayMouseCapture, pointInRegions, isInChromeGutter, resolveBoundedChromeCapture } = require('../lib/overlayMousePolicy')
 const { resolveSystemPrompt } = require('../lib/defaultSystemPrompt')
 const { getInterviewAnswerSuffixFromStore } = require('../lib/interviewAnswerPrompt.cjs')
 const {
@@ -167,6 +167,14 @@ const { createPhoneMirrorManager } = require('../lib/phoneMirror/phoneMirrorMana
 const { TimedCache } = require('../lib/timedCache')
 
 store.runDataMigration()
+
+// No UI currently writes `brandName` — any non-empty stored value is stale/unexpected data
+// (e.g. leftover from a removed feature or a corrupted profile), never a legitimate customization.
+// Reset it defensively so the About panel and meeting toast always show the real brand name.
+if (store.get('brandName')) {
+  console.warn('[branding] Clearing unexpected stored brandName:', store.get('brandName'))
+  store.set('brandName', '')
+}
 
 function overlayFontPayloadForAnswerLength(store, answerLength) {
   const payload = { answerLength }
@@ -530,8 +538,16 @@ function isSessionActive() {
 let overlayVisible = true
 /** Last applied capture mode — avoids spamming setIgnoreMouseEvents every tick. */
 let overlayMouseCaptureApplied = null
+/** Client-space hit rects from renderer — notch, panel, footer. */
+let overlayHitRegions = []
+let overlayHitPollTimer = null
+/** Pause capture while the OS window is being moved/resized (Win32 flicker guard). */
+let overlayCaptureSuspended = false
+let overlayCaptureResumeTimer = null
+/** User is dragging a resize handle — skip per-frame hit-region sync and will-resize churn. */
+let overlayLiveResizing = false
 let savedOpacity = 0.92
-/** Last protection value pushed to the overlay HWND ΓÇö Natively dedupes to avoid DWM churn/blinks. */
+/** Last protection value pushed to the overlay HWND — Natively dedupes to avoid DWM churn/blinks. */
 let overlayContentProtectionApplied = null
 /** Pending win32 stealth fade-in after protection arms (Natively Opacity Shield). */
 let overlayOpacityShieldTimer = null
@@ -539,19 +555,19 @@ const STEALTH_OPACITY_SHIELD_MS = 60
 let lastResponse = ''
 let llmResponseInFlight = false
 let currentAbortController = null
-/** Screenshot captured at Ctrl+Enter hotkey instant ΓÇö used by the next handleAskAI call. */
+/** Screenshot captured at Ctrl+Enter hotkey instant — used by the next handleAskAI call. */
 let pendingAskVisionB64 = null
 let consentWindow = null
 let onboardingWindow = null
-/** Top-right meeting chip ΓÇö excluded from stealth content-protection list. */
+/** Top-right meeting chip — excluded from stealth content-protection list. */
 let meetingToastWindow = null
-/** Phase 4 ΓÇö compact launcher window (tray menu). */
+/** Phase 4 — compact launcher window (tray menu). */
 let launcherWindow = null
-/** Phase 8 ΓÇö standalone global chat window. */
+/** Phase 8 — standalone global chat window. */
 let globalChatWindow = null
-/** Windows ΓÇö hidden owner so visible windows stay out of Task Manager "Apps". */
+/** Windows — hidden owner so visible windows stay out of Task Manager "Apps". */
 let backgroundOwnerWindow = null
-/** Re-assert Win32 styles ΓÇö Chromium can reset EXSTYLE after show. */
+/** Re-assert Win32 styles — Chromium can reset EXSTYLE after show. */
 let backgroundProcessStyleTimer = null
 /** Lightweight re-apply for known windows; full EnumWindows scan runs less often. */
 const BACKGROUND_STYLE_REFRESH_MS = 2000
@@ -574,7 +590,7 @@ const CALENDAR_REMINDER_POLL_MS = 30 * 1000
 let appCoreStarted = false
 let lastModeDetectAt = 0
 let modeSuggestionSentThisSession = false
-/** Templates dismissed this Listen session ΓÇö may re-suggest after cooldown if speech shifts. */
+/** Templates dismissed this Listen session — may re-suggest after cooldown if speech shifts. */
 const modeSuggestionDismissedAt = new Map()
 const MODE_DETECT_MIN_MS = 22000
 const MODE_DETECT_AFTER_DISMISS_MS = 45000
@@ -741,6 +757,16 @@ function seedOverlayPositionIfNeeded() {
 
 /** Last minimum size applied to the overlay window (setMinimumSize is not idempotent-cheap on Windows). */
 let overlayMinimumSize = null
+/** Screen anchor for notch — top edge Y and horizontal center X; stable across height-only resizes. */
+let overlayAnchorTopY = null
+let overlayAnchorCenterX = null
+
+function syncOverlayAnchorFromBounds(bounds) {
+  if (!bounds || bounds.width == null || bounds.x == null || bounds.y == null) return
+  overlayAnchorCenterX = bounds.x + bounds.width / 2
+  overlayAnchorTopY = bounds.y
+}
+
 function applyOverlayMinimumSize(minW, minH) {
   if (!overlayWindow || overlayWindow.isDestroyed()) return
   if (overlayMinimumSize && overlayMinimumSize.w === minW && overlayMinimumSize.h === minH) return
@@ -767,7 +793,7 @@ function createOverlayWindow() {
     width: w, height: h, x, y,
     transparent: true, frame: false, alwaysOnTop: true, skipTaskbar: true,
     focusable: true, hasShadow: false, resizable: true,
-    minWidth: 280, minHeight: 180, maxWidth: 860, maxHeight: 940,
+    minWidth: 280, minHeight: 43, maxWidth: 860, maxHeight: 940,
     show: false,
     ...(getWindowIcon() ? { icon: getWindowIcon() } : {}),
     webPreferences: {
@@ -781,10 +807,12 @@ function createOverlayWindow() {
   }
   try {
     overlayWindow = new BrowserWindow(process.platform === 'darwin' ? { ...winOpts, type: 'toolbar' } : winOpts)
+    syncOverlayAnchorFromBounds({ x, y, width: w, height: h })
   } catch (e) {
     console.error('createOverlayWindow failed:', e)
     try {
       overlayWindow = new BrowserWindow(winOpts)
+      syncOverlayAnchorFromBounds({ x, y, width: w, height: h })
     } catch (e2) {
       console.error('createOverlayWindow retry failed:', e2)
       return null
@@ -816,12 +844,31 @@ function createOverlayWindow() {
     applyContentProtectionAllWindows()
     setImmediate(applyTaskbarVisibility)
   })
+  overlayWindow.on('moved', () => {
+    if (!overlayWindow || overlayWindow.isDestroyed()) return
+    syncOverlayAnchorFromBounds(overlayWindow.getBounds())
+    resumeOverlayCaptureAfterInteraction()
+    requestOverlayHitRegionSync()
+  })
+  overlayWindow.on('will-move', () => {
+    if (overlayLiveResizing) return
+    suspendOverlayCaptureForInteraction()
+  })
+  overlayWindow.on('will-resize', () => {
+    if (overlayLiveResizing) return
+    suspendOverlayCaptureForInteraction()
+  })
+  overlayWindow.on('resized', () => {
+    if (overlayLiveResizing) return
+    resumeOverlayCaptureAfterInteraction()
+    requestOverlayHitRegionSync()
+  })
   overlayWindow.webContents.on('dom-ready', () => applyContentProtectionAllWindows())
   overlayWindow.webContents.on('did-finish-load', () => {
     applyContentProtectionAllWindows()
     syncOverlayMouseCapture()
     syncOverlayVisibilityToRenderer()
-    // Re-sync after overlay reload ΓÇö session-status may have fired before React mounted.
+    // Re-sync after overlay reload — session-status may have fired before React mounted.
     if (sessionActive) sendToOverlay('session-status', true)
   })
   overlayWindow.webContents.on('did-fail-load', (_, code, desc, url) => {
@@ -852,15 +899,15 @@ function createOverlayWindow() {
   return overlayWindow
 }
 
-/** Stealth Mode ON ΓåÆ setContentProtection(true). On Windows this maps to WDA_EXCLUDEFROMCAPTURE. */
+/** Stealth Mode ON → setContentProtection(true). On Windows this maps to WDA_EXCLUDEFROMCAPTURE. */
 function isStealthModeEnabled() {
   return store.get('stealth_mode') === true
 }
 
 /**
  * Overlay content protection follows stealth toggle:
- * - Visible mode (stealth OFF): protection OFF ΓÇö you see the overlay; it can appear in screen shares.
- * - Stealth mode (stealth ON): protection ON ΓÇö hidden from screen capture, shares, and recordings.
+ * - Visible mode (stealth OFF): protection OFF — you see the overlay; it can appear in screen shares.
+ * - Stealth mode (stealth ON): protection ON — hidden from screen capture, shares, and recordings.
  * Ctrl+Enter capture uses hide()+opacity shield (see withOverlayExcludedFromScreenCapture).
  */
 function clearOverlayOpacityShield() {
@@ -962,7 +1009,7 @@ function presentOverlayWindow({ inactive = false } = {}) {
   applyBackgroundWindowStyles(overlayWindow)
 }
 
-/** Hide overlay from compositor before a screenshot ΓÇö Natively hideMainWindow pattern. */
+/** Hide overlay from compositor before a screenshot — Natively hideMainWindow pattern. */
 function hideOverlayForCapture() {
   if (!overlayWindow || overlayWindow.isDestroyed()) return
   clearOverlayOpacityShield()
@@ -1330,12 +1377,12 @@ function startCalendarReminderPoll() {
   }, CALENDAR_REMINDER_POLL_MS)
 }
 
-/** Compositor settle after hide ΓÇö Natively v2.0.9: 80ms darwin, 40ms win32 (was 150ms). */
+/** Compositor settle after hide — Natively v2.0.9: 80ms darwin, 40ms win32 (was 150ms). */
 const CAPTURE_COMPOSITOR_MS = process.platform === 'darwin' ? 80 : 40
 
 /**
- * Natively-style capture wrapper: opacity 0 ΓåÆ hide() ΓåÆ compositor wait ΓåÆ snap ΓåÆ restore.
- * Stealth mode keeps content protection ON ΓÇö hidden window is enough; lifting protection
+ * Natively-style capture wrapper: opacity 0 → hide() → compositor wait → snap → restore.
+ * Stealth mode keeps content protection ON — hidden window is enough; lifting protection
  * caused millisecond leaks into screen share (Natively never disables it for capture).
  */
 async function withOverlayExcludedFromScreenCapture(fn) {
@@ -1400,8 +1447,135 @@ function hideOverlay() {
 
 function toggleOverlay() { overlayVisible ? hideOverlay() : showOverlay() }
 
+function stopOverlayHitPoll() {
+  if (overlayHitPollTimer != null) {
+    clearInterval(overlayHitPollTimer)
+    overlayHitPollTimer = null
+  }
+}
+
+function clearOverlayHitRegions() {
+  overlayHitRegions = []
+}
+
+function normalizeOverlayResize(w, h) {
+  const safeW = Math.max(280, Math.min(860, Math.round(w)))
+  const collapsed = h <= 44
+  const safeH = collapsed
+    ? Math.max(43, Math.min(940, Math.round(h)))
+    : Math.max(180, Math.min(940, Math.round(h)))
+  return { safeW, safeH, collapsed }
+}
+
+function applyOverlayResize(w, h, xOpt) {
+  if (!overlayWindow || overlayWindow.isDestroyed()) return false
+  const { safeW, safeH: requestedH } = normalizeOverlayResize(w, h)
+  const b = overlayWindow.getBounds()
+  if (overlayAnchorCenterX == null || overlayAnchorTopY == null) {
+    syncOverlayAnchorFromBounds(b)
+  }
+  const useX = typeof xOpt === 'number' && !Number.isNaN(xOpt)
+  const widthChanged = Math.abs(b.width - safeW) > 1
+
+  if (widthChanged) {
+    // Only reached from an explicit user action — dragging a side/corner resize
+    // handle, or applying a saved width from Settings — so repositioning here is
+    // an expected, deliberate side effect, not the overlay moving on its own.
+    const targetX = useX ? Math.round(xOpt) : Math.round(overlayAnchorCenterX - safeW / 2)
+    const desiredY = overlayAnchorTopY
+    const wa = screen.getDisplayMatching({ x: targetX, y: desiredY, width: safeW, height: requestedH }).workArea
+    const clampedY = Math.min(Math.max(desiredY, wa.y), Math.max(wa.y, wa.y + wa.height - requestedH))
+    const clampedX = Math.min(Math.max(targetX, wa.x), Math.max(wa.x, wa.x + wa.width - safeW))
+    overlayWindow.setBounds({ x: clampedX, y: clampedY, width: safeW, height: requestedH })
+    syncOverlayAnchorFromBounds(overlayWindow.getBounds())
+    return true
+  }
+
+  // Height-only change — session turning on/off, an answer streaming in, the
+  // footer appearing/disappearing. The window's on-screen position must never
+  // shift here on its own. If the requested height would run past the bottom of
+  // the screen, cap the height instead of relocating the window; the panel's own
+  // content scroll (already in place) absorbs the difference, not the overlay.
+  const heightChanged = Math.abs(b.height - requestedH) > 1
+  if (!heightChanged) return false
+  const wa = screen.getDisplayMatching(b).workArea
+  const maxHeightHere = Math.max(43, wa.y + wa.height - b.y)
+  const safeH = Math.min(requestedH, maxHeightHere)
+  if (Math.abs(b.height - safeH) <= 1) return false
+  overlayWindow.setSize(b.width, safeH)
+  return true
+}
+
+function requestOverlayHitRegionSync() {
+  if (overlayLiveResizing) return
+  sendToOverlay('overlay-request-hit-regions')
+}
+
+function suspendOverlayCaptureForInteraction() {
+  if (!overlayWindow || overlayWindow.isDestroyed()) return
+  if (overlayCaptureResumeTimer != null) {
+    clearTimeout(overlayCaptureResumeTimer)
+    overlayCaptureResumeTimer = null
+  }
+  overlayCaptureSuspended = true
+  if (overlayMouseCaptureApplied !== 'capture') {
+    overlayWindow.setIgnoreMouseEvents(false)
+    overlayMouseCaptureApplied = 'capture'
+  }
+}
+
+function resumeOverlayCaptureAfterInteraction() {
+  if (!overlayWindow || overlayWindow.isDestroyed()) return
+  if (overlayCaptureResumeTimer != null) clearTimeout(overlayCaptureResumeTimer)
+  overlayCaptureResumeTimer = setTimeout(() => {
+    overlayCaptureResumeTimer = null
+    overlayCaptureSuspended = false
+    const passthrough = store.get('overlayMousePassthroughEnabled') === true
+    if (passthrough) {
+      overlayWindow.setIgnoreMouseEvents(true, { forward: true })
+      overlayMouseCaptureApplied = 'forward'
+      return
+    }
+    syncOverlayBoundedCaptureFromCursor()
+  }, 80)
+}
+
+/** Bounded chrome poll — only notch/panel/footer capture; transparent areas forward. */
+function syncOverlayBoundedCaptureFromCursor() {
+  if (!overlayWindow || overlayWindow.isDestroyed() || !overlayVisible) return
+  if (store.get('overlayMousePassthroughEnabled') === true) return
+  if (overlayCaptureSuspended || overlayLiveResizing) return
+
+  const bounds = overlayWindow.getContentBounds()
+  const cursor = screen.getCursorScreenPoint()
+  const localX = cursor.x - bounds.x
+  const localY = cursor.y - bounds.y
+  const inChrome = pointInRegions(localX, localY, overlayHitRegions, {
+    captureWhenEmpty: false,
+    padding: 2,
+  })
+  const inGutter = isInChromeGutter(localX, localY, overlayHitRegions)
+  const { capture } = resolveBoundedChromeCapture({ inChrome, inGutter })
+
+  if (capture) {
+    if (overlayMouseCaptureApplied !== 'capture') {
+      overlayWindow.setIgnoreMouseEvents(false)
+      overlayMouseCaptureApplied = 'capture'
+    }
+  } else if (overlayMouseCaptureApplied !== 'forward') {
+    overlayWindow.setIgnoreMouseEvents(true, { forward: true })
+    overlayMouseCaptureApplied = 'forward'
+  }
+}
+
+function startOverlayBoundedPoll() {
+  stopOverlayHitPoll()
+  overlayHitPollTimer = setInterval(syncOverlayBoundedCaptureFromCursor, 32)
+  syncOverlayBoundedCaptureFromCursor()
+}
+
 function stopMousePassthroughPoll() {
-  /* legacy no-op — passthrough is renderer-driven (Natively pattern) */
+  stopOverlayHitPoll()
 }
 
 function applyOverlayMouseCapturePolicy() {
@@ -1422,7 +1596,8 @@ function applyOverlayMouseCapturePolicy() {
 
 /**
  * Overlay mouse capture — hidden overlay ignores all input.
- * Passthrough: ignore+forward at OS level; renderer captures on hover over [data-overlay-hit].
+ * Bounded chrome: main polls cursor against notch/panel/footer rects (always when passthrough off).
+ * Mouse passthrough: renderer hover on data-overlay-hit (when setting on).
  */
 function isSettingsWindowActive() {
   return !!(
@@ -1455,7 +1630,7 @@ function getBackgroundOwnerParent() {
   return ensureBackgroundOwnerWindow()
 }
 
-/** Hidden 1├ù1 owner ΓÇö owned top-level windows skip Task Manager "Apps" on Windows. */
+/** Hidden 1├ù1 owner — owned top-level windows skip Task Manager "Apps" on Windows. */
 function ensureBackgroundOwnerWindow() {
   if (process.platform !== 'win32' || !shouldUseBackgroundProcessGrouping()) return null
   if (backgroundOwnerWindow && !backgroundOwnerWindow.isDestroyed()) return backgroundOwnerWindow
@@ -1704,9 +1879,30 @@ function applyDockPolicy() {
 function syncOverlayMouseCapture() {
   if (!overlayWindow || overlayWindow.isDestroyed()) return
   overlayMouseCaptureApplied = null
+  overlayCaptureSuspended = false
+  if (overlayCaptureResumeTimer != null) {
+    clearTimeout(overlayCaptureResumeTimer)
+    overlayCaptureResumeTimer = null
+  }
   const passthrough = store.get('overlayMousePassthroughEnabled') === true
-  applyOverlayMouseCapturePolicy()
   sendToOverlay('overlay-mouse-passthrough', passthrough && overlayVisible)
+  if (!overlayVisible) {
+    stopOverlayHitPoll()
+    clearOverlayHitRegions()
+    return
+  }
+  if (passthrough) {
+    // Mouse passthrough ON — renderer hover (`data-overlay-hit`) owns capture.
+    stopOverlayHitPoll()
+    overlayWindow.setIgnoreMouseEvents(true, { forward: true })
+    overlayMouseCaptureApplied = 'forward'
+  } else {
+    // Mouse passthrough OFF — bounded chrome poll: only notch/panel/footer capture.
+    requestOverlayHitRegionSync()
+    setTimeout(requestOverlayHitRegionSync, 120)
+    setTimeout(requestOverlayHitRegionSync, 400)
+    startOverlayBoundedPoll()
+  }
 }
 
 let appQuitting = false
@@ -1720,7 +1916,7 @@ function stopUpdateChecks() {
   updateCheckKickoffTimer = null
 }
 
-/** Async vector-index writes in flight ΓÇö awaited (bounded) during shutdown so they are not lost. */
+/** Async vector-index writes in flight — awaited (bounded) during shutdown so they are not lost. */
 const pendingVectorWrites = new Set()
 function trackVectorWrite(promise) {
   pendingVectorWrites.add(promise)
@@ -1812,9 +2008,25 @@ async function shutdownApplication() {
   tray = null
 }
 
-/** Full exit: shared teardown, then `app.quit()`. */
-async function quitApplication() {
+/**
+ * Full exit: shared teardown, then `app.quit()`.
+ * @param {{ skipConfirm?: boolean }} [opts] - `skipConfirm` bypasses the dialog for flows that
+ * are already an explicit decision (e.g. declining the consent screen).
+ */
+async function quitApplication(opts) {
   if (appQuitting) return
+  if (!opts?.skipConfirm) {
+    const { response } = await dialog.showMessageBox({
+      type: 'question',
+      buttons: ['Quit', 'Cancel'],
+      defaultId: 1,
+      cancelId: 1,
+      title: `Quit ${getBrandName()}?`,
+      message: `Quit ${getBrandName()}?`,
+      detail: sessionActive ? 'Your session is still active and will end.' : 'The app will fully close, including the tray icon.',
+    })
+    if (response !== 0) return
+  }
   await shutdownApplication()
   app.quit()
 }
@@ -1837,9 +2049,13 @@ function finalizeBootstrap() {
   })
 }
 
-/** After legal consent: start tray/overlay (API keys & prompt live in Settings). */
+/** After legal consent: guide first-run users through BYOK setup, then start tray/overlay. */
 function continueAfterConsent() {
   if (appCoreStarted) return
+  if (!hasCompletedOnboardingFlag()) {
+    createOnboardingWindow()
+    return
+  }
   finalizeBootstrap()
 }
 
@@ -1950,9 +2166,22 @@ function moveOverlay(dx, dy) {
   store.set('overlayBounds', { ...store.get('overlayBounds'), ...overlayWindow.getBounds() })
 }
 
-function createSettingsWindow() {
+function createSettingsWindow(navOpts = null) {
+  const tab = navOpts && typeof navOpts === 'object' ? String(navOpts.tab || '').trim() : ''
+  const section = navOpts && typeof navOpts === 'object' ? String(navOpts.section || '').trim() : ''
+  const searchParts = []
+  if (tab) searchParts.push(`tab=${encodeURIComponent(tab)}`)
+  if (section) searchParts.push(`section=${encodeURIComponent(section)}`)
+  const search = searchParts.length ? `?${searchParts.join('&')}` : ''
+
   if (restoreAppWindow(settingsWindow)) {
     applyTaskbarVisibility()
+    if (navOpts && settingsWindow && !settingsWindow.isDestroyed()) {
+      settingsWindow.webContents.send('settings-navigate', {
+        tab: tab || undefined,
+        section: section || undefined,
+      })
+    }
     return
   }
   settingsWindow = null
@@ -1988,7 +2217,8 @@ function createSettingsWindow() {
   hardenWindow(settingsWindow)
   settingsWindow.loadFile(useBuilt
     ? path.join(__dirname, '..', 'out', 'settings', 'index.html')
-    : path.join(__dirname, '..', 'renderer', 'settings', 'index.html'))
+    : path.join(__dirname, '..', 'renderer', 'settings', 'index.html'),
+  search ? { search } : undefined)
   settingsWindow.on('closed', () => {
     settingsWindow = null
     applyTaskbarVisibility()
@@ -2129,7 +2359,7 @@ function createLauncherWindow() {
 
 function setupTray() {
   tray = new Tray(createTrayIcon(false))
-  tray.setToolTip(`${getBrandName()} — tray: Open / Hide, Quit to fully exit`)
+  tray.setToolTip(`${getBrandName()} — click: Open / Hide, right-click: Menu, Quit to fully exit`)
   const updateTrayMenu = () => {
     tray.setContextMenu(Menu.buildFromTemplate([
       { label: overlayVisible ? 'Hide' : 'Open', click: toggleOverlay },
@@ -2156,7 +2386,10 @@ function setupTray() {
   }
   updateTrayMenu()
   tray.updateTrayMenu = updateTrayMenu
-  tray.on('double-click', toggleOverlay)
+  // Standard tray convention (Slack/Discord-style): single left-click opens/hides the overlay;
+  // right-click still shows the context menu (Electron's default for `setContextMenu`). No
+  // separate double-click handler — binding both would double-toggle (flicker) on a real double-click.
+  tray.on('click', toggleOverlay)
 }
 
 function updateTrayIcon() {
@@ -2237,7 +2470,7 @@ function broadcastMeetingSummaryStatus(payload) {
 
 async function finalizeMeetingSession(snapshot) {
   if (!sessionRecorder.hasContent(snapshot)) {
-    console.warn('[meeting-session] skip recap ΓÇö no transcript or asks captured')
+    console.warn('[meeting-session] skip recap — no transcript or asks captured')
     return
   }
   if (store.get('doNotSaveMeetingsEnabled') === true) {
@@ -2312,7 +2545,7 @@ async function stopSession() {
   if (!sessionActive) return
   sessionActive = false
 
-  // Drain while capture may still be running ΓÇö flush VAD before snapshot + before overlay stops mic.
+  // Drain while capture may still be running — flush VAD before snapshot + before overlay stops mic.
   try {
     await localStt.stopListeningAndDrain()
   } catch (e) {
@@ -2360,7 +2593,7 @@ function startSession() {
 
 /** Session lines included when overlay did not pass a buffer (tight = no stale replay). */
 const SESSION_TRANSCRIPT_MAX_AGE_MS = 3500
-/** "Just spoke" ΓÇö narrow window so screen-only asks do not resurrect old lines. */
+/** "Just spoke" — narrow window so screen-only asks do not resurrect old lines. */
 const VERY_RECENT_SPEECH_MS = 2200
 
 const CONTEXT_ROUTING_RULES = `
@@ -2372,7 +2605,7 @@ const CONTEXT_ROUTING_RULES = `
 - ## SCREEN is supporting context for a typed or spoken question. Use it only when relevant; never replace a clear question with unrelated screen content.
 - ## TASK means the turn is screen-led: analyze the attached screen as the PRIMARY source.
 - If QUESTION, AUDIO, or TRANSCRIPT contains a clear request, answer it directly. Never use the unclear-context fallback.
-- If the screenshot shows this assistant's own overlay with a prior answer, do not repeat it ΓÇö focus on new screen content.`
+- If the screenshot shows this assistant's own overlay with a prior answer, do not repeat it — focus on new screen content.`
 
 async function buildProfileContextBlock({
   query = '',
@@ -2411,86 +2644,136 @@ async function buildProfileContextBlock({
       out += clipTextToBudget(modeBlock, modeBudget + 2000)
     }
 
-    let referenceBlock = ''
-    if (useAll || routeDecision.useReferenceFiles) {
-      if (
-        activePrompt &&
-        !skipAsyncReferenceRetrieval &&
-        contextVectorStore.referenceNeedsRetrieval(activePrompt)
-      ) {
-        const chunks = await contextVectorStore.retrieveChunksAsync(
-          activePrompt.id,
-          q,
-          { maxChars: refBudget },
-          store,
-          embeddingClient,
-        )
-        referenceBlock = contextVectorStore.formatRetrievedReferenceBlock(chunks)
-        if (!referenceBlock) referenceBlock = formatReferenceFilesBlock(activePrompt)
-      } else {
-        referenceBlock = formatReferenceFilesBlock(activePrompt)
-      }
-      out += clipTextToBudget(referenceBlock, refBudget + 400)
+    // Reference/resume/JD retrieval and hybridRecall are independent lookups (each already
+    // has its own timeout cap) — run them concurrently instead of sequentially so this stage
+    // costs the slowest one, not the sum of all four, then assemble `out` in the original order.
+    const wantReference = useAll || routeDecision.useReferenceFiles
+    const wantResume = useAll || routeDecision.useResume
+    const wantJd = useAll || routeDecision.useJd
+    const wantRecall =
+      routingOn && (routeDecision.useMeetingSummary || routeDecision.useHindsightRecall || routeDecision.useHybridRag)
+
+    const referenceTask = wantReference
+      ? (async () => {
+          if (
+            activePrompt &&
+            !skipAsyncReferenceRetrieval &&
+            contextVectorStore.referenceNeedsRetrieval(activePrompt)
+          ) {
+            const chunks = await contextVectorStore.retrieveChunksAsync(
+              activePrompt.id,
+              q,
+              { maxChars: refBudget },
+              store,
+              embeddingClient,
+            )
+            return contextVectorStore.formatRetrievedReferenceBlock(chunks) || formatReferenceFilesBlock(activePrompt)
+          }
+          return formatReferenceFilesBlock(activePrompt)
+        })()
+      : Promise.resolve('')
+
+    const resumeTask = wantResume
+      ? (async () => {
+          const resume = String(store.get('resumeContext') || '').trim()
+          if (!resume) return null
+          const tree = store.get('resumeTree') || parseResumeTree(resume)
+          let block = ''
+          let evidenceCount = 0
+          let usedEmbedding = false
+          if (profileTreeV2 || q) {
+            const evidence = await retrieveProfileEvidence({
+              tree,
+              raw: resume,
+              query: q,
+              maxChars: resumeBudget,
+              topK: 6,
+              embedClient: embeddingClient,
+            })
+            evidenceCount = evidence.evidenceCount
+            usedEmbedding = evidence.usedEmbedding
+            block = evidence.text || (profileTreeV2
+              ? formatResumeBlockV2(tree, resume, q)
+              : formatResumeBlock(tree, resume))
+          } else {
+            block = formatResumeBlock(tree, resume)
+          }
+          block = clipTextToBudget(block, resumeBudget)
+          if (block && !evidenceCount) evidenceCount = 1
+          return { block, evidenceCount, usedEmbedding }
+        })()
+      : Promise.resolve(null)
+
+    const jdTask = wantJd
+      ? (async () => {
+          const jd = String(store.get('jdContext') || '').trim()
+          if (!jd) return null
+          const tree = store.get('jdTree') || parseJdTree(jd)
+          let block = ''
+          let evidenceCount = 0
+          let usedEmbedding = false
+          if (profileTreeV2 || q) {
+            const evidence = await retrieveProfileEvidence({
+              tree: { ...tree, kind: 'jd' },
+              raw: jd,
+              query: q,
+              maxChars: jdBudget,
+              topK: 5,
+              embedClient: embeddingClient,
+            })
+            evidenceCount = evidence.evidenceCount
+            usedEmbedding = evidence.usedEmbedding
+            block = evidence.text || (profileTreeV2
+              ? formatJdBlockV2(tree, jd, q)
+              : formatJdBlock(tree, jd))
+          } else {
+            block = formatJdBlock(tree, jd)
+          }
+          block = clipTextToBudget(block, jdBudget)
+          if (block && !evidenceCount) evidenceCount = 1
+          return { block, evidenceCount, usedEmbedding }
+        })()
+      : Promise.resolve(null)
+
+    const recallTask = wantRecall
+      ? (async () => {
+          const softVector =
+            store.get('vectorMemoryEnabled') === true ||
+            domainTag === 'interview' ||
+            domainTag === 'meeting'
+          return hindsight.hybridRecall({
+            query: String(query || '').trim(),
+            useMeetingSummary: routeDecision.useMeetingSummary,
+            useHindsightRecall: routeDecision.useHindsightRecall,
+            useHybridRag: routeDecision.useHybridRag,
+            forceVectorMemory: softVector,
+            promptId: activePrompt?.id,
+            maxResults: 6,
+            timeoutMs: routeDecision.hindsightRecallTimeoutMs || 800,
+          })
+        })()
+      : Promise.resolve(null)
+
+    const [referenceResult, resumeResult, jdResult, recallResult] = await Promise.all([
+      referenceTask,
+      resumeTask,
+      jdTask,
+      recallTask,
+    ])
+
+    let referenceBlock = referenceResult || ''
+    if (wantReference) out += clipTextToBudget(referenceBlock, refBudget + 400)
+
+    if (resumeResult?.block) {
+      resumeEvidenceCount = resumeResult.evidenceCount
+      resumeUsedEmbedding = resumeResult.usedEmbedding
+      out += `\n\n---\n## RESUME / BACKGROUND\n${resumeResult.block}`
     }
 
-    if (useAll || routeDecision.useResume) {
-      const resume = String(store.get('resumeContext') || '').trim()
-      if (resume) {
-        const tree = store.get('resumeTree') || parseResumeTree(resume)
-        let block = ''
-        if (profileTreeV2 || q) {
-          const evidence = await retrieveProfileEvidence({
-            tree,
-            raw: resume,
-            query: q,
-            maxChars: resumeBudget,
-            topK: 6,
-            embedClient: embeddingClient,
-          })
-          resumeEvidenceCount = evidence.evidenceCount
-          resumeUsedEmbedding = evidence.usedEmbedding
-          block = evidence.text || (profileTreeV2
-            ? formatResumeBlockV2(tree, resume, q)
-            : formatResumeBlock(tree, resume))
-        } else {
-          block = formatResumeBlock(tree, resume)
-        }
-        block = clipTextToBudget(block, resumeBudget)
-        if (block) {
-          if (!resumeEvidenceCount) resumeEvidenceCount = 1
-          out += `\n\n---\n## RESUME / BACKGROUND\n${block}`
-        }
-      }
-    }
-
-    if (useAll || routeDecision.useJd) {
-      const jd = String(store.get('jdContext') || '').trim()
-      if (jd) {
-        const tree = store.get('jdTree') || parseJdTree(jd)
-        let block = ''
-        if (profileTreeV2 || q) {
-          const evidence = await retrieveProfileEvidence({
-            tree: { ...tree, kind: 'jd' },
-            raw: jd,
-            query: q,
-            maxChars: jdBudget,
-            topK: 5,
-            embedClient: embeddingClient,
-          })
-          jdEvidenceCount = evidence.evidenceCount
-          jdUsedEmbedding = evidence.usedEmbedding
-          block = evidence.text || (profileTreeV2
-            ? formatJdBlockV2(tree, jd, q)
-            : formatJdBlock(tree, jd))
-        } else {
-          block = formatJdBlock(tree, jd)
-        }
-        block = clipTextToBudget(block, jdBudget)
-        if (block) {
-          if (!jdEvidenceCount) jdEvidenceCount = 1
-          out += `\n\n---\n## JOB DESCRIPTION\n${block}`
-        }
-      }
+    if (jdResult?.block) {
+      jdEvidenceCount = jdResult.evidenceCount
+      jdUsedEmbedding = jdResult.usedEmbedding
+      out += `\n\n---\n## JOB DESCRIPTION\n${jdResult.block}`
     }
 
     if (out.includes('## RESUME') || out.includes('## JOB DESCRIPTION')) {
@@ -2501,22 +2784,8 @@ async function buildProfileContextBlock({
       out += formatNotesTemplateBlock(activePrompt)
     }
 
-    if (routingOn && (routeDecision.useMeetingSummary || routeDecision.useHindsightRecall || routeDecision.useHybridRag)) {
-      const softVector =
-        store.get('vectorMemoryEnabled') === true ||
-        domainTag === 'interview' ||
-        domainTag === 'meeting'
-      const recall = await hindsight.hybridRecall({
-        query: String(query || '').trim(),
-        useMeetingSummary: routeDecision.useMeetingSummary,
-        useHindsightRecall: routeDecision.useHindsightRecall,
-        useHybridRag: routeDecision.useHybridRag,
-        forceVectorMemory: softVector,
-        promptId: activePrompt?.id,
-        maxResults: 6,
-        timeoutMs: routeDecision.hindsightRecallTimeoutMs || 800,
-      })
-      out += recall.block
+    if (recallResult) {
+      out += recallResult.block
     }
 
     if (!referenceBlock && (useAll || routeDecision.useReferenceFiles)) {
@@ -2613,7 +2882,7 @@ async function handleAskAI(userQuestion, audioTranscript, _askMeta = {}) {
   const keyField = providers.getApiKeyField(provider)
   const apiKey = store.get(keyField)
   if (!apiKey) {
-    sendToAiEventTarget('ai-error', 'No API key. Settings ΓåÆ paste your key.')
+    sendToAiEventTarget('ai-error', 'No API key. Settings → paste your key.')
     currentAbortController = null
     return { ok: false }
   }
@@ -2655,8 +2924,11 @@ async function handleAskAI(userQuestion, audioTranscript, _askMeta = {}) {
   const conversationSessionId = aiEventTarget === 'global_chat' ? 'global_chat' : 'overlay'
   const structuredActiveQuestion = extractStructuredActiveQuestion(structured)
   const currentQuestion = normalizeFollowUpQuestion(userQ || structuredActiveQuestion || audioCombined)
+  // Action-chip presets (e.g. "Clarify") are self-contained intents, not ambiguous
+  // pronoun references — never route them through follow-up/clarification resolution.
+  const isActionChipAsk = _askMeta?.source === 'action-chip'
   const followUp =
-    store.get('conversationFollowUpsEnabled') === true
+    !isActionChipAsk && store.get('conversationFollowUpsEnabled') === true
       ? resolveConversationFollowUp({
           question: currentQuestion,
           sessionId: conversationSessionId,
@@ -2667,7 +2939,9 @@ async function handleAskAI(userQuestion, audioTranscript, _askMeta = {}) {
     const clarification = followUp.clarificationText
     sendToAiEventTarget('ai-start', {
       askSource: 'prompt',
-      transcriptEcho: currentQuestion || null,
+      // Only echo the question when it came from audio — typed/chip asks already show
+      // an identical `role: 'user'` bubble in the overlay, so echoing it again would duplicate it.
+      transcriptEcho: !userQ ? currentQuestion || null : null,
       transcriptEchoContext: null,
       screenContext: null,
     })
@@ -2693,7 +2967,7 @@ async function handleAskAI(userQuestion, audioTranscript, _askMeta = {}) {
   const profileQuery = currentQuestion || retrievalQuery
   const skipAsyncReferenceRetrieval = isScreenMode && !String(profileQuery).trim()
 
-  // noScreen: true = Natively's Ctrl+Shift+Enter (audio/text only ΓÇö skip all screenshot capture)
+  // noScreen: true = Natively's Ctrl+Shift+Enter (audio/text only — skip all screenshot capture)
   const noScreen = !!_askMeta?.noScreen
   const wantVision = !noScreen && providers.supportsVision(provider)
   let visionB64 = null
@@ -2759,7 +3033,7 @@ async function handleAskAI(userQuestion, audioTranscript, _askMeta = {}) {
   } else if (_askMeta?.skillSlug) {
     skillBlock = skillsService.buildSkillBlock(String(_askMeta.skillSlug))
     if (!skillBlock.trim()) {
-      sendToAiEventTarget('ai-error', `Skill "/${_askMeta.skillSlug}" not found. Settings ΓåÆ Skills to create it.`)
+      sendToAiEventTarget('ai-error', `Skill "/${_askMeta.skillSlug}" not found. Settings → Profile → Skills to create it.`)
       sendToAiEventTarget('ai-thinking', false)
       currentAbortController = null
       return
@@ -2773,7 +3047,7 @@ async function handleAskAI(userQuestion, audioTranscript, _askMeta = {}) {
     fullSystem += '\n\n---\n## PHONE MIRROR (secondary)\nA second image may show the connected Android screen. The desktop screenshot is primary; use the phone image only as supplementary context.'
   }
   if (_askMeta?.pastMeetingContext && String(_askMeta.pastMeetingContext).trim()) {
-    fullSystem += `\n\n---\n## PAST MEETING CONTEXT (recall ΓÇö facts only, do not invent)\n${String(_askMeta.pastMeetingContext).trim().slice(0, 4000)}`
+    fullSystem += `\n\n---\n## PAST MEETING CONTEXT (recall — facts only, do not invent)\n${String(_askMeta.pastMeetingContext).trim().slice(0, 4000)}`
   }
   if (structured) {
     const segmentedTranscript =
@@ -2783,8 +3057,8 @@ async function handleAskAI(userQuestion, audioTranscript, _askMeta = {}) {
       ? 'This is a screen-led request. Analyze the attached screenshot and solve the visible problem completely. If ## QUESTION is present, answer it directly and use the screen as evidence.'
       : segmentedTranscript
         ? nativelyLabeled
-          ? 'Answer the most recent [INTERVIEWER] line in the transcript. [ME] lines are the user\'s own speech ΓÇö context only unless no interviewer question exists.'
-          : 'Answer ONLY the ACTIVE QUESTION in the user message. RECENT CONTEXT is optional clarification ΓÇö do not merge unrelated earlier questions.'
+          ? 'Answer the most recent [INTERVIEWER] line in the transcript. [ME] lines are the user\'s own speech — context only unless no interviewer question exists.'
+          : 'Answer ONLY the ACTIVE QUESTION in the user message. RECENT CONTEXT is optional clarification — do not merge unrelated earlier questions.'
         : 'Respond ONLY to the last clear question in QUESTION, AUDIO, or TRANSCRIPT. SCREEN is supporting context and must not override an unrelated spoken or typed request.'
     }`
   }
@@ -2811,7 +3085,7 @@ async function handleAskAI(userQuestion, audioTranscript, _askMeta = {}) {
     return { ok: false }
   }
   // Block if there's truly nothing to respond to (no speech, typed question, or structured context).
-  // Vision screenshots are handled separately via visionB64 ΓÇö they don't need text input.
+  // Vision screenshots are handled separately via visionB64 — they don't need text input.
   if (!transcript && !userQ && !structured && !visionB64) {
     currentAbortController = null
     sendToAiEventTarget('ai-no-output')
@@ -2874,7 +3148,7 @@ async function handleAskAI(userQuestion, audioTranscript, _askMeta = {}) {
           const t = String(audioCombined).trim()
           if (!t) return null
           const clipped =
-            t.length > MAX_TRANSCRIPT_ECHO ? `${t.slice(0, MAX_TRANSCRIPT_ECHO)}\n\nΓÇª (truncated)` : t
+            t.length > MAX_TRANSCRIPT_ECHO ? `${t.slice(0, MAX_TRANSCRIPT_ECHO)}\n\n… (truncated)` : t
           return parseTranscriptEchoForDisplay(clipped)
         })()
       : null
@@ -2910,7 +3184,7 @@ async function handleAskAI(userQuestion, audioTranscript, _askMeta = {}) {
     let firstTokenAt = 0
     const tokenBatcher = createAiTokenBatcher((chunk) => sendToAiEventTarget('ai-token', chunk))
     // The Groq on-demand tier allows 8K TPM for Qwen 3.6. Screenshot and
-    // prompt input commonly consume 3ΓÇô4K tokens. A bounded output also avoids
+    // prompt input commonly consume 3–4K tokens. A bounded output also avoids
     // reserving unnecessary TPM and keeps the overlay answer useful quickly.
     const answerLength = normalizeAnswerLength(store.get('answerLength'))
     const qwenOutputTokens = maxTokensForAnswerLength(answerLength, {
@@ -3245,8 +3519,7 @@ function setupIPC() {
     if (!overlayWindow || overlayWindow.isDestroyed()) return
     if (event.sender !== overlayWindow.webContents) return
     if (!overlayVisible) return
-    const passthrough = store.get('overlayMousePassthroughEnabled') === true
-    if (!passthrough) {
+    if (store.get('overlayMousePassthroughEnabled') !== true) {
       overlayWindow.setIgnoreMouseEvents(false)
       overlayMouseCaptureApplied = 'capture'
       return
@@ -3259,6 +3532,31 @@ function setupIPC() {
     }
     overlayWindow.setIgnoreMouseEvents(false)
     overlayMouseCaptureApplied = 'capture'
+  })
+  ipcMain.on('overlay:update-hit-regions', (event, regions) => {
+    if (!overlayWindow || overlayWindow.isDestroyed()) return
+    if (event.sender !== overlayWindow.webContents) return
+    overlayHitRegions = Array.isArray(regions)
+      ? regions.filter(
+          (r) =>
+            r &&
+            Number.isFinite(r.x) &&
+            Number.isFinite(r.y) &&
+            Number.isFinite(r.width) &&
+            Number.isFinite(r.height) &&
+            r.width > 0 &&
+            r.height > 0,
+        )
+      : []
+    if (store.get('overlayMousePassthroughEnabled') !== true) {
+      syncOverlayBoundedCaptureFromCursor()
+    }
+  })
+  ipcMain.handle('overlay:set-capture-mode', (event, capture) => {
+    if (!overlayWindow || overlayWindow.isDestroyed()) return
+    if (event.sender !== overlayWindow.webContents) return
+    if (!overlayVisible) return
+    syncOverlayBoundedCaptureFromCursor()
   })
   ipcMain.handle('get-app-info', () => ({
     name: getBrandName(),
@@ -3341,7 +3639,8 @@ function setupIPC() {
     return { ok: true }
   })
   ipcMain.handle('consent:decline', () => {
-    quitApplication()
+    // Declining is already an explicit decision — no need to confirm quitting again.
+    quitApplication({ skipConfirm: true })
     return true
   })
   ipcMain.handle('session-start-confirmed', () => {
@@ -4113,46 +4412,17 @@ function setupIPC() {
   })
   ipcMain.handle('get-window-bounds', () => overlayWindow ? overlayWindow.getBounds() : store.get('overlayBounds'))
   ipcMain.handle('save-window-bounds', () => { if (overlayWindow) store.set('overlayBounds', overlayWindow.getBounds()) })
-  /** Optional `x` keeps the right edge fixed when resizing from the left (frameless overlay). */
+  /**
+   * Top-center anchored resize. Width changes recenter on the anchor; height-only
+   * changes keep the notch at a fixed screen position (standard HUD pattern).
+   */
   ipcMain.handle('resize-window', (_, w, h, xOpt) => {
-    if (!overlayWindow || overlayWindow.isDestroyed()) return
-    const b = overlayWindow.getBounds()
-    const safeW = Math.max(280, Math.min(860, Math.round(w)))
-    const useX = typeof xOpt === 'number' && !Number.isNaN(xOpt)
-    /** Collapsed notch-only mode (~42px pill incl. borders) */
-    if (h <= 44) {
-      applyOverlayMinimumSize(safeW, 1)
-      const safeH = Math.max(43, Math.min(940, Math.round(h)))
-      const nextX = useX ? Math.round(xOpt) : b.x
-      if (
-        Math.abs(b.width - safeW) <= 1 &&
-        Math.abs(b.height - safeH) <= 1 &&
-        Math.abs(b.x - nextX) <= 1
-      ) {
-        return
-      }
-      if (useX) {
-        overlayWindow.setBounds({ x: nextX, y: b.y, width: safeW, height: safeH })
-      } else {
-        overlayWindow.setSize(safeW, safeH)
-      }
-    } else {
-      applyOverlayMinimumSize(280, 180)
-      const safeH = Math.max(180, Math.min(940, Math.round(h)))
-      const nextX = useX ? Math.round(xOpt) : b.x
-      if (
-        Math.abs(b.width - safeW) <= 1 &&
-        Math.abs(b.height - safeH) <= 1 &&
-        Math.abs(b.x - nextX) <= 1
-      ) {
-        return
-      }
-      if (useX) {
-        overlayWindow.setBounds({ x: nextX, y: b.y, width: safeW, height: safeH })
-      } else {
-        overlayWindow.setSize(safeW, safeH)
-      }
-    }
+    if (!overlayWindow || overlayWindow.isDestroyed()) return null
+    const changed = applyOverlayResize(w, h, xOpt)
+    if (changed && !overlayLiveResizing) requestOverlayHitRegionSync()
+    // Return what was actually applied (e.g. height may have been capped to fit
+    // the screen) so the renderer's bounds cache never drifts from reality.
+    return overlayWindow.getBounds()
   })
   ipcMain.handle('set-overlay-position-preset', (_, preset) => {
     const d = getOverlayDisplayBounds()
@@ -4169,10 +4439,30 @@ function setupIPC() {
     store.set('overlayBounds', { ...store.get('overlayBounds'), ...pos, width: w, height: h })
     if (overlayWindow) overlayWindow.setPosition(pos.x, pos.y)
   })
-  ipcMain.on('overlay-resize-end', () => { if (overlayWindow) store.set('overlayBounds', overlayWindow.getBounds()) })
+  ipcMain.on('overlay-resize-start', (event) => {
+    if (!overlayWindow || overlayWindow.isDestroyed()) return
+    if (event.sender !== overlayWindow.webContents) return
+    overlayLiveResizing = true
+    suspendOverlayCaptureForInteraction()
+  })
+  ipcMain.on('overlay:resize-live', (event, w, h, xOpt) => {
+    if (!overlayWindow || overlayWindow.isDestroyed()) return
+    if (event.sender !== overlayWindow.webContents) return
+    applyOverlayResize(w, h, xOpt)
+  })
+  ipcMain.on('overlay-resize-end', (event) => {
+    if (!overlayWindow || overlayWindow.isDestroyed()) return
+    if (event.sender != null && event.sender !== overlayWindow.webContents) return
+    overlayLiveResizing = false
+    const b = overlayWindow.getBounds()
+    syncOverlayAnchorFromBounds(b)
+    store.set('overlayBounds', b)
+    resumeOverlayCaptureAfterInteraction()
+    requestOverlayHitRegionSync()
+  })
   ipcMain.on('overlay-hide', hideOverlay)
   ipcMain.on('app-quit', quitApplication)
-  ipcMain.on('open-settings', createSettingsWindow)
+  ipcMain.on('open-settings', (_, navOpts) => createSettingsWindow(navOpts))
   ipcMain.on('ui-toggle-session', () => (sessionActive ? stopSession() : requestSessionStart()))
   ipcMain.on('overlay-opacity-change', (_, o) => {
     const clamped = Math.min(1, Math.max(0.35, Number(o) || 0.92))
@@ -4282,7 +4572,7 @@ function setupIPC() {
         store.set('overlayBounds', { ...prev, width: w, height: h })
         if (overlayWindow && !overlayWindow.isDestroyed()) {
           const curH = overlayWindow.getSize()[1]
-          // Collapsed notch (~43px window) ΓÇö only change width so we don't pop the panel open
+          // Collapsed notch (~43px window) — only change width so we don't pop the panel open
           if (curH <= 48) overlayWindow.setSize(w, curH)
           else overlayWindow.setSize(w, h)
         }
@@ -4405,15 +4695,6 @@ async function initApp() {
     if (!okPrimary) globalShortcut.register(fallback, triggerMeetingToastTest)
   } catch (e) {
     console.warn('[meeting-toast] test hotkey register error:', e?.message || e)
-  }
-
-  // Auto-start the listen session if the user already completed consent/onboarding ΓÇö
-  // no need to manually press the toggle every time the app opens.
-  if (hasValidConsent() && hasCompletedOnboardingFlag()) {
-    // Wait for the overlay to finish rendering before sending session-start.
-    setTimeout(() => {
-      if (!sessionActive) startSession()
-    }, 1500)
   }
 
   setupAutoUpdater()
